@@ -4,6 +4,7 @@ class Trip {
   // duoc assign khi tao object. Va no khong
   // the thay doi sau do.
   final String id;
+  final String ownerId;
   final String destination;
   final double budget;
   final int days;
@@ -15,6 +16,7 @@ class Trip {
     // cai nay khi tao object.
     // this co nghia la object nay.
     required this.id,
+    required this.ownerId,
     required this.destination,
     required this.budget,
     required this.days,
@@ -39,6 +41,7 @@ class Trip {
   factory Trip.fromMap(Map<String, dynamic> data, String id) {
     return Trip(
       id: id,
+      ownerId: data['ownerId'],
       destination: data['destination'],
       budget: data['budget'],
       days: data['days'],
@@ -50,6 +53,7 @@ class Trip {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'ownerId': ownerId,
       'destination': destination,
       'budget': budget,
       'days': days,
