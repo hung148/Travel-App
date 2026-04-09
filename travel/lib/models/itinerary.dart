@@ -13,9 +13,9 @@ class Itinerary {
     required this.estimatedCost,
   });
 
-  factory Itinerary.fromMap(Map<String, dynamic> data, String documentId) {
+  factory Itinerary.fromMap(Map<String, dynamic> data, String id) {
     return Itinerary(
-      id: data['id'], 
+      id: id, 
       dayNumber: data['dayNumber'], 
       places: data['places'], 
       meals: data['meals'], 
