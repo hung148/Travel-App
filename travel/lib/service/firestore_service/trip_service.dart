@@ -59,12 +59,32 @@ class TripService {
     }
   }
 
-  // READ - Get all trips all of a user
+  // READ - Get all trips of a user
   // Stream is like a pipe that keeps sending new data whenever something changes.
   // snapshots() gives you live updates from Firestore
   // use this with StreamBuilder
-  Stream<List<Trip>> getTripsByUser() async* {
-    yield [];
+  Stream<List<Trip>> getTripsByUser(String userId) {
+    // Listen to Firestore in real time
+    return tripRef
+      .where('ownerId', isEqualTo: userId) // Filters only documents where ownerId == userId
+      .snapshots() // turn firestore query into a Stream
+      .map((snapshot) { // transform each snapshot into something else
+        // snapshot.docs is a list of Firesotre documents
+        // snapshot.docs.map loops through each document
+        return snapshot.docs.map((doc) { 
+          // This converts Firestore data to Trip model
+          return Trip.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+        }).toList(); // turns the mapped items into real List<Trip>
+      });
   }
-  
+
+  // UPDATE 
+  Future<TripResult> updateTrip(Trip trip) async {
+    return  TripResult(success: true, data: null, error: "");
+  }
+
+  // DELETE 
+  Future<TripResult> deleteTrip(String id) async {
+    return  TripResult(success: true, data: null, error: "");
+  }
 }
