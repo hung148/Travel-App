@@ -1,22 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/trip/trip.dart';
 import '../models/itinerary.dart';
-import '../models/feedback.dart';
-import '../models/preferences.dart';
-import '../services//trip_service.dart';
-import '../services/itinerary_service.dart';
-import '../services/preferences_service.dart';
+import '../models/feedback.dart' as model;
+import '../models/preference/preferences.dart';
+import '../service/trip_service.dart';
+import '../service/itinerary_service.dart';
+import '../service/preference_service.dart';
 
 class TripViewModel extends ChangeNotifier {
   final TripService _tripService;
   final ItineraryService _itineraryService;
-  final PreferencesService _preferencesService;
+  final PreferenceService _preferencesService;
 
   TripViewModel({
     required TripService tripService,
     required ItineraryService itineraryService,
-    required PreferencesService preferencesService,
+    required PreferenceService preferencesService,
   })  : _tripService = tripService,
         _itineraryService = itineraryService,
         _preferencesService = preferencesService;
@@ -26,6 +28,9 @@ class TripViewModel extends ChangeNotifier {
 
   Trip? _currentTrip;
   Trip? get currentTrip => _currentTrip;
+
+  // A SstreamSubscription is simply the object that represents your connection to a Stream
+  StreamSubscription<List<Trip>>? _tripSubscription;
 
   List<Itinerary> _itinerary = [];
   List<Itinerary> get itinerary => _itinerary;
@@ -38,6 +43,15 @@ class TripViewModel extends ChangeNotifier {
 
   String? _successMessage;
   String? get successMessage => _successMessage;
+
+  @override 
+  void dispose() {
+    // if you don't cancel the subscription, the Stream keeps sending updates.
+    // Even after the screen is closed 
+    // This might lead to memory leaks
+    _tripSubscription?.cancel();
+    super.dispose();
+  }
 
   void _setLoading(bool value) {
     _isLoading = value;
@@ -61,22 +75,21 @@ class TripViewModel extends ChangeNotifier {
   }
 
   Future<void> createTrip(Trip trip) async {
-    try {
-      _setLoading(true);
-      _setError(null);
-      _setSuccess(null);
+    _setLoading(true);
+    _setError(null);
+    _setSuccess(null);
 
-      await _tripService.saveTrip(trip);
+    final result = await _tripService.addTrip(trip);
 
+    if (result.success) {
       _tripHistory.insert(0, trip);
       _currentTrip = trip;
-
       _setSuccess('Trip created successfully.');
-    } catch (e) {
-      _setError('Failed to create trip: $e');
-    } finally {
-      _setLoading(false);
+    } else {
+      _setError('Failed to create trip: ${result.error}');
     }
+
+    _setLoading(false);
   }
 
   Future<void> editTrip(Trip updatedTrip) async {
@@ -105,18 +118,23 @@ class TripViewModel extends ChangeNotifier {
     }
   }
 
-  Future<void> loadTripHistory(String ownerId) async {
-    try {
-      _setLoading(true);
-      _setError(null);
-
-      _tripHistory = await _tripService.getTripsByOwner(ownerId);
-      notifyListeners();
-    } catch (e) {
-      _setError('Failed to load trip history: $e');
-    } finally {
-      _setLoading(false);
-    }
+  // Change loadTripHistory to listenToTripHistory because 
+  // getTripByUser return a stream which is automatically update
+  void listenToTripHistory(String ownerId) async {
+    _setLoading(true);
+    _setError(null);
+    
+    _tripSubscription = _tripService.getTripsByUser(ownerId).listen(
+      (trips) {
+        _tripHistory = trips;
+        notifyListeners();
+        _setLoading(false);
+      },
+      onError: (e) {
+        _setError('Failed to load trip history: $e');
+        _setLoading(false);
+      }
+    );
   }
 
   Future<void> loadTripById(String tripId) async {
@@ -124,10 +142,14 @@ class TripViewModel extends ChangeNotifier {
       _setLoading(true);
       _setError(null);
 
-      _currentTrip = await _tripService.getTripById(tripId);
-      _itinerary = await _itineraryService.getItinerary(tripId);
-
-      notifyListeners();
+      final result = await _tripService.getTripById(tripId);
+      if (result.success) {
+        _currentTrip = result.data;
+        _itinerary = await _itineraryService.getItinerary(tripId);
+        notifyListeners();
+      } else {
+        _setError(result.error ?? 'Unknown error');
+      }
     } catch (e) {
       _setError('Failed to load trip: $e');
     } finally {
@@ -193,7 +215,7 @@ class TripViewModel extends ChangeNotifier {
 
   Future<void> saveFeedback({
     required String tripId,
-    required FeedbackModel feedback,
+    required model.Feedback feedback,
   }) async {
     try {
       _setLoading(true);

@@ -1,12 +1,12 @@
-import 'package:travel/models/trip/trip.dart';
+import 'package:travel/models/preference/preferences.dart';
 
 // detail error if fail
-class TripResult {
+class PreferenceResult {
   final bool success;
-  final Trip? data;
+  final Preference? data;
   final String? error;
 
-  const TripResult({
+  const PreferenceResult({
     required this.success,
     required this.data,
     required this.error,

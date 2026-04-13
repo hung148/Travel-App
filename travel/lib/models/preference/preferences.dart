@@ -13,6 +13,9 @@
 /// - Interests like coffee, shopping, etc.
 
 class Preference {
+
+  final String id;
+
   /// Type of experience the user wants
   /// Examples:
   /// - "Nature"
@@ -45,6 +48,7 @@ class Preference {
   /// All fields are required because preferences
   /// should always be fully defined after onboarding.
   Preference({
+    required this.id,
     required this.experienceType,
     required this.activityLevel,
     required this.spendingStyle,
@@ -67,8 +71,9 @@ class Preference {
   /// Convert Firestore Map -> Preference
   ///
   /// This is used when reading user preferences from Firestore.
-  factory Preference.fromMap(Map<String, dynamic> map) {
+  factory Preference.fromMap(Map<String, dynamic> map, String id) {
     return Preference(
+      id: id,
       experienceType: map['experienceType'] ?? '',
       activityLevel: map['activityLevel'] ?? '',
       spendingStyle: map['spendingStyle'] ?? '',
@@ -89,6 +94,7 @@ class Preference {
     List<String>? interests,
   }) {
     return Preference(
+      id: id,
       experienceType: experienceType ?? this.experienceType,
       activityLevel: activityLevel ?? this.activityLevel,
       spendingStyle: spendingStyle ?? this.spendingStyle,

@@ -9,9 +9,8 @@ class TripService {
   // collection('trips') this selects the collection named "trips" inside Firestore
   final CollectionReference tripRef = FirebaseFirestore.instance.collection('trips');
 
+  /// CRUD
   
-
-  // CRUD 
   // CREATE - Add a new trip
   Future<TripResult> addTrip(Trip trip) async {
     try {
@@ -80,11 +79,42 @@ class TripService {
 
   // UPDATE 
   Future<TripResult> updateTrip(Trip trip) async {
-    return  TripResult(success: true, data: null, error: "");
+    try {
+      // Use update() so Firestore only updates changed fields instead of
+      // overwriting the whole document.
+      // update() fails if the document doesn't exist -> safer than set()
+      await tripRef.doc(trip.id).update(trip.toMap());
+    
+      return TripResult(
+        success: true,
+        data: trip,
+        error: null,
+      );
+    } catch (e) {
+      return TripResult(
+        success: false,
+        data: null,
+        error: e.toString(),
+      );
+    }
   }
 
   // DELETE 
   Future<TripResult> deleteTrip(String id) async {
-    return  TripResult(success: true, data: null, error: "");
+    try {
+      await tripRef.doc(id).delete();
+
+      return TripResult(
+        success: true,
+        data: null,
+        error: null,
+      );
+    } catch (e) {
+      return TripResult(
+        success: false,
+        data: null,
+        error: e.toString(),
+      );
+    }
   }
 }
