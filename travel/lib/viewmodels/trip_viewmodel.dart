@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:travel/models/preference/preference_result.dart';
 
 import '../models/trip/trip.dart';
 import '../models/itinerary.dart';
@@ -9,19 +10,23 @@ import '../models/preference/preferences.dart';
 import '../service/trip_service.dart';
 import '../service/itinerary_service.dart';
 import '../service/preference_service.dart';
+import '../service/feedback_service.dart';
 
 class TripViewModel extends ChangeNotifier {
   final TripService _tripService;
   final ItineraryService _itineraryService;
   final PreferenceService _preferencesService;
+  final FeedbackService _feedbackService;
 
   TripViewModel({
     required TripService tripService,
     required ItineraryService itineraryService,
     required PreferenceService preferencesService,
+    required FeedbackService feedbackService,
   })  : _tripService = tripService,
         _itineraryService = itineraryService,
-        _preferencesService = preferencesService;
+        _preferencesService = preferencesService,
+        _feedbackService = feedbackService; 
 
   List<Trip> _tripHistory = [];
   List<Trip> get tripHistory => _tripHistory;
@@ -166,8 +171,18 @@ class TripViewModel extends ChangeNotifier {
       _setError(null);
       _setSuccess(null);
 
-      final Preference preference =
+      final PreferenceResult result =
           await _preferencesService.getPreferences(ownerId);
+
+      if (!result.success || result.data == null) {
+        _setError((result.error ?? "").isEmpty 
+        ? "Failed to load preference"
+        : result.error,
+        );
+        return;
+      }
+
+      final Preference preference = result.data!;
 
       final List<Itinerary> generated = [];
 
@@ -175,6 +190,7 @@ class TripViewModel extends ChangeNotifier {
         generated.add(
           Itinerary(
             id: '$i',
+            tripId: trip.id,
             dayNumber: i,
             places: '${preference.experienceType} places in ${trip.destination}',
             meals: '${preference.interests.join(", ")} meal plan',
@@ -201,8 +217,7 @@ class TripViewModel extends ChangeNotifier {
       _setSuccess(null);
 
       await _itineraryService.saveItinerary(
-        tripId: tripId,
-        itinerary: _itinerary,
+        _itinerary,
       );
 
       _setSuccess('Itinerary saved successfully.');
@@ -222,8 +237,7 @@ class TripViewModel extends ChangeNotifier {
       _setError(null);
       _setSuccess(null);
 
-      await _itineraryService.saveFeedback(
-        tripId: tripId,
+      await _feedbackService.saveFeedback(
         feedback: feedback,
       );
 
@@ -241,7 +255,12 @@ class TripViewModel extends ChangeNotifier {
       _setError(null);
       _setSuccess(null);
 
-      await _tripService.deleteTrip(tripId);
+      final result = await _tripService.deleteTrip(tripId);
+
+      if (!result.success) {
+        _setError(result.error ?? 'Fail to delete trip');
+        return;
+      }
 
       _tripHistory.removeWhere((trip) => trip.id == tripId);
 

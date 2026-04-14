@@ -15,6 +15,7 @@
 class Preference {
 
   final String id;
+  final String ownerId;
 
   /// Type of experience the user wants
   /// Examples:
@@ -49,6 +50,7 @@ class Preference {
   /// should always be fully defined after onboarding.
   Preference({
     required this.id,
+    required this.ownerId,
     required this.experienceType,
     required this.activityLevel,
     required this.spendingStyle,
@@ -61,6 +63,7 @@ class Preference {
   /// so we convert this object into a Map.
   Map<String, dynamic> toMap() {
     return {
+      'ownerId': ownerId,
       'experienceType': experienceType,
       'activityLevel': activityLevel,
       'spendingStyle': spendingStyle,
@@ -74,6 +77,7 @@ class Preference {
   factory Preference.fromMap(Map<String, dynamic> map, String id) {
     return Preference(
       id: id,
+      ownerId: map['ownerId'] ?? '',
       experienceType: map['experienceType'] ?? '',
       activityLevel: map['activityLevel'] ?? '',
       spendingStyle: map['spendingStyle'] ?? '',
@@ -95,6 +99,7 @@ class Preference {
   }) {
     return Preference(
       id: id,
+      ownerId: ownerId,
       experienceType: experienceType ?? this.experienceType,
       activityLevel: activityLevel ?? this.activityLevel,
       spendingStyle: spendingStyle ?? this.spendingStyle,
