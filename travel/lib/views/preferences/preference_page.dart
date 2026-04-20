@@ -20,7 +20,10 @@ class _PreferencePageState extends State<PreferencePage> {
     String? _activityLevel;
     String? _spendingStyle;
 
-    // chip labels fro each section
+    // initialize 
+    bool _hasInitialized = false;
+
+    // chip labels for each section
     final _experienceOptions = ['Nature', 'History', 'Food', 'Mix'];
     final _activityOptions = ['Relaxed', 'Moderate', 'Very Active'];
     final _spendingOptions = ['Budget', 'Normal', 'Luxury'];
@@ -32,33 +35,33 @@ class _PreferencePageState extends State<PreferencePage> {
 
         // this wait until the first frame is drawn
         // then call the ViewModel loadPreference(ownerId)
-        // continue here
         WidgetsBinding.instance.addPostFrameCallback((_) {
+            // Call functions without rebuild UI
             context.read<PreferenceViewmodel>().loadPreferences(widget.ownerId);
         });
     }
 
     // When preferences load from Firestore, pre-fill the selections
     void _syncFromViewModel(Preference? pref) {
-        if (pref == null) return;
-        if (_experienceType == null &&
-            _activityLevel == null &&
-            _spendingStyle == null) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-                setState(() {
-                    _experienceType = pref.experienceType;
-                    _activityLevel = pref.activityLevel;
-                    _spendingStyle = pref.spendingStyle;
-                });
+        if (pref == null || _hasInitialized) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+            setState(() {
+                _experienceType = pref.experienceType;
+                _activityLevel = pref.activityLevel;
+                _spendingStyle = pref.spendingStyle;
+                _hasInitialized = true;
             });
-        }
+        });
     }
 
+    // this check if user has selected all required preferences
+    // this behave like a variable
     bool get _isValid =>
         _experienceType != null &&
         _activityLevel != null &&
         _spendingStyle != null;
 
+    // this save preference
     void _save(PreferenceViewmodel vm) {
         if (!_isValid) return;
         final pref = Preference(
@@ -72,9 +75,12 @@ class _PreferencePageState extends State<PreferencePage> {
         vm.savePreferences(pref);
     }
 
+    // this function is called whenvever Flutter needs to redraw this screen
     @override
     Widget build(BuildContext context) {
+        // basic structure
         return Scaffold(
+        // Top bar of the screen
         appBar: AppBar(title: const Text('Travel Preferences')),
         body: Consumer<PreferenceViewmodel>(
             builder: (context, vm, _) {
