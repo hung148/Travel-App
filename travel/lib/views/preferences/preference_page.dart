@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart'; // use to talk to PreferenceViewModel
 import 'package:travel/models/preference/preferences.dart';
 import 'package:travel/viewmodels/preference_viewmodel.dart';
+import 'package:travel/widgets/chips/chips.dart';
 
 // this is statefulWidget because it respond to user input
 class PreferencePage extends StatefulWidget { 
@@ -80,133 +81,94 @@ class _PreferencePageState extends State<PreferencePage> {
     Widget build(BuildContext context) {
         // basic structure
         return Scaffold(
-        // Top bar of the screen
-        appBar: AppBar(title: const Text('Travel Preferences')),
-        body: Consumer<PreferenceViewmodel>(
-            builder: (context, vm, _) {
-            _syncFromViewModel(vm.preference);
+          // Top bar of the screen
+          appBar: AppBar(title: const Text('Travel Preferences')),
+          body: Consumer<PreferenceViewmodel>(
+              builder: (context, vm, _) {
+              _syncFromViewModel(vm.preference);
 
-            if (vm.isLoading) {
-                return const Center(child: CircularProgressIndicator());
-            }
+              if (vm.isLoading) {
+                  return const Center(child: CircularProgressIndicator());
+              }
 
-            if (vm.savedSuccessfully) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Preferences saved!')),
-                );
-                });
-            }
+              if (vm.savedSuccessfully) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Preferences saved!')),
+                    );
+                  });
+              }
 
-            return SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                    const Text(
-                    'Your travel style',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                    "We'll tailor recommendations just for you",
-                    style: TextStyle(color: Colors.grey[600]),
-                    ),
-                    const SizedBox(height: 32),
+              return SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                      const Text(
+                      'Your travel style',
+                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "We'll tailor recommendations just for you",
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                      const SizedBox(height: 32),
 
-                    if (vm.errorMessage != null && vm.errorMessage!.isNotEmpty)
-                    Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: Text(
-                        vm.errorMessage!,
-                        style: const TextStyle(color: Colors.red),
-                        ),
-                    ),
+                      if (vm.errorMessage != null && vm.errorMessage!.isNotEmpty)
+                      Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: Text(
+                          vm.errorMessage!,
+                          style: const TextStyle(color: Colors.red),
+                          ),
+                      ),
 
-                    _ChipSection(
-                    key: const Key('experience_section'),
-                    label: 'What do you enjoy?',
-                    options: _experienceOptions,
-                    selected: _experienceType,
-                    onSelected: (v) => setState(() => _experienceType = v),
-                    ),
-                    const SizedBox(height: 24),
-                    _ChipSection(
-                    key: const Key('activity_section'),
-                    label: 'Trip pace',
-                    options: _activityOptions,
-                    selected: _activityLevel,
-                    onSelected: (v) => setState(() => _activityLevel = v),
-                    ),
-                    const SizedBox(height: 24),
-                    _ChipSection(
-                    key: const Key('spending_section'),
-                    label: 'Budget preference',
-                    options: _spendingOptions,
-                    selected: _spendingStyle,
-                    onSelected: (v) => setState(() => _spendingStyle = v),
-                    ),
-                    const SizedBox(height: 40),
+                      ChipSection(
+                        key: const Key('experience_section'),
+                        label: 'What do you enjoy?',
+                        options: _experienceOptions,
+                        selected: _experienceType,
+                        onSelected: (v) => setState(() => _experienceType = v),
+                      ),
+                      const SizedBox(height: 24),
+                      ChipSection(
+                        key: const Key('activity_section'),
+                        label: 'Trip pace',
+                        options: _activityOptions,
+                        selected: _activityLevel,
+                        onSelected: (v) => setState(() => _activityLevel = v),
+                      ),
+                      const SizedBox(height: 24),
+                      ChipSection(
+                        key: const Key('spending_section'),
+                        label: 'Budget preference',
+                        options: _spendingOptions,
+                        selected: _spendingStyle,
+                        onSelected: (v) => setState(() => _spendingStyle = v),
+                      ),
+                      const SizedBox(height: 40),
 
-                    SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                        key: const Key('save_button'),
-                        onPressed: _isValid && !vm.isLoading ? () => _save(vm) : null,
-                        child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 14),
-                        child: Text(
-                            'Save preferences',
-                            style: TextStyle(fontSize: 16),
-                        ),
-                        ),
-                    ),
-                    ),
-                ],
-                ),
-            );
-            },
-        ),
+                      SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                          key: const Key('save_button'),
+                          onPressed: _isValid && !vm.isLoading ? () => _save(vm) : null,
+                          child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                          child: Text(
+                              'Save preferences',
+                              style: TextStyle(fontSize: 16),
+                          ),
+                          ),
+                      ),
+                      ),
+                  ],
+                  ),
+              );
+              },
+          ),
         );
     }
 }
 
-class _ChipSection extends StatelessWidget {
-    final String label;
-    final List<String> options;
-    final String? selected;
-    final ValueChanged<String> onSelected;
-
-    const _ChipSection({
-        super.key,
-        required this.label,
-        required this.options,
-        required this.selected,
-        required this.onSelected,
-    });
-
-    @override
-    Widget build(BuildContext context) {
-        return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-                Text(label,
-                    style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 10),
-                Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: options.map((option) {
-                        return ChoiceChip(
-                            key: Key('chip_$option'),
-                            label: Text(option),
-                            selected: option == selected,
-                            onSelected: (_) => onSelected(option),
-                        );
-                    }).toList(),
-                ),
-            ],
-        );
-    }
-}
