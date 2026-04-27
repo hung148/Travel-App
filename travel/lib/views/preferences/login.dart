@@ -142,7 +142,7 @@ class _LoginPageState extends State<LoginPage> {
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () {
-                      // TODO: Navigate to forgot password page
+                      Navigator.pushNamed(context, '/forgot-password');
                     },
                     child: const Text("Forgot Password?"),
                   ),
@@ -195,7 +195,7 @@ class _LoginPageState extends State<LoginPage> {
                     const Text("Don't have an account?"),
                     TextButton(
                       onPressed: () {
-                        // TODO: Navigate to sign up page
+                        Navigator.pushNamed(context, '/signup');
                       },
                       child: const Text("Sign Up"),
                     ),
