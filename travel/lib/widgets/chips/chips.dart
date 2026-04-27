@@ -4,14 +4,16 @@ class ChipSection extends StatelessWidget {
     final String label;
     final List<String> options;
     final String? selected;
+    Set<String> selectedList = {};
     final ValueChanged<String> onSelected;
 
-    const ChipSection({
+    ChipSection({
         super.key,
         required this.label,
         required this.options,
         required this.selected,
         required this.onSelected,
+        this.selectedList = const {},
     });
 
     @override
@@ -27,12 +29,19 @@ class ChipSection extends StatelessWidget {
                     spacing: 8,
                     runSpacing: 8,
                     children: options.map((option) {
-                        return ChoiceChip(
-                            key: Key('chip_$option'),
-                            label: Text(option),
-                            selected: option == selected,
-                            onSelected: (_) => onSelected(option),
-                        );
+                        return selected == null 
+                          ? FilterChip(          // FilterChip
+                                key: Key('chip_$option'),
+                                label: Text(option),
+                                selected: selectedList.contains(option),  // set lookup
+                                onSelected: (_) => onSelected(option),
+                            )
+                          : ChoiceChip(
+                              key: Key('chip_$option'),
+                              label: Text(option),
+                              selected: option == selected,
+                              onSelected: (_) => onSelected(option),
+                          );
                     }).toList(),
                 ),
             ],

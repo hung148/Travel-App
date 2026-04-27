@@ -23,7 +23,7 @@ class Preference {
   /// - "History"
   /// - "Food"
   /// - "Mix"
-  final String experienceType;
+  final List<String> experienceType;
 
   /// How active the user wants the trip
   /// Examples:
@@ -92,7 +92,7 @@ class Preference {
   /// Example:
   /// preference = preference.copyWith(spendingStyle: "Luxury");
   Preference copyWith({
-    String? experienceType,
+    List<String>? experienceType,
     String? activityLevel,
     String? spendingStyle,
     List<String>? interests,
@@ -119,7 +119,7 @@ class Preference {
     if (identical(this, other)) return true;
 
     return other is Preference &&
-        other.experienceType == experienceType &&
+        _listEquals(other.experienceType, experienceType) &&
         other.activityLevel == activityLevel &&
         other.spendingStyle == spendingStyle &&
         _listEquals(other.interests, interests);
@@ -128,7 +128,7 @@ class Preference {
   /// HashCode (required when overriding ==)
   @override
   int get hashCode {
-    return experienceType.hashCode ^
+    return experienceType.join().hashCode ^
         activityLevel.hashCode ^
         spendingStyle.hashCode ^
         interests.hashCode;

@@ -43,11 +43,12 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Travel App',
-        initialRoute: '/',
+        initialRoute: '/preference',
         routes: {
           '/': (_) => const LoginPage(),
           '/signup': (_) => const SignupPage(),
           '/forgot-password': (_) => const ForgotPasswordPage(),
+          '/preference': (_) => const PreferencePage(ownerId: "test-user"),
         },
       ),
     );

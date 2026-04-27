@@ -23,7 +23,7 @@ class PreferencePage extends StatefulWidget {
 class _PreferencePageState extends State<PreferencePage> {
 
     // Store user's selection
-    String? _experienceType;
+    Set<String> _experienceType = {};
     String? _activityLevel;
     String? _spendingStyle;
 
@@ -38,7 +38,22 @@ class _PreferencePageState extends State<PreferencePage> {
       'Nature', 
       'History', 
       'Food', 
-      'Mix'
+      'Adventure',
+      'Culture',
+      'Art',
+      'Architecture',
+      'Nightlife',
+      'Shopping',
+      'Wellness',
+      'Religion & Spirituality',
+      'Photography',
+      'Wildlife',
+      'Beach',
+      'Music',
+      'Local Life',
+      'Sports',
+      'Family Friendly',
+      'Everything',
     ];
     final _activityOptions = [
       'Relaxed', 
@@ -87,7 +102,7 @@ class _PreferencePageState extends State<PreferencePage> {
         if (pref == null || _hasInitialized) return;
         WidgetsBinding.instance.addPostFrameCallback((_) {
             setState(() {
-                _experienceType = pref.experienceType;
+                _experienceType = Set.from(pref.experienceType);
                 _activityLevel = pref.activityLevel;
                 _spendingStyle = pref.spendingStyle;
                 _hasInitialized = true;
@@ -98,7 +113,7 @@ class _PreferencePageState extends State<PreferencePage> {
     // this check if user has selected all required preferences
     // this behave like a variable
     bool get _isValid =>
-        _experienceType != null &&
+        _experienceType.isNotEmpty &&
         _activityLevel != null &&
         _spendingStyle != null;
 
@@ -108,7 +123,7 @@ class _PreferencePageState extends State<PreferencePage> {
         final pref = Preference(
             id: vm.preference?.id ?? widget.ownerId,
             ownerId: widget.ownerId,
-            experienceType: _experienceType!,
+            experienceType: _experienceType.toList(),
             activityLevel: _activityLevel!,
             spendingStyle: _spendingStyle!,
             interests: vm.preference?.interests ?? [],
@@ -122,7 +137,7 @@ class _PreferencePageState extends State<PreferencePage> {
 
     // is THIS specific page's question answered ?
     bool _isAnswered(int page) => switch (page) {
-      0 => _experienceType != null,
+      0 =>  _experienceType.isNotEmpty,
       1 => _activityLevel != null,
       _ => _spendingStyle != null,
     };
@@ -258,13 +273,22 @@ class _PreferencePageState extends State<PreferencePage> {
                               pages[i]['options'] as 
                                 List<String>,
                             selected: switch (i) {
-                              0 => _experienceType,
+                              0 => null,
                               1 => _activityLevel,
                               _ => _spendingStyle,
                             },
+                            selectedList: switch (i) {
+                              0 => _experienceType,
+                              _ => {},
+                            },
                             onSelected: (v) => setState(() {
-                              if (i == 0) 
-                                {_experienceType = v;}
+                              if (i == 0) {
+                                if (_experienceType.contains(v)) {
+                                  _experienceType.remove(v);
+                                } else {
+                                  _experienceType.add(v);
+                                }
+                              }
                               else if (i == 1) 
                                 {_activityLevel = v;}
                               else 

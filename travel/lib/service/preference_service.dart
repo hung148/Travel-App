@@ -10,7 +10,7 @@ class PreferenceService {
     static final Preference _fakePreference = Preference(
       id: 'debug-preference-id',
       ownerId: 'test-user',
-      experienceType: 'nature',
+      experienceType: ['nature', 'food'],
       activityLevel: 'hyper active',
       spendingStyle: 'I pay for the whole trip',
       interests: ['exploring', 'coffee'],

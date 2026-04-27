@@ -42,7 +42,7 @@ void main() {
 
   // Helper to make a test preference
   Preference makePreference({
-    String experienceType = 'Nature',
+    List<String> experienceType = const ['Nature', 'food'],
     String activityLevel = 'Relaxed',
     String spendingStyle = 'Budget',
   }) {
@@ -165,7 +165,7 @@ void main() {
     testWidgets('pre-selects chips when existing preference is loaded',
         (tester) async {
       when(mockVm.preference).thenReturn(makePreference(
-        experienceType: 'History',
+        experienceType: ['History', 'relax'],
         activityLevel: 'Very Active',
         spendingStyle: 'Normal',
       ));
