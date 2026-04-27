@@ -6,7 +6,9 @@ import 'package:travel/service/auth_service.dart';
 import 'package:travel/service/preference_service.dart';
 import 'package:travel/viewmodels/auth_viewmodel.dart';
 import 'package:travel/viewmodels/preference_viewmodel.dart';
+import 'package:travel/views/preferences/forgot_password.dart';
 import 'package:travel/views/preferences/login.dart';
+import 'package:travel/views/preferences/sign_up.dart';
 
 import 'firebase_options.dart';
 
@@ -37,10 +39,15 @@ class MyApp extends StatelessWidget {
           create: (_) => PreferenceViewmodel(preferenceService),
         ),
       ],
-      child: const MaterialApp(
+      child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Travel App',
-        home: LoginPage(),
+        initialRoute: '/',
+        routes: {
+          '/': (_) => const LoginPage(),
+          '/signup': (_) => const SignupPage(),
+          '/forgot-password': (_) => const ForgotPasswordPage(),
+        },
       ),
     );
   }
