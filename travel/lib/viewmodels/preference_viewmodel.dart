@@ -58,4 +58,10 @@ class PreferenceViewmodel extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  // reset savedFlag
+  void resetSavedFlag() {
+    savedSuccessfully = false;
+    notifyListeners();
+  }
 }

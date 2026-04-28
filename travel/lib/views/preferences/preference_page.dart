@@ -33,6 +33,9 @@ class _PreferencePageState extends State<PreferencePage> {
     // Track which page is currently visible
     int _currentPage = 0;
 
+    // Look up for itemBuilder
+    late final List<Map<String, dynamic>> pages;
+
     // chip labels for each section
     final _experienceOptions = [
       'Nature', 
@@ -76,6 +79,21 @@ class _PreferencePageState extends State<PreferencePage> {
     @override
     void initState() {
         super.initState();
+
+        pages = [
+          {
+            'label': 'What do you enjoy?', 
+            'options': _experienceOptions
+          },
+          {
+            'label': 'Trip pace',          
+            'options': _activityOptions
+          },
+          {
+            'label': 'Budget preference',  
+            'options': _spendingOptions
+          },
+        ];
 
         // this wait until the first frame is drawn
         // then call the ViewModel loadPreference(ownerId)
@@ -142,201 +160,243 @@ class _PreferencePageState extends State<PreferencePage> {
       _ => _spendingStyle != null,
     };
 
+    void _onExperienceSelected(String v) {
+      setState(() {
+        if (v == 'Everything') {
+          if (_experienceType.contains('Everything')) {
+            _experienceType.remove('Everything');
+          } else {
+            _experienceType = {'Everything'};
+          }
+        } else {
+          _experienceType.remove('Everything');
+          if (_experienceType.contains(v)) {
+            _experienceType.remove(v);
+          } else {
+            _experienceType.add(v);
+          }
+        }
+      });
+    }
+
     // this function is called whenvever Flutter needs to redraw 
     // this screen
     @override
     Widget build(BuildContext context) {
-        // list map so itemBuilder can look up the label
-        // and options by index i
-        final pages = [
-        {
-          'label': 'What do you enjoy?', 
-          'options': _experienceOptions
-        },
-        {
-          'label': 'Trip pace',          
-          'options': _activityOptions
-        },
-        {
-          'label': 'Budget preference',  
-          'options': _spendingOptions
-        },
-      ];
 
-        // basic structure
-        return Scaffold(
-          // Top bar of the screen
-          appBar: AppBar(
-            title: const Text('Travel Preferences'),
-            // bottom parameter requires a widget that knows
-            // its own height.
-            bottom: PreferredSize(
-              // PreferredSize wraps any widget and tells
-              // AppBar that it is 8px tall.
-              preferredSize: const Size.fromHeight(8),
-              // watches _progressValue. Every time it changes,
-              // it smoothly animates from the old value to 
-              // the new one. You get the animated value as
-              // value in the builder
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0, end: _progressValue), 
-                duration: const Duration(microseconds: 400),
-                curve: Curves.easeInOut, 
-                builder: (context, value, _) {
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: LinearProgressIndicator(
-                      value: value,
-                      minHeight: 8,
-                      backgroundColor: Colors.grey[200],
-                      valueColor: AlwaysStoppedAnimation(
-                        Theme.of(context).colorScheme.primary,
-                      ),
+        // Fix Android back gesture 
+        return PopScope(
+          canPop: _currentPage == 0,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) {
+              _pageController.previousPage(
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeInOut,
+              );
+            }
+          },
+          // basic structure
+          child: Scaffold(
+            // Top bar of the screen
+            appBar: AppBar(
+              // go back to previous question
+              leading: _currentPage > 0
+                ? IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () => _pageController
+                      .previousPage(
+                        duration: const 
+                          Duration(milliseconds: 400),
+                        curve: Curves.easeInOut,
                     ),
-                  );
-                },
+                  )
+                : null,
+              title: const Text('Travel Preferences'),
+              // bottom parameter requires a widget that knows
+              // its own height.
+              bottom: PreferredSize(
+                // PreferredSize wraps any widget and tells
+                // AppBar that it is 8px tall.
+                preferredSize: const Size.fromHeight(8),
+                // watches _progressValue. Every time it changes,
+                // it smoothly animates from the old value to 
+                // the new one. You get the animated value as
+                // value in the builder
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: _progressValue), 
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeInOut, 
+                  builder: (context, value, _) {
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: LinearProgressIndicator(
+                        value: value,
+                        minHeight: 8,
+                        backgroundColor: Theme.of(context)
+                          .colorScheme.surfaceContainerHighest,
+                        valueColor: AlwaysStoppedAnimation(
+                          Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
-          ),
-          // Consumer is a widget from the Provider package
-          // It listens to changes in PreferenceViewModel
-          // Whenever the ViewModel notifies listeners (e.g.,
-          // after loading or saving), the UI inside this
-          // Consumer rebuilds.
-          // This ensures the screen reacts to async Firestore
-          // loads and save events.
-          body: Consumer<PreferenceViewmodel>(
-              // context -> Flutter context
-              // vm -> the current instance of 
-              // PreferenceViewmodel
-              // _ -> the child parameter (unused here)
-              builder: (context, vm, _) {
-                // After ViewModel loads preferences from 
-                // Firestore, this method ensures the chips
-                // are pre-selected with saved values.
-                _syncFromViewModel(vm.preference);
+            // Consumer is a widget from the Provider package
+            // It listens to changes in PreferenceViewModel
+            // Whenever the ViewModel notifies listeners (e.g.,
+            // after loading or saving), the UI inside this
+            // Consumer rebuilds.
+            // This ensures the screen reacts to async Firestore
+            // loads and save events.
+            body: Consumer<PreferenceViewmodel>(
+                // context -> Flutter context
+                // vm -> the current instance of 
+                // PreferenceViewmodel
+                // _ -> the child parameter (unused here)
+                builder: (context, vm, _) {
+                  // After ViewModel loads preferences from 
+                  // Firestore, this method ensures the chips
+                  // are pre-selected with saved values.
+                  _syncFromViewModel(vm.preference);
+          
+                  // If the ViewModel is currently loading
+                  // that is fetching from Firestore
+                  if (vm.isLoading) {
+                      // Show a loading spinner
+                      // Stop building the rest of the UI
+                      return const Center(
+                        child: CircularProgressIndicator()
+                      );
+                  }
+          
+                  // When saving finishes successfully
+                  if (vm.savedSuccessfully) {
+                      // addPostFrameCallback ensures
+                      // No setState or UI changes happen during
+                      // build phase
+                      WidgetsBinding
+                        .instance
+                        .addPostFrameCallback((_) {
+                          // A SnackBar is shown after the frame
+                          // to avoid calling ScaffoldMessenger 
+                          // during build
+                          ScaffoldMessenger
+                          .of(context)
+                          .showSnackBar(
+                            const SnackBar(
+                              content: Text('Preferences saved!')
+                            ),
+                          );
+                          // savedSuccessfully stay true forever
+                          // this reset that
+                          vm.resetSavedFlag();
 
-                // If the ViewModel is currently loading
-                // that is fetching from Firestore
-                if (vm.isLoading) {
-                    // Show a loading spinner
-                    // Stop building the rest of the UI
-                    return const Center(
-                      child: CircularProgressIndicator()
-                    );
-                }
+                          // navigate to homepage
+                      });
+                  }
+                  
+                  // The main UI is returned here
+                  return PageView.builder(
+                    controller: _pageController,
+                    physics: const NeverScrollableScrollPhysics(),
+                    onPageChanged: (i) => setState(() {
+                      _currentPage = i;
+                    }),
+                    itemCount: _totalQuestion,
+                    itemBuilder: (context, i) {
+                      final isLast = i == (_totalQuestion - 1);
+                  
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          24, 24, 24, 24),
+                        child: Column(
+                          crossAxisAlignment: 
+                            CrossAxisAlignment.start,
+                          children: [
+                            
+                            // Page indicator
+                            Text(
+                              'Question ${i + 1} of ' 
+                              '$_totalQuestion',
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                  .colorScheme.onSurface
+                                  .withValues(alpha: 0.5),
+                                fontSize: 13,
+                              ),
+                            ),
 
-                // When saving finishes successfully
-                if (vm.savedSuccessfully) {
-                    // addPostFrameCallback ensures
-                    // No setState or UI changes happen during
-                    // build phase
-                    WidgetsBinding
-                      .instance
-                      .addPostFrameCallback((_) {
-                        // A SnackBar is shown after the frame
-                        // to avoid calling ScaffoldMessenger 
-                        // during build
-                        ScaffoldMessenger
-                        .of(context)
-                        .showSnackBar(
-                          const SnackBar(
-                            content: Text('Preferences saved!')
-                          ),
-                        );
-                    });
-                }
-                
-                // The main UI is returned here
-                return PageView.builder(
-                  controller: _pageController,
-                  physics: const NeverScrollableScrollPhysics(),
-                  onPageChanged: (i) => setState(() {
-                    _currentPage = i;
-                  }),
-                  itemCount: _totalQuestion,
-                  itemBuilder: (context, i) {
-                    final isLast = i == (_totalQuestion - 1);
-                
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        24, 24, 24, 24),
-                      child: Column(
-                        crossAxisAlignment: 
-                          CrossAxisAlignment.start,
-                        children: [
-                
-                          // Question
-                          ChipSection(
-                            label: pages[i]['label'] as String,
-                            options: 
-                              pages[i]['options'] as 
-                                List<String>,
-                            selected: switch (i) {
-                              0 => null,
-                              1 => _activityLevel,
-                              _ => _spendingStyle,
-                            },
-                            selectedList: switch (i) {
-                              0 => _experienceType,
-                              _ => {},
-                            },
-                            onSelected: (v) => setState(() {
-                              if (i == 0) {
-                                if (_experienceType.contains(v)) {
-                                  _experienceType.remove(v);
+                            const SizedBox(height: 8), // small gap
+
+                            // Question
+                            ChipSection(
+                              label: pages[i]['label'] as String,
+                              options: 
+                                pages[i]['options'] as 
+                                  List<String>,
+                              selected: switch (i) {
+                                0 => null,
+                                1 => _activityLevel,
+                                _ => _spendingStyle,
+                              },
+                              selectedList: switch (i) {
+                                0 => _experienceType,
+                                _ => {},
+                              },
+                              onSelected: (v) => setState(() {
+                                if (i == 0) {
+                                  _onExperienceSelected(v);
+                                } else if (i == 1) {
+                                  _activityLevel = v;
                                 } else {
-                                  _experienceType.add(v);
+                                  _spendingStyle = v;
                                 }
-                              }
-                              else if (i == 1) 
-                                {_activityLevel = v;}
-                              else 
-                                {_spendingStyle = v;}
-                            }),
-                          ),
-                
-                          // spacing
-                          const Spacer(),
-                
-                          // Next or Save button
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton(
-                              onPressed: _isAnswered(i)
-                                ? () {
-                                  if (isLast) {
-                                    _save(vm);
-                                  } else {
-                                    _pageController.nextPage(
-                                      duration: 
-                                        const Duration(
-                                          milliseconds: 400,
-                                        ), 
-                                      curve: Curves.easeInOut,
-                                    );
-                                  }
-                                } : null, 
-                              child: Padding(
-                                padding: const EdgeInsets
-                                  .symmetric(vertical: 14),
-                                child: Text(
-                                  isLast 
-                                  ? 'Save preferences' 
-                                  : 'Next',  // label changes
-                                  style: const TextStyle(
-                                    fontSize: 16,
+                              }),
+                            ),
+                  
+                            // spacing
+                            const Spacer(),
+                  
+                            // Next or Save button
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: _isAnswered(i)
+                                  ? () {
+                                    if (isLast) {
+                                      _save(vm);
+                                    } else {
+                                      _pageController.nextPage(
+                                        duration: 
+                                          const Duration(
+                                            milliseconds: 400,
+                                          ), 
+                                        curve: Curves.easeInOut,
+                                      );
+                                    }
+                                  } : null, 
+                                child: Padding(
+                                  padding: const EdgeInsets
+                                    .symmetric(vertical: 14),
+                                  child: Text(
+                                    isLast 
+                                    ? 'Save preferences' 
+                                    : 'Next',  // label changes
+                                    style: Theme.of(context)
+                                      .textTheme.bodyLarge,
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ); 
-                  },
-                );
-              },
+                          ],
+                        ),
+                      ); 
+                    },
+                  );
+                },
+            ),
           ),
         );
     }

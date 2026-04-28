@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
+import 'package:travel/core/theme/app_theme.dart';
 
 import 'package:travel/service/auth_service.dart';
 import 'package:travel/service/preference_service.dart';
 import 'package:travel/viewmodels/auth_viewmodel.dart';
 import 'package:travel/viewmodels/preference_viewmodel.dart';
-import 'package:travel/views/preferences/forgot_password.dart';
-import 'package:travel/views/preferences/login.dart';
-import 'package:travel/views/preferences/sign_up.dart';
+import 'package:travel/views/auth/forgot_password.dart';
+import 'package:travel/views/auth/login.dart';
+import 'package:travel/views/auth/sign_up.dart';
 import 'package:travel/views/preferences/preference_page.dart';
 
 import 'firebase_options.dart';
@@ -43,6 +44,9 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Travel App',
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: ThemeMode.system,
         initialRoute: '/preference',
         routes: {
           '/': (_) => const LoginPage(),
