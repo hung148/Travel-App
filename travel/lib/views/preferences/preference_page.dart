@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 // use to talk to PreferenceViewModel
 import 'package:provider/provider.dart'; 
 import 'package:travel/models/preference/preferences.dart';
+import 'package:travel/viewmodels/auth_viewmodel.dart';
 import 'package:travel/viewmodels/preference_viewmodel.dart';
 import 'package:travel/widgets/chips/chips.dart';
 
@@ -293,7 +294,16 @@ class _PreferencePageState extends State<PreferencePage> {
                           // this reset that
                           vm.resetSavedFlag();
 
+                          // tell auth that user is not new
+                          // anymore 
+                          context.read<AuthViewModel>()
+                          .completeOnboarding();
+
                           // navigate to homepage
+                          Navigator.pushReplacementNamed(
+                            context, 
+                            '/home'
+                          );
                       });
                   }
                   

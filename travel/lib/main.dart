@@ -7,9 +7,11 @@ import 'package:travel/service/auth_service.dart';
 import 'package:travel/service/preference_service.dart';
 import 'package:travel/viewmodels/auth_viewmodel.dart';
 import 'package:travel/viewmodels/preference_viewmodel.dart';
+import 'package:travel/views/auth/auth_gate.dart';
 import 'package:travel/views/auth/forgot_password.dart';
 import 'package:travel/views/auth/login.dart';
 import 'package:travel/views/auth/sign_up.dart';
+import 'package:travel/views/home/home_page.dart';
 import 'package:travel/views/preferences/preference_page.dart';
 
 import 'firebase_options.dart';
@@ -47,12 +49,11 @@ class MyApp extends StatelessWidget {
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         themeMode: ThemeMode.system,
-        initialRoute: '/preference',
+        home: const AuthGate(),
         routes: {
-          '/': (_) => const LoginPage(),
           '/signup': (_) => const SignupPage(),
           '/forgot-password': (_) => const ForgotPasswordPage(),
-          '/preference': (_) => const PreferencePage(ownerId: "test-user"),
+          '/home': (_) => const HomePage(),
         },
       ),
     );
