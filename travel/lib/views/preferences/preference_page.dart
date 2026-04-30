@@ -133,8 +133,8 @@ class _PreferencePageState extends State<PreferencePage> {
     // this behave like a variable
     bool get _isValid =>
         _experienceType.isNotEmpty &&
-        _activityLevel != null &&
-        _spendingStyle != null;
+        (_activityLevel != null || _activityLevel != "") &&
+        (_spendingStyle != null || _spendingStyle != "");
 
     // this save preference
     void _save(PreferenceViewmodel vm) {
@@ -157,8 +157,8 @@ class _PreferencePageState extends State<PreferencePage> {
     // is THIS specific page's question answered ?
     bool _isAnswered(int page) => switch (page) {
       0 =>  _experienceType.isNotEmpty,
-      1 => _activityLevel != null,
-      _ => _spendingStyle != null,
+      1 => (_activityLevel != null || _activityLevel != ""),
+      _ => (_spendingStyle != null || _spendingStyle != ""),
     };
 
     void _onExperienceSelected(String v) {
@@ -375,6 +375,9 @@ class _PreferencePageState extends State<PreferencePage> {
                               child: FilledButton(
                                 onPressed: _isAnswered(i)
                                   ? () {
+                                    print(i);
+                                    print(_activityLevel);
+                                    print(_spendingStyle);
                                     if (isLast) {
                                       _save(vm);
                                     } else {

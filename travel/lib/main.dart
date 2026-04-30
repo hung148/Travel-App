@@ -9,10 +9,8 @@ import 'package:travel/viewmodels/auth_viewmodel.dart';
 import 'package:travel/viewmodels/preference_viewmodel.dart';
 import 'package:travel/views/auth/auth_gate.dart';
 import 'package:travel/views/auth/forgot_password.dart';
-import 'package:travel/views/auth/login.dart';
 import 'package:travel/views/auth/sign_up.dart';
 import 'package:travel/views/home/home_page.dart';
-import 'package:travel/views/preferences/preference_page.dart';
 
 import 'firebase_options.dart';
 

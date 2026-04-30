@@ -37,11 +37,13 @@ class _LoginPageState extends State<LoginPage> {
 
     final authViewModel = context.read<AuthViewModel>();
     authViewModel.login(email, password).then((_) {
+      if (!mounted) return;
       if (authViewModel.user != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Login successful")),
         );
-        // TODO: Navigate to home page
+        // don't need to navigate here
+        // AuthGate take care of it
       } else if (authViewModel.errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(authViewModel.errorMessage!)),
