@@ -9,6 +9,9 @@ class Trip {
   final double budget;
   final int days;
   final String status;
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final int? rating;
 
   // constructor
   Trip({
@@ -21,6 +24,9 @@ class Trip {
     required this.budget,
     required this.days,
     required this.status,
+    this.startDate,
+    this.endDate,
+    this.rating,
   });
 
   // Convert Firestore data to Trip
@@ -46,6 +52,9 @@ class Trip {
       budget: data['budget'],
       days: data['days'],
       status: data['status'],
+      startDate: data['startDate'] != null ? (data['startDate'] as DateTime) : null,
+      endDate: data['endDate'] != null ? (data['endDate'] as DateTime) : null,
+      rating: data['rating'],
     );
   }
 
@@ -58,6 +67,9 @@ class Trip {
       'budget': budget,
       'days': days,
       'status': status,
+      'startDate': startDate,
+      'endDate': endDate,
+      'rating': rating,
     };
   }
 }
