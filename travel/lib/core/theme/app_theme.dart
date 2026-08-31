@@ -1,138 +1,120 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
+  static const primary = Color(0xFF2C7BE5);
+  static const secondary = Color(0xFF6C757D);
+  static const error = Color(0xFFE63757);
 
-  // ── Colors ──────────────────────────────────────
-  // These are your core colors, used by both themes
-
-  static const primary = Color(0xFF2C7BE5);    // clean blue
-  static const secondary = Color(0xFF6C757D);  // neutral grey
-  static const error = Color(0xFFE63757);      // red for errors
-
-  // Light mode specific
-  static const _lightBackground = Color(0xFFF8F9FA);
+  static const _lightBackground = Color(0xFFF5F7FB);
   static const _lightSurface = Color(0xFFFFFFFF);
-  static const _lightOnSurface = Color(0xFF1A1A2E);
+  static const _lightOnSurface = Color(0xFF172033);
 
-  // Dark mode specific
-  static const _darkBackground = Color(0xFF121212);
-  static const _darkSurface = Color(0xFF1E1E1E);
-  static const _darkOnSurface = Color(0xFFF8F9FA);
+  static const _darkBackground = Color(0xFF101318);
+  static const _darkSurface = Color(0xFF181D24);
+  static const _darkOnSurface = Color(0xFFF4F7FB);
 
-  // ── Light Theme ─────────────────────────────────
-  static ThemeData get light => ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.light,
-    colorScheme: ColorScheme.light(
+  static ThemeData get light => _buildTheme(
+        brightness: Brightness.light,
+        background: _lightBackground,
+        surface: _lightSurface,
+        onSurface: _lightOnSurface,
+      );
+
+  static ThemeData get dark => _buildTheme(
+        brightness: Brightness.dark,
+        background: _darkBackground,
+        surface: _darkSurface,
+        onSurface: _darkOnSurface,
+      );
+
+  static ThemeData _buildTheme({
+    required Brightness brightness,
+    required Color background,
+    required Color surface,
+    required Color onSurface,
+  }) {
+    final isDark = brightness == Brightness.dark;
+    final scheme = ColorScheme.fromSeed(
+      seedColor: primary,
+      brightness: brightness,
       primary: primary,
-      secondary: secondary,
       error: error,
-      surface: _lightSurface,
-      onSurface: _lightOnSurface,
-    ),
-    scaffoldBackgroundColor: _lightBackground,
+      surface: surface,
+    );
 
-    // AppBar
-    appBarTheme: const AppBarTheme(
-      backgroundColor: _lightSurface,
-      foregroundColor: _lightOnSurface,
-      elevation: 0,
-      centerTitle: false,
-    ),
-
-    // Chips
-    chipTheme: ChipThemeData(
-      backgroundColor: _lightBackground,
-      selectedColor: primary.withValues(alpha: 0.15),
-      labelStyle: const TextStyle(fontSize: 14),
-      side: BorderSide(color: Colors.grey.shade300),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+    return ThemeData(
+      useMaterial3: true,
+      brightness: brightness,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: background,
+      dividerColor: isDark ? Colors.white24 : const Color(0xFFDDE3EC),
+      appBarTheme: AppBarTheme(
+        backgroundColor: background,
+        foregroundColor: onSurface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
       ),
-    ),
-
-    // FilledButton
-    filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        backgroundColor: primary,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: surface,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFDCE2EA)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFDCE2EA)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: primary, width: 1.6),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: error),
         ),
       ),
-    ),
-
-    // Text
-    textTheme: const TextTheme(
-      headlineMedium: TextStyle(
-        fontSize: 24,
-        fontWeight: FontWeight.bold,
-        color: _lightOnSurface,
-      ),
-      bodyMedium: TextStyle(
-        fontSize: 14,
-        color: _lightOnSurface,
-      ),
-    ),
-  );
-
-  // ── Dark Theme ──────────────────────────────────
-  static ThemeData get dark => ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.dark,
-    colorScheme: ColorScheme.dark(
-      primary: primary,
-      secondary: secondary,
-      error: error,
-      surface: _darkSurface,
-      onSurface: _darkOnSurface,
-    ),
-    scaffoldBackgroundColor: _darkBackground,
-
-    // AppBar
-    appBarTheme: const AppBarTheme(
-      backgroundColor: _darkSurface,
-      foregroundColor: _darkOnSurface,
-      elevation: 0,
-      centerTitle: false,
-    ),
-
-    // Chips
-    chipTheme: ChipThemeData(
-      backgroundColor: _darkSurface,
-      selectedColor: primary.withValues(alpha: 0.3),
-      labelStyle: const TextStyle(fontSize: 14),
-      side: BorderSide(color: Colors.grey.shade800),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-      ),
-    ),
-
-    // FilledButton
-    filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        backgroundColor: primary,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: primary,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
       ),
-    ),
-
-    // Text
-    textTheme: const TextTheme(
-      headlineMedium: TextStyle(
-        fontSize: 24,
-        fontWeight: FontWeight.bold,
-        color: _darkOnSurface,
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: onSurface,
+          side: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFDCE2EA)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
       ),
-      bodyMedium: TextStyle(
-        fontSize: 14,
-        color: _darkOnSurface,
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: primary,
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
       ),
-      bodyLarge: TextStyle(
-        fontSize: 16
+      chipTheme: ChipThemeData(
+        backgroundColor: surface,
+        selectedColor: primary.withValues(alpha: 0.12),
+        side: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFDCE2EA)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       ),
-    ),
-  );
+      textTheme: TextTheme(
+        headlineMedium: TextStyle(
+          fontSize: 28,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.5,
+          color: onSurface,
+        ),
+        titleLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: onSurface),
+        bodyLarge: TextStyle(fontSize: 16, color: onSurface),
+        bodyMedium: TextStyle(fontSize: 14, color: onSurface),
+      ),
+    );
+  }
 }

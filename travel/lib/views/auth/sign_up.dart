@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travel/viewmodels/auth_viewmodel.dart';
+import 'package:travel/widgets/auth_layout.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
@@ -10,6 +11,7 @@ class SignupPage extends StatefulWidget {
 }
 
 class _SignupPageState extends State<SignupPage> {
+  final _formKey = GlobalKey<FormState>();
   final nameController = TextEditingController();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
@@ -27,202 +29,152 @@ class _SignupPageState extends State<SignupPage> {
     super.dispose();
   }
 
-  void signup() {
-    final name = nameController.text.trim();
-    final email = emailController.text.trim();
-    final password = passwordController.text.trim();
-    final confirmPassword = confirmPasswordController.text.trim();
-
-    if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please fill in all fields")),
-      );
-      return;
-    }
-
-    if (password != confirmPassword) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Passwords do not match")),
-      );
-      return;
-    }
+  Future<void> signup() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final authViewModel = context.read<AuthViewModel>();
-    authViewModel.register(name, email, password).then((_) {
-      if (authViewModel.user != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Account created successfully")),
-        );
-        Navigator.pop(context);
-      } else if (authViewModel.errorMessage != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(authViewModel.errorMessage!)),
-        );
-      }
-    });
+    await authViewModel.register(
+      nameController.text.trim(),
+      emailController.text.trim(),
+      passwordController.text,
+    );
+
+    if (!mounted) return;
+
+    if (authViewModel.user != null) {
+      Navigator.pop(context);
+      return;
+    }
+
+    if (authViewModel.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(authViewModel.errorMessage!)),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return AuthLayout(
+      title: 'Create your account',
+      subtitle: 'A few details now, then we can personalize every trip you plan.',
+      icon: Icons.person_add_alt_1_rounded,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          children: [
+            TextFormField(
+              controller: nameController,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.name],
+              decoration: const InputDecoration(
+                labelText: 'Full name',
+                prefixIcon: Icon(Icons.person_outline_rounded),
+              ),
+              validator: (value) => (value?.trim().isEmpty ?? true)
+                  ? 'Enter your full name'
+                  : null,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: emailController,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.email],
+              decoration: const InputDecoration(
+                labelText: 'Email address',
+                prefixIcon: Icon(Icons.mail_outline_rounded),
+              ),
+              validator: (value) {
+                final email = value?.trim() ?? '';
+                if (email.isEmpty) return 'Enter your email address';
+                if (!email.contains('@')) return 'Enter a valid email address';
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: passwordController,
+              obscureText: hidePassword,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                labelText: 'Password',
+                prefixIcon: const Icon(Icons.lock_outline_rounded),
+                helperText: 'Use at least 6 characters',
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    hidePassword
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                  onPressed: () => setState(() => hidePassword = !hidePassword),
+                ),
+              ),
+              validator: (value) {
+                if ((value ?? '').length < 6) return 'Password must be at least 6 characters';
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: confirmPasswordController,
+              obscureText: hideConfirmPassword,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => signup(),
+              decoration: InputDecoration(
+                labelText: 'Confirm password',
+                prefixIcon: const Icon(Icons.verified_user_outlined),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    hideConfirmPassword
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                  onPressed: () => setState(
+                    () => hideConfirmPassword = !hideConfirmPassword,
+                  ),
+                ),
+              ),
+              validator: (value) {
+                if (value != passwordController.text) return 'Passwords do not match';
+                return null;
+              },
+            ),
+            const SizedBox(height: 24),
+            Consumer<AuthViewModel>(
+              builder: (context, authViewModel, _) {
+                return SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: FilledButton(
+                    onPressed: authViewModel.isLoading ? null : signup,
+                    child: authViewModel.isLoading
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('Create account'),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Center(
-                  child: Icon(
-                    Icons.person_add_alt_1,
-                    size: 80,
-                    color: Color(0xFF2E7DFF),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                const Text(
-                  "Create Account",
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-
-    const SizedBox(height: 8),
-                TextField(
-                  controller: nameController,
-                  decoration: inputDecoration("Full Name", Icons.person_outline),
-                ),
-
-                const SizedBox(height: 16),
-
-                TextField(
-                  controller: emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: inputDecoration("Email", Icons.email_outlined),
-                ),
-
-                const SizedBox(height: 16),
-
-                TextField(
-                  controller: passwordController,
-                  obscureText: hidePassword,
-                  decoration: inputDecoration(
-                    "Password",
-                    Icons.lock_outline,
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        hidePassword ? Icons.visibility_off : Icons.visibility,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          hidePassword = !hidePassword;
-                        });
-                      },
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                TextField(
-                  controller: confirmPasswordController,
-                  obscureText: hideConfirmPassword,
-                  decoration: inputDecoration(
-                    "Confirm Password",
-                    Icons.lock_outline,
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        hideConfirmPassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          hideConfirmPassword = !hideConfirmPassword;
-                        });
-                      },
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 28),
-
-                Consumer<AuthViewModel>(
-                  builder: (context, authViewModel, _) {
-                    return SizedBox(
-                      width: double.infinity,
-                      height: 55,
-                      child: ElevatedButton(
-                        onPressed: authViewModel.isLoading ? null : signup,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2E7DFF),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        child: authViewModel.isLoading
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
-                                  ),
-                                ),
-                              )
-                            : const Text(
-                                "Sign Up",
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                      ),
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 20),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text("Already have an account?"),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                      child: const Text("Login"),
-                    ),
-                  ],
+                const Text('Already have an account?'),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Sign in'),
                 ),
               ],
             ),
-          ),
+          ],
         ),
-      ),
-    );
-  }
-
-  InputDecoration inputDecoration(
-    String label,
-    IconData icon, {
-    Widget? suffixIcon,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      prefixIcon: Icon(icon),
-      suffixIcon: suffixIcon,
-      filled: true,
-      fillColor: Colors.white,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
       ),
     );
   }

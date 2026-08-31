@@ -78,7 +78,7 @@ class Preference {
     return Preference(
       id: id,
       ownerId: map['ownerId'] ?? '',
-      experienceType: map['experienceType'] ?? '',
+      experienceType: List<String>.from(map['experienceType'] ?? []),
       activityLevel: map['activityLevel'] ?? '',
       spendingStyle: map['spendingStyle'] ?? '',
       interests: List<String>.from(map['interests'] ?? []),
