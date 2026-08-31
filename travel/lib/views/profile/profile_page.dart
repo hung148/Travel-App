@@ -1,494 +1,305 @@
 import 'package:flutter/material.dart';
-import '../../models/user.dart';
-import '../../models/trip/trip.dart';
+import 'package:provider/provider.dart';
+import '../../viewmodels/auth_viewmodel.dart';
+import '../preferences/preference_page.dart';
 import '../../models/preference/preferences.dart';
-import '../widgets/trip_history_widget.dart';
- 
-class ProfilePage extends StatefulWidget {
+import '../../models/trip/trip.dart';
+import '../../models/user.dart';
+import '../../widgets/trip_history_widget.dart';
+
+class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
- 
-  @override
-  State<ProfilePage> createState() => _ProfilePageState();
-}
- 
-class _ProfilePageState extends State<ProfilePage>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animController;
-  late Animation<double> _fadeAnim;
- 
-  // TODO: Replace with actual ViewModel/Provider data
-  final AppUser _mockUser = AppUser(
-    uid: 'u001',
+
+  static final AppUser _mockUser = AppUser(
+    uid: 'demo-user',
     name: 'Alex Rivera',
-    email: 'alex.rivera@email.com',
+    email: 'alex@example.com',
     profileImage: null,
   );
- 
-  final Preference _mockPref = Preference(
-    id: 'p001',
-    ownerId: 'u001',
-    experienceType: ['Mix'],
+
+  static final Preference _mockPreference = Preference(
+    id: 'demo-pref',
+    ownerId: 'demo-user',
+    experienceType: const ['Food', 'History'],
     activityLevel: 'Moderate',
     spendingStyle: 'Normal',
-    interests: ['Coffee', 'Attractions'],
+    interests: const ['Coffee', 'Shopping'],
   );
- 
-  final List<Trip> _mockTrips = [
+
+  static final List<Trip> _mockTrips = [
     Trip(
-      id: 't1',
-      ownerId: 'u001',
-      destination: 'Đà Nẵng, Vietnam',
-      budget: 800,
+      id: 'trip-1',
+      ownerId: 'demo-user',
+      destination: 'Tokyo, Japan',
+      budget: 2200,
+      days: 6,
+      status: 'upcoming',
+      startDate: DateTime(2026, 10, 12),
+      endDate: DateTime(2026, 10, 17),
+    ),
+    Trip(
+      id: 'trip-2',
+      ownerId: 'demo-user',
+      destination: 'Da Nang, Vietnam',
+      budget: 900,
       days: 5,
       status: 'completed',
-      startDate: DateTime(2025, 3, 10),
-      endDate: DateTime(2025, 3, 15),
-      rating: 4,
-    ),
-    Trip(
-      id: 't2',
-      ownerId: 'u001',
-      destination: 'Bangkok, Thailand',
-      budget: 1200,
-      days: 7,
-      status: 'upcoming',
-      startDate: DateTime(2026, 6, 1),
-      endDate: DateTime(2026, 6, 8),
-    ),
-    Trip(
-      id: 't3',
-      ownerId: 'u001',
-      destination: 'Kyoto, Japan',
-      budget: 2000,
-      days: 6,
-      status: 'completed',
-      startDate: DateTime(2024, 11, 5),
-      endDate: DateTime(2024, 11, 11),
+      startDate: DateTime(2026, 3, 8),
+      endDate: DateTime(2026, 3, 12),
       rating: 5,
     ),
+    Trip(
+      id: 'trip-3',
+      ownerId: 'demo-user',
+      destination: 'Bangkok, Thailand',
+      budget: 1200,
+      days: 4,
+      status: 'completed',
+      startDate: DateTime(2025, 12, 2),
+      endDate: DateTime(2025, 12, 5),
+      rating: 4,
+    ),
   ];
- 
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _fadeAnim =
-        CurvedAnimation(parent: _animController, curve: Curves.easeOut);
-    _animController.forward();
-  }
- 
-  @override
-  void dispose() {
-    _animController.dispose();
-    super.dispose();
-  }
- 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F8FF),
-      body: FadeTransition(
-        opacity: _fadeAnim,
-        child: CustomScrollView(
-          slivers: [
-            _buildSliverAppBar(),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 24),
-                    _buildStatsRow(),
-                    const SizedBox(height: 28),
-                    _buildPreferencesSection(),
-                    const SizedBox(height: 28),
-                    _buildTripHistorySection(),
-                    const SizedBox(height: 32),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: _buildAddTripFAB(),
-    );
-  }
- 
-  Widget _buildSliverAppBar() {
-    return SliverAppBar(
-      expandedHeight: 220,
-      pinned: true,
-      backgroundColor: const Color(0xFF1A1A2E),
-      flexibleSpace: FlexibleSpaceBar(
-        background: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Background gradient
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF1A1A2E), Color(0xFF2D2B55)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-            ),
-            // Decorative circles
-            Positioned(
-              top: -30,
-              right: -20,
-              child: Container(
-                width: 160,
-                height: 160,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF6B8CFF).withValues(alpha: 0.12),
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 10,
-              left: -40,
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF34C98B).withValues(alpha: 0.08),
-                ),
-              ),
-            ),
-            // Profile info
-            Positioned(
-              bottom: 20,
-              left: 20,
-              right: 20,
-              child: Row(
+      backgroundColor: const Color(0xFFF6F8FC),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1280),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+              child: Column(
                 children: [
-                  // Avatar
-                  Container(
-                    width: 68,
-                    height: 68,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF6B8CFF), Color(0xFF34C98B)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF6B8CFF).withValues(alpha: 0.4),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Text(
-                        _mockUser.name.isNotEmpty
-                            ? _mockUser.name[0].toUpperCase()
-                            : '?',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: 'Playfair Display',
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
+                  _TopBar(user: _mockUser),
+                  const SizedBox(height: 30),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _mockUser.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                            fontFamily: 'Playfair Display',
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _Hero(user: _mockUser),
+                          const SizedBox(height: 24),
+                          LayoutBuilder(builder: (context, constraints) {
+                            if (constraints.maxWidth < 850) {
+                              return Column(
+                                children: [
+                                  _TravelStyleCard(preference: _mockPreference),
+                                  const SizedBox(height: 16),
+                                  _UpcomingCard(trips: _mockTrips),
+                                ],
+                              );
+                            }
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: _TravelStyleCard(preference: _mockPreference)),
+                                const SizedBox(width: 16),
+                                Expanded(child: _UpcomingCard(trips: _mockTrips)),
+                              ],
+                            );
+                          }),
+                          const SizedBox(height: 32),
+                          const Text('Your trips', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 6),
+                          const Text('Review past adventures or continue planning an upcoming trip.', style: TextStyle(color: Color(0xFF667085))),
+                          const SizedBox(height: 16),
+                          TripHistoryWidget(
+                            trips: _mockTrips,
+                            onTripTap: (_) => Navigator.pushNamed(context, '/summary'),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _mockUser.email,
-                          style: const TextStyle(
-                            color: Colors.white60,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Edit preferences button
-                  GestureDetector(
-                    onTap: _onEditPreferences,
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.2)),
+                          const SizedBox(height: 32),
+                        ],
                       ),
-                      child: const Icon(Icons.tune_rounded,
-                          color: Colors.white, size: 20),
                     ),
                   ),
                 ],
               ),
             ),
-          ],
+          ),
         ),
       ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.logout_rounded,
-              color: Colors.white70, size: 20),
-          onPressed: _onLogout,
-        ),
-      ],
     );
   }
- 
-  Widget _buildStatsRow() {
-    final completed =
-        _mockTrips.where((t) => t.status == 'completed').length;
-    final upcoming =
-        _mockTrips.where((t) => t.status == 'upcoming').length;
-    final totalSpent = _mockTrips
-        .where((t) => t.status == 'completed')
-        .fold<double>(0, (sum, t) => sum + t.budget);
- 
+}
+
+class _TopBar extends StatelessWidget {
+  final AppUser user;
+  const _TopBar({required this.user});
+
+  @override
+  Widget build(BuildContext context) {
     return Row(
       children: [
-        _StatCard(
-            label: 'Trips Done', value: '$completed', icon: '✈️'),
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(color: const Color(0xFF2C7BE5), borderRadius: BorderRadius.circular(13)),
+          child: const Icon(Icons.travel_explore_rounded, color: Colors.white),
+        ),
         const SizedBox(width: 12),
-        _StatCard(
-            label: 'Upcoming', value: '$upcoming', icon: '🗓'),
-        const SizedBox(width: 12),
-        _StatCard(
-            label: 'Total Spent',
-            value: '\$${totalSpent.toStringAsFixed(0)}',
-            icon: '💰'),
-      ],
-    );
-  }
- 
-  Widget _buildPreferencesSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SectionHeader(
-          title: 'Your Travel Style',
-          onAction: _onEditPreferences,
-          actionLabel: 'Edit',
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _PrefChip(label: _mockPref.experienceType.isNotEmpty ? _mockPref.experienceType[0] : 'Mix', emoji: '🎯'),
-            _PrefChip(label: _mockPref.activityLevel, emoji: '🚶'),
-            _PrefChip(label: _mockPref.spendingStyle, emoji: '💵'),
-            ..._mockPref.interests
-                .map((i) => _PrefChip(label: i, emoji: '☕')),
-          ],
-        ),
-      ],
-    );
-  }
- 
-  Widget _buildTripHistorySection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SectionHeader(
-          title: 'Trip History',
-          onAction: null,
-          actionLabel: '',
-        ),
-        const SizedBox(height: 12),
-        TripHistoryWidget(
-          trips: _mockTrips,
-          onTripTap: (trip) {
-            // TODO: Navigate to trip detail
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Opening ${trip.destination}...')),
+        const Text('Travel App', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+        const Spacer(),
+        TextButton.icon(
+          onPressed: () {
+            final auth = context.read<AuthViewModel>();
+            final uid = auth.user?.uid ?? user.uid;
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PreferencePage(ownerId: uid)),
             );
           },
+          icon: const Icon(Icons.tune_rounded),
+          label: const Text('Preferences'),
+        ),
+        const SizedBox(width: 10),
+        CircleAvatar(
+          backgroundColor: const Color(0xFFEAF2FF),
+          foregroundColor: const Color(0xFF2C7BE5),
+          child: Text(user.name.substring(0, 1).toUpperCase()),
         ),
       ],
     );
   }
- 
-  Widget _buildAddTripFAB() {
-    return FloatingActionButton.extended(
-      onPressed: _onAddTrip,
-      backgroundColor: const Color(0xFF6B8CFF),
-      elevation: 4,
-      icon: const Icon(Icons.add_rounded, color: Colors.white),
-      label: const Text(
-        'New Trip',
-        style: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w600,
-          fontSize: 15,
-        ),
-      ),
-    );
-  }
- 
-  void _onEditPreferences() {
-    // TODO: Navigate to preference_page.dart
-  }
- 
-  void _onAddTrip() {
-    // TODO: Navigate to plan_trip_page.dart
-  }
- 
-  void _onLogout() {
-    // TODO: Call auth_viewmodel logout
-  }
 }
- 
-// ── Supporting widgets ──────────────────────────────────────
- 
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  final String actionLabel;
-  final VoidCallback? onAction;
- 
-  const _SectionHeader({
-    required this.title,
-    required this.actionLabel,
-    this.onAction,
-  });
- 
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF1A1A2E),
-            fontFamily: 'Playfair Display',
-          ),
-        ),
-        if (onAction != null)
-          GestureDetector(
-            onTap: onAction,
-            child: Text(
-              actionLabel,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF6B8CFF),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
- 
-class _StatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final String icon;
- 
-  const _StatCard(
-      {required this.label, required this.value, required this.icon});
- 
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Text(icon, style: const TextStyle(fontSize: 22)),
-            const SizedBox(height: 6),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF1A1A2E),
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11,
-                color: Color(0xFF8892A4),
-                fontWeight: FontWeight.w500,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
- 
-class _PrefChip extends StatelessWidget {
-  final String label;
-  final String emoji;
- 
-  const _PrefChip({required this.label, required this.emoji});
- 
+
+class _Hero extends StatelessWidget {
+  final AppUser user;
+  const _Hero({required this.user});
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      width: double.infinity,
+      padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: const Color(0xFFEEF1FF),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(26),
+        gradient: const LinearGradient(colors: [Color(0xFF143B73), Color(0xFF2C7BE5)]),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Wrap(
+        runSpacing: 20,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Text(emoji, style: const TextStyle(fontSize: 13)),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF3D4A6B),
+          SizedBox(
+            width: 620,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Welcome back, ${user.name.split(' ').first} 👋',
+                    style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 10),
+                const Text('Tell us where you want to go next. We’ll help organize the budget, places, and schedule.',
+                    style: TextStyle(color: Colors.white70, fontSize: 16, height: 1.5)),
+              ],
             ),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pushNamed(context, '/plan-trip'),
+            style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF143B73), padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18)),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Plan a new trip', style: TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
       ),
     );
   }
 }
- 
+
+class _TravelStyleCard extends StatelessWidget {
+  final Preference preference;
+  const _TravelStyleCard({required this.preference});
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = <String>[
+      ...preference.experienceType,
+      preference.activityLevel,
+      preference.spendingStyle,
+      ...preference.interests,
+    ];
+    return _Panel(
+      title: 'Your travel style',
+      subtitle: 'Used to personalize future plans.',
+      trailing: TextButton(
+        onPressed: () {
+          final auth = context.read<AuthViewModel>();
+          final uid = auth.user?.uid ?? preference.ownerId;
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => PreferencePage(ownerId: uid)),
+          );
+        },
+        child: const Text('Edit'),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: chips.map((text) => Chip(label: Text(text))).toList(),
+      ),
+    );
+  }
+}
+
+class _UpcomingCard extends StatelessWidget {
+  final List<Trip> trips;
+  const _UpcomingCard({required this.trips});
+
+  @override
+  Widget build(BuildContext context) {
+    Trip? upcoming;
+    for (final trip in trips) {
+      if (trip.status.toLowerCase() == 'upcoming') {
+        upcoming = trip;
+        break;
+      }
+    }
+    return _Panel(
+      title: 'Upcoming trip',
+      subtitle: upcoming == null ? 'Nothing planned yet.' : '${upcoming.destination} • ${upcoming.days} days',
+      trailing: upcoming == null ? null : TextButton(onPressed: () => Navigator.pushNamed(context, '/summary'), child: const Text('Open')),
+      child: upcoming == null
+          ? const Text('Start a new plan to see it here.')
+          : Row(
+              children: [
+                const Icon(Icons.calendar_month_rounded, color: Color(0xFF2C7BE5)),
+                const SizedBox(width: 10),
+                Text('Budget \$${upcoming.budget.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+              ],
+            ),
+    );
+  }
+}
+
+class _Panel extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget child;
+  final Widget? trailing;
+  const _Panel({required this.title, required this.subtitle, required this.child, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFE6EAF2))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800))),
+              if (trailing != null) trailing!,
+            ],
+          ),
+          Text(subtitle, style: const TextStyle(color: Color(0xFF667085))),
+          const SizedBox(height: 18),
+          child,
+        ],
+      ),
+    );
+  }
+}

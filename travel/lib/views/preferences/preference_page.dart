@@ -152,7 +152,7 @@ class _PreferencePageState extends State<PreferencePage> {
                   if (!mounted) return;
                   vm.resetSavedFlag();
                   context.read<AuthViewModel>().completeOnboarding();
-                  Navigator.pushReplacementNamed(context, '/home');
+                  Navigator.pushReplacementNamed(context, '/profile');
                 });
               }
 

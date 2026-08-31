@@ -10,8 +10,9 @@ import 'package:travel/viewmodels/preference_viewmodel.dart';
 import 'package:travel/views/auth/auth_gate.dart';
 import 'package:travel/views/auth/forgot_password.dart';
 import 'package:travel/views/auth/sign_up.dart';
-import 'package:travel/views/home/home_page.dart';
+import 'package:travel/views/profile/profile_page.dart';
 import 'package:travel/views/plan_trip/plan_trip_page.dart';
+import 'package:travel/views/summary/summary_page.dart';
 
 import 'firebase_options.dart';
 
@@ -52,8 +53,10 @@ class MyApp extends StatelessWidget {
         routes: {
           '/signup': (_) => const SignupPage(),
           '/forgot-password': (_) => const ForgotPasswordPage(),
-          '/home': (_) => const HomePage(),
+          '/home': (_) => const ProfilePage(),
+          '/profile': (_) => const ProfilePage(),
           '/plan-trip': (_) => const PlanTripPage(),
+          '/summary': (_) => const SummaryPage(),
         },
       ),
     );
