@@ -1,15 +1,6 @@
-/// user.dart
-///
-/// This file defines the AppUser model for your travel app.
-///
-/// Why we use this:
-/// - It gives your app a clean user object
-/// - It helps store user data in Firestore
-/// - It helps read Firestore data back into Dart
-/// - It keeps your code organized and easier to manage
-///
-/// We use AppUser instead of User because Firebase Auth already has
-/// its own class called User, and using the same name can cause confusion.
+// user.dart
+//
+// AppUser is the app's domain user, separate from Firebase Auth's User type.
 
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -27,6 +18,9 @@ class AppUser {
   /// This can be null if the user has not uploaded an image
   final String? profileImage;
 
+  /// Whether the user has finished the onboarding flow.
+  final bool onboardingCompleted;
+
   /// Main constructor
   ///
   /// required means these fields must be provided when creating an AppUser.
@@ -35,13 +29,14 @@ class AppUser {
     required this.name,
     required this.email,
     this.profileImage,
+    this.onboardingCompleted = false,
   });
 
   /// Converts this AppUser object into a Map
   ///
   /// Why needed:
   /// Firestore stores data as key-value pairs, so before saving user data,
-  /// we convert the object into a Map<String, dynamic>.
+  /// we convert the object into a `Map<String, dynamic>`.
   ///
   /// Example output:
   /// {
@@ -56,6 +51,7 @@ class AppUser {
       'name': name,
       'email': email,
       'profileImage': profileImage,
+      'onboardingCompleted': onboardingCompleted,
     };
   }
 
@@ -73,6 +69,7 @@ class AppUser {
       name: map['name'] ?? '',
       email: map['email'] ?? '',
       profileImage: map['profileImage'],
+      onboardingCompleted: map['onboardingCompleted'] == true,
     );
   }
 
@@ -105,13 +102,17 @@ class AppUser {
     String? uid,
     String? name,
     String? email,
-    String? profileImage,
+    Object? profileImage = _notProvided,
+    bool? onboardingCompleted,
   }) {
     return AppUser(
       uid: uid ?? this.uid,
       name: name ?? this.name,
       email: email ?? this.email,
-      profileImage: profileImage ?? this.profileImage,
+      profileImage: identical(profileImage, _notProvided)
+          ? this.profileImage
+          : profileImage as String?,
+      onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
     );
   }
 
@@ -135,16 +136,20 @@ class AppUser {
         other.uid == uid &&
         other.name == name &&
         other.email == email &&
-        other.profileImage == profileImage;
+        other.profileImage == profileImage &&
+        other.onboardingCompleted == onboardingCompleted;
   }
 
   /// Required when overriding ==
-/// Helps Dart generate a combined hash value for this object
+  /// Helps Dart generate a combined hash value for this object
   @override
   int get hashCode {
     return uid.hashCode ^
         name.hashCode ^
         email.hashCode ^
-        profileImage.hashCode;
+        profileImage.hashCode ^
+        onboardingCompleted.hashCode;
   }
 }
+
+const Object _notProvided = Object();

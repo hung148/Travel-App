@@ -14,7 +14,8 @@ class _AiChatWidgetState extends State<AiChatWidget> {
   final List<_ChatMessage> _messages = [
     const _ChatMessage(
       fromUser: false,
-      text: 'Tell me what you want to change. I can make the trip cheaper, calmer, more food-focused, or reduce travel time.',
+      text:
+          'Tell me what you want to change. I can make the trip cheaper, calmer, more food-focused, or reduce travel time.',
     ),
   ];
 
@@ -37,10 +38,7 @@ class _AiChatWidgetState extends State<AiChatWidget> {
     if (text.isEmpty) return;
     setState(() {
       _messages.add(_ChatMessage(fromUser: true, text: text));
-      _messages.add(_ChatMessage(
-        fromUser: false,
-        text: _mockResponse(text),
-      ));
+      _messages.add(_ChatMessage(fromUser: false, text: _mockResponse(text)));
     });
     _controller.clear();
     widget.onPlanChanged?.call();
@@ -83,8 +81,14 @@ class _AiChatWidgetState extends State<AiChatWidget> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('AI Travel Planner', style: TextStyle(fontWeight: FontWeight.w800)),
-                    Text('UI demo • mock responses', style: TextStyle(fontSize: 12, color: Color(0xFF7A8499))),
+                    Text(
+                      'AI Travel Planner',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    Text(
+                      'UI demo • mock responses',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF7A8499)),
+                    ),
                   ],
                 ),
               ],
@@ -95,19 +99,34 @@ class _AiChatWidgetState extends State<AiChatWidget> {
             child: ListView.separated(
               padding: const EdgeInsets.all(18),
               itemCount: _messages.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 final message = _messages[index];
                 return Align(
-                  alignment: message.fromUser ? Alignment.centerRight : Alignment.centerLeft,
+                  alignment: message.fromUser
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
                   child: Container(
                     constraints: const BoxConstraints(maxWidth: 360),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 11,
+                    ),
                     decoration: BoxDecoration(
-                      color: message.fromUser ? const Color(0xFF2C7BE5) : const Color(0xFFF2F4F7),
+                      color: message.fromUser
+                          ? const Color(0xFF2C7BE5)
+                          : const Color(0xFFF2F4F7),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Text(message.text, style: TextStyle(color: message.fromUser ? Colors.white : const Color(0xFF344054), height: 1.4)),
+                    child: Text(
+                      message.text,
+                      style: TextStyle(
+                        color: message.fromUser
+                            ? Colors.white
+                            : const Color(0xFF344054),
+                        height: 1.4,
+                      ),
+                    ),
                   ),
                 );
               },
@@ -118,8 +137,11 @@ class _AiChatWidgetState extends State<AiChatWidget> {
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               scrollDirection: Axis.horizontal,
-              itemBuilder: (_, index) => ActionChip(label: Text(_quickActions[index]), onPressed: () => _send(_quickActions[index])),
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, index) => ActionChip(
+                label: Text(_quickActions[index]),
+                onPressed: () => _send(_quickActions[index]),
+              ),
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
               itemCount: _quickActions.length,
             ),
           ),
@@ -131,11 +153,16 @@ class _AiChatWidgetState extends State<AiChatWidget> {
                   child: TextField(
                     controller: _controller,
                     onSubmitted: (_) => _send(),
-                    decoration: const InputDecoration(hintText: 'Ask AI to adjust your trip...'),
+                    decoration: const InputDecoration(
+                      hintText: 'Ask AI to adjust your trip...',
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
-                IconButton.filled(onPressed: _send, icon: const Icon(Icons.send_rounded)),
+                IconButton.filled(
+                  onPressed: _send,
+                  icon: const Icon(Icons.send_rounded),
+                ),
               ],
             ),
           ),

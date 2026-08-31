@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class Trip {
   // id dung de phan biet tung trip trong
   // database. final co nghia la id can phai
@@ -12,6 +14,8 @@ class Trip {
   final DateTime? startDate;
   final DateTime? endDate;
   final int? rating;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   // constructor
   Trip({
@@ -27,6 +31,8 @@ class Trip {
     this.startDate,
     this.endDate,
     this.rating,
+    this.createdAt,
+    this.updatedAt,
   });
 
   // Convert Firestore data to Trip
@@ -47,15 +53,23 @@ class Trip {
   factory Trip.fromMap(Map<String, dynamic> data, String id) {
     return Trip(
       id: id,
-      ownerId: data['ownerId'],
-      destination: data['destination'],
-      budget: data['budget'],
-      days: data['days'],
-      status: data['status'],
-      startDate: data['startDate'] != null ? (data['startDate'] as DateTime) : null,
-      endDate: data['endDate'] != null ? (data['endDate'] as DateTime) : null,
-      rating: data['rating'],
+      ownerId: data['ownerId'] as String? ?? '',
+      destination: data['destination'] as String? ?? '',
+      budget: (data['budget'] as num?)?.toDouble() ?? 0,
+      days: (data['days'] as num?)?.toInt() ?? 0,
+      status: data['status'] as String? ?? 'draft',
+      startDate: _dateFromFirestore(data['startDate']),
+      endDate: _dateFromFirestore(data['endDate']),
+      rating: (data['rating'] as num?)?.toInt(),
+      createdAt: _dateFromFirestore(data['createdAt']),
+      updatedAt: _dateFromFirestore(data['updatedAt']),
     );
+  }
+
+  static DateTime? _dateFromFirestore(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
   }
 
   // Convert Trip to FireStore Map
@@ -70,6 +84,8 @@ class Trip {
       'startDate': startDate,
       'endDate': endDate,
       'rating': rating,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
     };
   }
 }

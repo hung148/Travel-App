@@ -30,9 +30,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     if (!mounted) return;
 
     if (authViewModel.errorMessage != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(authViewModel.errorMessage!)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(authViewModel.errorMessage!)));
       return;
     }
 
@@ -112,7 +112,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+            color: Theme.of(
+              context,
+            ).colorScheme.primary.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(16),
           ),
           child: const Row(
@@ -120,7 +122,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
               Icon(Icons.info_outline_rounded),
               SizedBox(width: 12),
               Expanded(
-                child: Text('The link may take a minute to arrive. Check your spam folder too.'),
+                child: Text(
+                  'The link may take a minute to arrive. Check your spam folder too.',
+                ),
               ),
             ],
           ),

@@ -17,12 +17,12 @@ class Itinerary {
 
   factory Itinerary.fromMap(Map<String, dynamic> data, String id) {
     return Itinerary(
-      id: id, 
+      id: id,
       tripId: data['tripId'] ?? '',
-      dayNumber: data['dayNumber'], 
-      places: data['places'], 
-      meals: data['meals'], 
-      estimatedCost: data['estimatedCost'],
+      dayNumber: (data['dayNumber'] as num?)?.toInt() ?? 0,
+      places: data['places'] as String? ?? '',
+      meals: data['meals'] as String? ?? '',
+      estimatedCost: (data['estimatedCost'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -33,7 +33,7 @@ class Itinerary {
       'dayNumber': dayNumber,
       'places': places,
       'meals': meals,
-      'estimatedCost': estimatedCost, 
+      'estimatedCost': estimatedCost,
     };
   }
 }

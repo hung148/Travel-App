@@ -86,10 +86,7 @@ class _TravelBrandPanel extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            colors.primary,
-            const Color(0xFF55A7FF),
-          ],
+          colors: [colors.primary, const Color(0xFF55A7FF)],
         ),
       ),
       child: Column(
@@ -138,11 +135,20 @@ class _TravelBrandPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 38),
-          const _Benefit(icon: Icons.route_outlined, text: 'Smarter daily routes'),
+          const _Benefit(
+            icon: Icons.route_outlined,
+            text: 'Smarter daily routes',
+          ),
           const SizedBox(height: 14),
-          const _Benefit(icon: Icons.savings_outlined, text: 'Budget-aware planning'),
+          const _Benefit(
+            icon: Icons.savings_outlined,
+            text: 'Budget-aware planning',
+          ),
           const SizedBox(height: 14),
-          const _Benefit(icon: Icons.auto_awesome_outlined, text: 'Personalized recommendations'),
+          const _Benefit(
+            icon: Icons.auto_awesome_outlined,
+            text: 'Personalized recommendations',
+          ),
           const Spacer(),
           Text(
             'Your trip, optimized around you.',
@@ -228,7 +234,9 @@ class _FormCard extends StatelessWidget {
             width: 52,
             height: 52,
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.10),
+              color: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Icon(icon, color: Theme.of(context).colorScheme.primary),
@@ -237,17 +245,19 @@ class _FormCard extends StatelessWidget {
           Text(
             title,
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontSize: 30,
-                  letterSpacing: -0.6,
-                ),
+              fontSize: 30,
+              letterSpacing: -0.6,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             subtitle,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
-                  height: 1.45,
-                ),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.62),
+              height: 1.45,
+            ),
           ),
           const SizedBox(height: 30),
           child,

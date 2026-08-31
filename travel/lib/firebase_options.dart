@@ -85,5 +85,4 @@ class DefaultFirebaseOptions {
     storageBucket: 'travel-plan-5f810.firebasestorage.app',
     measurementId: 'G-WLJQ8WS6XL',
   );
-
 }

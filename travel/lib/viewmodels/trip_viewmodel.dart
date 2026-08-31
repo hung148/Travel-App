@@ -23,10 +23,10 @@ class TripViewModel extends ChangeNotifier {
     required ItineraryService itineraryService,
     required PreferenceService preferencesService,
     required FeedbackService feedbackService,
-  })  : _tripService = tripService,
-        _itineraryService = itineraryService,
-        _preferencesService = preferencesService,
-        _feedbackService = feedbackService; 
+  }) : _tripService = tripService,
+       _itineraryService = itineraryService,
+       _preferencesService = preferencesService,
+       _feedbackService = feedbackService;
 
   List<Trip> _tripHistory = [];
   List<Trip> get tripHistory => _tripHistory;
@@ -49,13 +49,20 @@ class TripViewModel extends ChangeNotifier {
   String? _successMessage;
   String? get successMessage => _successMessage;
 
-  @override 
+  @override
   void dispose() {
     // if you don't cancel the subscription, the Stream keeps sending updates.
-    // Even after the screen is closed 
+    // Even after the screen is closed
     // This might lead to memory leaks
     _tripSubscription?.cancel();
     super.dispose();
+  }
+
+  void _startOperation() {
+    _isLoading = true;
+    _errorMessage = null;
+    _successMessage = null;
+    notifyListeners();
   }
 
   void _setLoading(bool value) {
@@ -80,21 +87,18 @@ class TripViewModel extends ChangeNotifier {
   }
 
   Future<void> createTrip(Trip trip) async {
-    _setLoading(true);
-    _setError(null);
-    _setSuccess(null);
+    _startOperation();
 
     final result = await _tripService.addTrip(trip);
 
     if (result.success) {
-      _tripHistory.insert(0, trip);
       _currentTrip = trip;
-      _setSuccess('Trip created successfully.');
+      _successMessage = 'Trip created successfully.';
     } else {
-      _setError('Failed to create trip: ${result.error}');
+      _errorMessage = 'Unable to create your trip. Please try again.';
     }
-
-    _setLoading(false);
+    _isLoading = false;
+    notifyListeners();
   }
 
   Future<void> editTrip(Trip updatedTrip) async {
@@ -105,7 +109,9 @@ class TripViewModel extends ChangeNotifier {
 
       await _tripService.updateTrip(updatedTrip);
 
-      final index = _tripHistory.indexWhere((trip) => trip.id == updatedTrip.id);
+      final index = _tripHistory.indexWhere(
+        (trip) => trip.id == updatedTrip.id,
+      );
       if (index != -1) {
         _tripHistory[index] = updatedTrip;
       }
@@ -123,23 +129,26 @@ class TripViewModel extends ChangeNotifier {
     }
   }
 
-  // Change loadTripHistory to listenToTripHistory because 
+  // Change loadTripHistory to listenToTripHistory because
   // getTripByUser return a stream which is automatically update
-  void listenToTripHistory(String ownerId) async {
-    _setLoading(true);
-    _setError(null);
-    
-    _tripSubscription = _tripService.getTripsByUser(ownerId).listen(
-      (trips) {
-        _tripHistory = trips;
-        notifyListeners();
-        _setLoading(false);
-      },
-      onError: (e) {
-        _setError('Failed to load trip history: $e');
-        _setLoading(false);
-      }
-    );
+  Future<void> listenToTripHistory(String ownerId) async {
+    _startOperation();
+    await _tripSubscription?.cancel();
+
+    _tripSubscription = _tripService
+        .getTripsByUser(ownerId)
+        .listen(
+          (trips) {
+            _tripHistory = trips;
+            _isLoading = false;
+            notifyListeners();
+          },
+          onError: (e) {
+            _errorMessage = 'Unable to load your trips. Please try again.';
+            _isLoading = false;
+            notifyListeners();
+          },
+        );
   }
 
   Future<void> loadTripById(String tripId) async {
@@ -171,13 +180,15 @@ class TripViewModel extends ChangeNotifier {
       _setError(null);
       _setSuccess(null);
 
-      final PreferenceResult result =
-          await _preferencesService.getPreferences(ownerId);
+      final PreferenceResult result = await _preferencesService.getPreferences(
+        ownerId,
+      );
 
       if (!result.success || result.data == null) {
-        _setError((result.error ?? "").isEmpty 
-        ? "Failed to load preference"
-        : result.error,
+        _setError(
+          (result.error ?? "").isEmpty
+              ? "Failed to load preference"
+              : result.error,
         );
         return;
       }
@@ -189,10 +200,11 @@ class TripViewModel extends ChangeNotifier {
       for (int i = 1; i <= trip.days; i++) {
         generated.add(
           Itinerary(
-            id: '$i',
+            id: '${trip.id}_day_$i',
             tripId: trip.id,
             dayNumber: i,
-            places: '${preference.experienceType} places in ${trip.destination}',
+            places:
+                '${preference.experienceType} places in ${trip.destination}',
             meals: '${preference.interests.join(", ")} meal plan',
             estimatedCost: trip.budget / trip.days,
           ),
@@ -216,9 +228,11 @@ class TripViewModel extends ChangeNotifier {
       _setError(null);
       _setSuccess(null);
 
-      await _itineraryService.saveItinerary(
-        _itinerary,
-      );
+      final items = _itinerary.where((item) => item.tripId == tripId).toList();
+      if (items.isEmpty) {
+        throw StateError('No itinerary exists for this trip.');
+      }
+      await _itineraryService.saveItinerary(items);
 
       _setSuccess('Itinerary saved successfully.');
     } catch (e) {
@@ -228,18 +242,13 @@ class TripViewModel extends ChangeNotifier {
     }
   }
 
-  Future<void> saveFeedback({
-    required String tripId,
-    required model.Feedback feedback,
-  }) async {
+  Future<void> saveFeedback({required model.Feedback feedback}) async {
     try {
       _setLoading(true);
       _setError(null);
       _setSuccess(null);
 
-      await _feedbackService.saveFeedback(
-        feedback: feedback,
-      );
+      await _feedbackService.saveFeedback(feedback: feedback);
 
       _setSuccess('Feedback saved successfully.');
     } catch (e) {

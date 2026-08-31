@@ -1,3 +1,3 @@
 class AppConfig {
-  static const bool isDebug = true; // flip to false for production
+  static const bool isDebug = false; // flip to false for production
 }

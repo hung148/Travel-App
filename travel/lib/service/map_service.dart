@@ -303,10 +303,7 @@ class PlaceSuggestion {
   final String placeId;
   final String description;
 
-  PlaceSuggestion({
-    required this.placeId,
-    required this.description,
-  });
+  PlaceSuggestion({required this.placeId, required this.description});
 
   @override
   String toString() {
@@ -379,10 +376,7 @@ class Coordinates {
   final double latitude;
   final double longitude;
 
-  Coordinates({
-    required this.latitude,
-    required this.longitude,
-  });
+  Coordinates({required this.latitude, required this.longitude});
 
   @override
   String toString() {

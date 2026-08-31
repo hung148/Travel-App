@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user.dart';
 
 /// AuthService
@@ -16,6 +17,10 @@ import '../models/user.dart';
 class AuthService {
   /// FirebaseAuth instance used throughout the app
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  CollectionReference<Map<String, dynamic>> get _users =>
+      _firestore.collection('users');
 
   /// ==============================
   /// Get current Firebase user
@@ -30,6 +35,21 @@ class AuthService {
     if (user == null) return null;
     return AppUser.fromFirebaseUser(user);
   }
+
+  Stream<AppUser?> get authStateChanges =>
+      _auth.authStateChanges().asyncMap((firebaseUser) async {
+        if (firebaseUser == null) return null;
+        final snapshot = await _users.doc(firebaseUser.uid).get();
+        if (!snapshot.exists) return AppUser.fromFirebaseUser(firebaseUser);
+        final data = snapshot.data()!;
+        return AppUser.fromMap({
+          ...data,
+          'uid': firebaseUser.uid,
+          'email': firebaseUser.email ?? data['email'] ?? '',
+          'name': firebaseUser.displayName ?? data['name'] ?? '',
+          'profileImage': firebaseUser.photoURL ?? data['profileImage'],
+        });
+      });
 
   /// ==============================
   /// Register (Sign Up)
@@ -48,8 +68,7 @@ class AuthService {
   }) async {
     try {
       /// Create user in Firebase Authentication
-      UserCredential credential =
-          await _auth.createUserWithEmailAndPassword(
+      UserCredential credential = await _auth.createUserWithEmailAndPassword(
         email: email.trim(),
         password: password.trim(),
       );
@@ -72,13 +91,26 @@ class AuthService {
         throw Exception('User reload failed.');
       }
 
-      /// Convert Firebase User -> AppUser
-      return AppUser.fromFirebaseUser(user);
+      final appUser = AppUser.fromFirebaseUser(user);
+      await _users.doc(user.uid).set({
+        ...appUser.toMap(),
+        'onboardingCompleted': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return appUser;
     } on FirebaseAuthException catch (e) {
       throw Exception(_handleError(e));
     } catch (e) {
       throw Exception('Register error: $e');
     }
+  }
+
+  Future<void> completeOnboarding(String uid) async {
+    await _users.doc(uid).set({
+      'onboardingCompleted': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   /// ==============================
@@ -95,8 +127,7 @@ class AuthService {
     required String password,
   }) async {
     try {
-      UserCredential credential =
-          await _auth.signInWithEmailAndPassword(
+      UserCredential credential = await _auth.signInWithEmailAndPassword(
         email: email.trim(),
         password: password.trim(),
       );

@@ -49,7 +49,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
 
     if (destination.isEmpty || budget == null || budget <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a destination and valid budget first.')),
+        const SnackBar(
+          content: Text('Enter a destination and valid budget first.'),
+        ),
       );
       return;
     }
@@ -76,7 +78,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
           TextButton.icon(
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Draft saved locally for this UI demo.')),
+                const SnackBar(
+                  content: Text('Draft saved locally for this UI demo.'),
+                ),
               );
             },
             icon: const Icon(Icons.save_outlined),
@@ -109,12 +113,16 @@ class _PlanTripPageState extends State<PlanTripPage> {
                                 style: Theme.of(context)
                                     .textTheme
                                     .headlineMedium
-                                    ?.copyWith(fontSize: 34, fontWeight: FontWeight.w800),
+                                    ?.copyWith(
+                                      fontSize: 34,
+                                      fontWeight: FontWeight.w800,
+                                    ),
                               ),
                               const SizedBox(height: 8),
                               Text(
                                 'Choose the basics, generate a plan, then negotiate changes with the AI planner.',
-                                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                style: Theme.of(context).textTheme.bodyLarge
+                                    ?.copyWith(
                                       color: Theme.of(context)
                                           .colorScheme
                                           .onSurface
@@ -128,9 +136,16 @@ class _PlanTripPageState extends State<PlanTripPage> {
                           FilledButton.icon(
                             onPressed: _generatePlan,
                             icon: const Icon(Icons.auto_awesome_rounded),
-                            label: Text(planGenerated ? 'Regenerate plan' : 'Generate plan'),
+                            label: Text(
+                              planGenerated
+                                  ? 'Regenerate plan'
+                                  : 'Generate plan',
+                            ),
                             style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 22,
+                                vertical: 18,
+                              ),
                             ),
                           ),
                       ],
@@ -142,7 +157,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       dateLabel: _dateLabel(),
                       travelers: travelers,
                       onPickDates: _pickDates,
-                      onTravelersChanged: (value) => setState(() => travelers = value),
+                      onTravelersChanged: (value) =>
+                          setState(() => travelers = value),
                     ),
                     if (!desktop) ...[
                       const SizedBox(height: 14),
@@ -151,7 +167,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
                         child: FilledButton.icon(
                           onPressed: _generatePlan,
                           icon: const Icon(Icons.auto_awesome_rounded),
-                          label: Text(planGenerated ? 'Regenerate plan' : 'Generate plan'),
+                          label: Text(
+                            planGenerated ? 'Regenerate plan' : 'Generate plan',
+                          ),
                         ),
                       ),
                     ],
@@ -168,7 +186,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
                               height: 430,
                               child: AiChatWidget(
                                 onPlanChanged: () {
-                                  if (!planGenerated) setState(() => planGenerated = true);
+                                  if (!planGenerated) {
+                                    setState(() => planGenerated = true);
+                                  }
                                 },
                               ),
                             ),
@@ -182,7 +202,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
                         height: 430,
                         child: AiChatWidget(
                           onPlanChanged: () {
-                            if (!planGenerated) setState(() => planGenerated = true);
+                            if (!planGenerated) {
+                              setState(() => planGenerated = true);
+                            }
                           },
                         ),
                       ),
@@ -191,7 +213,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
                     _PlanOptions(
                       selectedPlan: selectedPlan,
                       enabled: planGenerated,
-                      onSelected: (value) => setState(() => selectedPlan = value),
+                      onSelected: (value) =>
+                          setState(() => selectedPlan = value),
                     ),
                     const SizedBox(height: 20),
                     _PlanPreview(
@@ -254,7 +277,10 @@ class _TripSetupCard extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: onPickDates,
                 icon: const Icon(Icons.calendar_month_outlined),
-                label: Align(alignment: Alignment.centerLeft, child: Text(dateLabel)),
+                label: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(dateLabel),
+                ),
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 56),
                   alignment: Alignment.centerLeft,
@@ -285,7 +311,9 @@ class _TripSetupCard extends StatelessWidget {
                 child: Row(
                   children: [
                     IconButton(
-                      onPressed: travelers > 1 ? () => onTravelersChanged(travelers - 1) : null,
+                      onPressed: travelers > 1
+                          ? () => onTravelersChanged(travelers - 1)
+                          : null,
                       icon: const Icon(Icons.remove_rounded),
                     ),
                     Expanded(
@@ -308,10 +336,12 @@ class _TripSetupCard extends StatelessWidget {
           if (!wide) {
             return Column(
               children: fields
-                  .map((field) => Padding(
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: field,
-                      ))
+                  .map(
+                    (field) => Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: field,
+                    ),
+                  )
                   .toList(),
             );
           }
@@ -341,7 +371,10 @@ class _LabeledField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+        Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        ),
         const SizedBox(height: 8),
         child,
       ],
@@ -364,21 +397,40 @@ class _MapPlaceholder extends StatelessWidget {
             children: [
               Positioned.fill(
                 child: Container(
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.06),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.06),
                   child: CustomPaint(painter: _MapGridPainter()),
                 ),
               ),
-              const Positioned(left: 110, top: 135, child: _MapPin(number: '1')),
-              const Positioned(left: 245, top: 225, child: _MapPin(number: '2')),
-              const Positioned(right: 145, top: 115, child: _MapPin(number: '3')),
+              const Positioned(
+                left: 110,
+                top: 135,
+                child: _MapPin(number: '1'),
+              ),
+              const Positioned(
+                left: 245,
+                top: 225,
+                child: _MapPin(number: '2'),
+              ),
+              const Positioned(
+                right: 145,
+                top: 115,
+                child: _MapPin(number: '3'),
+              ),
               const Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.map_outlined, size: 52),
                     SizedBox(height: 12),
-                    Text('Google Map Preview',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                    Text(
+                      'Google Map Preview',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                     SizedBox(height: 4),
                     Text('Real Google Maps data will replace this placeholder'),
                   ],
@@ -430,9 +482,24 @@ class _PlanOptions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final plans = [
-      ('Relaxed', '\$1,650', 'Fewer stops • more free time', Icons.spa_outlined),
-      ('Balanced', '\$1,820', 'Best mix of places and rest', Icons.balance_outlined),
-      ('Explorer', '\$1,940', 'More activities • fuller days', Icons.explore_outlined),
+      (
+        'Relaxed',
+        '\$1,650',
+        'Fewer stops • more free time',
+        Icons.spa_outlined,
+      ),
+      (
+        'Balanced',
+        '\$1,820',
+        'Best mix of places and rest',
+        Icons.balance_outlined,
+      ),
+      (
+        'Explorer',
+        '\$1,940',
+        'More activities • fuller days',
+        Icons.explore_outlined,
+      ),
     ];
 
     return _Panel(
@@ -443,10 +510,16 @@ class _PlanOptions extends StatelessWidget {
             children: [
               const Icon(Icons.tune_rounded),
               const SizedBox(width: 10),
-              const Text('Choose a plan style',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              const Text(
+                'Choose a plan style',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
               const Spacer(),
-              Chip(label: Text(enabled ? '3 mock options ready' : 'Generate a plan first')),
+              Chip(
+                label: Text(
+                  enabled ? '3 mock options ready' : 'Generate a plan first',
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -470,41 +543,59 @@ class _PlanOptions extends StatelessWidget {
                         padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
                           color: selected && enabled
-                              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: 0.08)
                               : Theme.of(context).colorScheme.surface,
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(
                             color: selected && enabled
                                 ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context).dividerColor.withValues(alpha: 0.45),
+                                : Theme.of(
+                                    context,
+                                  ).dividerColor.withValues(alpha: 0.45),
                             width: selected && enabled ? 2 : 1,
                           ),
                         ),
                         child: Row(
                           children: [
-                            Icon(plan.$4,
-                                color: enabled
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Colors.grey),
+                            Icon(
+                              plan.$4,
+                              color: enabled
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Colors.grey,
+                            ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(plan.$1,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w900, fontSize: 16)),
+                                  Text(
+                                    plan.$1,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 16,
+                                    ),
+                                  ),
                                   const SizedBox(height: 3),
-                                  Text(plan.$3,
-                                      style: TextStyle(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurface
-                                              .withValues(alpha: 0.6))),
+                                  Text(
+                                    plan.$3,
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.6),
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
-                            Text(plan.$2, style: const TextStyle(fontWeight: FontWeight.w900)),
+                            Text(
+                              plan.$2,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -545,10 +636,16 @@ class _PlanPreview extends StatelessWidget {
             children: [
               const Icon(Icons.view_timeline_outlined),
               const SizedBox(width: 10),
-              const Text('Plan preview',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              const Text(
+                'Plan preview',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
               const Spacer(),
-              Chip(label: Text(generated ? '$selectedPlan plan' : 'No plan generated yet')),
+              Chip(
+                label: Text(
+                  generated ? '$selectedPlan plan' : 'No plan generated yet',
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 18),
@@ -556,7 +653,9 @@ class _PlanPreview extends StatelessWidget {
             Text(
               'Generate a plan to preview a day-by-day itinerary for $destination.',
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
             const SizedBox(height: 18),
@@ -609,7 +708,11 @@ class _DayPreview extends StatelessWidget {
   final String title;
   final List<String> items;
 
-  const _DayPreview({required this.day, required this.title, required this.items});
+  const _DayPreview({
+    required this.day,
+    required this.title,
+    required this.items,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -619,7 +722,9 @@ class _DayPreview extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.09),
+            color: Theme.of(
+              context,
+            ).colorScheme.primary.withValues(alpha: 0.09),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(day, style: const TextStyle(fontWeight: FontWeight.w900)),
@@ -629,7 +734,13 @@ class _DayPreview extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
               const SizedBox(height: 10),
               for (final item in items)
                 Padding(

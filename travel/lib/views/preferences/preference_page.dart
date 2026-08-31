@@ -38,14 +38,34 @@ class _PreferencePageState extends State<PreferencePage> {
 
   final _activityOptions = const [
     _Option('Relaxed', Icons.spa_outlined, 'A slower pace with more free time'),
-    _Option('Moderate', Icons.directions_walk_outlined, 'A comfortable mix of activities and breaks'),
-    _Option('Very Active', Icons.directions_run_outlined, 'Pack more experiences into each day'),
+    _Option(
+      'Moderate',
+      Icons.directions_walk_outlined,
+      'A comfortable mix of activities and breaks',
+    ),
+    _Option(
+      'Very Active',
+      Icons.directions_run_outlined,
+      'Pack more experiences into each day',
+    ),
   ];
 
   final _spendingOptions = const [
-    _Option('Budget', Icons.savings_outlined, 'Prioritize value and local favorites'),
-    _Option('Normal', Icons.account_balance_wallet_outlined, 'Balance comfort, quality, and price'),
-    _Option('Luxury', Icons.diamond_outlined, 'Premium stays, dining, and experiences'),
+    _Option(
+      'Budget',
+      Icons.savings_outlined,
+      'Prioritize value and local favorites',
+    ),
+    _Option(
+      'Normal',
+      Icons.account_balance_wallet_outlined,
+      'Balance comfort, quality, and price',
+    ),
+    _Option(
+      'Luxury',
+      Icons.diamond_outlined,
+      'Premium stays, dining, and experiences',
+    ),
   ];
 
   final _interestOptions = const [
@@ -80,8 +100,12 @@ class _PreferencePageState extends State<PreferencePage> {
       if (!mounted) return;
       setState(() {
         _experienceType = preference.experienceType.toSet();
-        _activityLevel = preference.activityLevel.isEmpty ? null : preference.activityLevel;
-        _spendingStyle = preference.spendingStyle.isEmpty ? null : preference.spendingStyle;
+        _activityLevel = preference.activityLevel.isEmpty
+            ? null
+            : preference.activityLevel;
+        _spendingStyle = preference.spendingStyle.isEmpty
+            ? null
+            : preference.spendingStyle;
         _interests = preference.interests.toSet();
         _hasInitialized = true;
       });
@@ -148,11 +172,13 @@ class _PreferencePageState extends State<PreferencePage> {
               _syncFromViewModel(vm.preference);
 
               if (vm.savedSuccessfully) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
+                WidgetsBinding.instance.addPostFrameCallback((_) async {
                   if (!mounted) return;
                   vm.resetSavedFlag();
-                  context.read<AuthViewModel>().completeOnboarding();
-                  Navigator.pushReplacementNamed(context, '/profile');
+                  final authViewModel = context.read<AuthViewModel>();
+                  await authViewModel.completeOnboarding();
+                  if (!mounted) return;
+                  Navigator.pushReplacementNamed(this.context, '/profile');
                 });
               }
 
@@ -162,7 +188,8 @@ class _PreferencePageState extends State<PreferencePage> {
 
                   return Row(
                     children: [
-                      if (isDesktop) const Expanded(flex: 7, child: _PreferenceSidePanel()),
+                      if (isDesktop)
+                        const Expanded(flex: 7, child: _PreferenceSidePanel()),
                       Expanded(
                         flex: 13,
                         child: Center(
@@ -183,60 +210,88 @@ class _PreferencePageState extends State<PreferencePage> {
                                   const SizedBox(height: 24),
                                   Expanded(
                                     child: vm.isLoading && !_hasInitialized
-                                        ? const Center(child: CircularProgressIndicator())
+                                        ? const Center(
+                                            child: CircularProgressIndicator(),
+                                          )
                                         : PageView(
                                             controller: _pageController,
-                                            physics: const NeverScrollableScrollPhysics(),
-                                            onPageChanged: (page) => setState(() => _currentPage = page),
+                                            physics:
+                                                const NeverScrollableScrollPhysics(),
+                                            onPageChanged: (page) => setState(
+                                              () => _currentPage = page,
+                                            ),
                                             children: [
                                               _QuestionPage(
                                                 eyebrow: 'TRAVEL STYLE',
-                                                title: 'What kind of experiences do you want?',
-                                                subtitle: 'Choose as many as you like. We’ll use these to rank places later.',
+                                                title:
+                                                    'What kind of experiences do you want?',
+                                                subtitle:
+                                                    'Choose as many as you like. We’ll use these to rank places later.',
                                                 child: _OptionGrid(
                                                   options: _experienceOptions,
                                                   selected: _experienceType,
                                                   onTap: (value) {
                                                     setState(() {
-                                                      _experienceType.contains(value)
-                                                          ? _experienceType.remove(value)
-                                                          : _experienceType.add(value);
+                                                      _experienceType.contains(
+                                                            value,
+                                                          )
+                                                          ? _experienceType
+                                                                .remove(value)
+                                                          : _experienceType.add(
+                                                              value,
+                                                            );
                                                     });
                                                   },
                                                 ),
                                               ),
                                               _QuestionPage(
                                                 eyebrow: 'YOUR PACE',
-                                                title: 'How active should your trip feel?',
-                                                subtitle: 'This helps determine how many activities fit comfortably into each day.',
+                                                title:
+                                                    'How active should your trip feel?',
+                                                subtitle:
+                                                    'This helps determine how many activities fit comfortably into each day.',
                                                 child: _SingleChoiceList(
                                                   options: _activityOptions,
                                                   selected: _activityLevel,
-                                                  onTap: (value) => setState(() => _activityLevel = value),
+                                                  onTap: (value) => setState(
+                                                    () =>
+                                                        _activityLevel = value,
+                                                  ),
                                                 ),
                                               ),
                                               _QuestionPage(
                                                 eyebrow: 'SPENDING STYLE',
-                                                title: 'How do you like to spend while traveling?',
-                                                subtitle: 'This is a preference, not your final trip budget. You’ll enter the real budget when planning a trip.',
+                                                title:
+                                                    'How do you like to spend while traveling?',
+                                                subtitle:
+                                                    'This is a preference, not your final trip budget. You’ll enter the real budget when planning a trip.',
                                                 child: _SingleChoiceList(
                                                   options: _spendingOptions,
                                                   selected: _spendingStyle,
-                                                  onTap: (value) => setState(() => _spendingStyle = value),
+                                                  onTap: (value) => setState(
+                                                    () =>
+                                                        _spendingStyle = value,
+                                                  ),
                                                 ),
                                               ),
                                               _QuestionPage(
                                                 eyebrow: 'INTERESTS',
-                                                title: 'What do you enjoy most when you travel?',
-                                                subtitle: 'Pick a few favorites so recommendations feel more personal.',
+                                                title:
+                                                    'What do you enjoy most when you travel?',
+                                                subtitle:
+                                                    'Pick a few favorites so recommendations feel more personal.',
                                                 child: _OptionGrid(
                                                   options: _interestOptions,
                                                   selected: _interests,
                                                   onTap: (value) {
                                                     setState(() {
                                                       _interests.contains(value)
-                                                          ? _interests.remove(value)
-                                                          : _interests.add(value);
+                                                          ? _interests.remove(
+                                                              value,
+                                                            )
+                                                          : _interests.add(
+                                                              value,
+                                                            );
                                                     });
                                                   },
                                                 ),
@@ -247,19 +302,30 @@ class _PreferencePageState extends State<PreferencePage> {
                                   const SizedBox(height: 18),
                                   if (vm.errorMessage != null)
                                     Padding(
-                                      padding: const EdgeInsets.only(bottom: 12),
+                                      padding: const EdgeInsets.only(
+                                        bottom: 12,
+                                      ),
                                       child: Text(
                                         vm.errorMessage!,
-                                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                                        style: TextStyle(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.error,
+                                        ),
                                       ),
                                     ),
                                   Row(
                                     children: [
                                       if (_currentPage > 0) ...[
                                         OutlinedButton(
-                                          onPressed: vm.isLoading ? null : _back,
+                                          onPressed: vm.isLoading
+                                              ? null
+                                              : _back,
                                           child: const Padding(
-                                            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 14,
+                                            ),
                                             child: Text('Back'),
                                           ),
                                         ),
@@ -269,20 +335,24 @@ class _PreferencePageState extends State<PreferencePage> {
                                         child: SizedBox(
                                           height: 54,
                                           child: FilledButton(
-                                            onPressed: vm.isLoading || !_isAnswered(_currentPage)
+                                            onPressed:
+                                                vm.isLoading ||
+                                                    !_isAnswered(_currentPage)
                                                 ? null
                                                 : () => _next(vm),
                                             child: vm.isLoading
                                                 ? const SizedBox(
                                                     width: 22,
                                                     height: 22,
-                                                    child: CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                      color: Colors.white,
-                                                    ),
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                          color: Colors.white,
+                                                        ),
                                                   )
                                                 : Text(
-                                                    _currentPage == _totalQuestions - 1
+                                                    _currentPage ==
+                                                            _totalQuestions - 1
                                                         ? 'Save preferences'
                                                         : 'Continue',
                                                   ),
@@ -340,7 +410,10 @@ class _Header extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Travel preferences', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const Text(
+                    'Travel preferences',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                   Text('${currentPage + 1} / $totalQuestions'),
                 ],
               ),
@@ -425,7 +498,9 @@ class _QuestionPage extends StatelessWidget {
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(26),
-          border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
+          border: Border.all(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -442,15 +517,19 @@ class _QuestionPage extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               title,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 30),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontSize: 30),
             ),
             const SizedBox(height: 10),
             Text(
               subtitle,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    height: 1.5,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
-                  ),
+                height: 1.5,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.62),
+              ),
             ),
             const SizedBox(height: 28),
             child,
@@ -476,9 +555,14 @@ class _OptionGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 650 ? 4 : constraints.maxWidth >= 420 ? 2 : 1;
+        final columns = constraints.maxWidth >= 650
+            ? 4
+            : constraints.maxWidth >= 420
+            ? 2
+            : 1;
         const gap = 12.0;
-        final itemWidth = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        final itemWidth =
+            (constraints.maxWidth - gap * (columns - 1)) / columns;
 
         return Wrap(
           spacing: gap,
@@ -549,7 +633,9 @@ class _ChoiceCard extends StatelessWidget {
     final primary = Theme.of(context).colorScheme.primary;
 
     return Material(
-      color: selected ? primary.withValues(alpha: 0.08) : Theme.of(context).colorScheme.surface,
+      color: selected
+          ? primary.withValues(alpha: 0.08)
+          : Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
@@ -560,7 +646,9 @@ class _ChoiceCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: selected ? primary : Theme.of(context).dividerColor.withValues(alpha: 0.42),
+              color: selected
+                  ? primary
+                  : Theme.of(context).dividerColor.withValues(alpha: 0.42),
               width: selected ? 1.8 : 1,
             ),
           ),
@@ -573,14 +661,21 @@ class _ChoiceCard extends StatelessWidget {
                   color: selected ? primary : primary.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(option.icon, color: selected ? Colors.white : primary, size: 21),
+                child: Icon(
+                  option.icon,
+                  color: selected ? Colors.white : primary,
+                  size: 21,
+                ),
               ),
               const SizedBox(width: 13),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(option.label, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    Text(
+                      option.label,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
                     if (option.description != null) ...[
                       const SizedBox(height: 4),
                       Text(
@@ -588,7 +683,9 @@ class _ChoiceCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 13,
                           height: 1.35,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.58),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.58),
                         ),
                       ),
                     ],

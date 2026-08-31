@@ -1,19 +1,10 @@
-/// preference.dart
-///
-/// This file defines the user's travel preferences.
-/// These preferences are VERY IMPORTANT because:
-/// - They guide AI recommendations
-/// - They affect budget allocation
-/// - They influence itinerary generation
-///
-/// Example:
-/// - Nature vs Food vs History
-/// - Chill vs Active trip
-/// - Budget vs Luxury
-/// - Interests like coffee, shopping, etc.
+// preference.dart
+//
+// This file defines the user's travel preferences.
+// These preferences guide recommendations, budget allocation, and itinerary
+// generation.
 
 class Preference {
-
   final String id;
   final String ownerId;
 
@@ -119,6 +110,8 @@ class Preference {
     if (identical(this, other)) return true;
 
     return other is Preference &&
+        other.id == id &&
+        other.ownerId == ownerId &&
         _listEquals(other.experienceType, experienceType) &&
         other.activityLevel == activityLevel &&
         other.spendingStyle == spendingStyle &&
@@ -128,10 +121,14 @@ class Preference {
   /// HashCode (required when overriding ==)
   @override
   int get hashCode {
-    return experienceType.join().hashCode ^
-        activityLevel.hashCode ^
-        spendingStyle.hashCode ^
-        interests.hashCode;
+    return Object.hash(
+      id,
+      ownerId,
+      Object.hashAll(experienceType),
+      activityLevel,
+      spendingStyle,
+      Object.hashAll(interests),
+    );
   }
 
   /// Helper function to compare lists

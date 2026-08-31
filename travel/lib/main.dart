@@ -5,8 +5,12 @@ import 'package:travel/core/theme/app_theme.dart';
 
 import 'package:travel/service/auth_service.dart';
 import 'package:travel/service/preference_service.dart';
+import 'package:travel/service/trip_service.dart';
+import 'package:travel/service/itinerary_service.dart';
+import 'package:travel/service/feedback_service.dart';
 import 'package:travel/viewmodels/auth_viewmodel.dart';
 import 'package:travel/viewmodels/preference_viewmodel.dart';
+import 'package:travel/viewmodels/trip_viewmodel.dart';
 import 'package:travel/views/auth/auth_gate.dart';
 import 'package:travel/views/auth/forgot_password.dart';
 import 'package:travel/views/auth/sign_up.dart';
@@ -19,9 +23,7 @@ import 'firebase_options.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   runApp(const MyApp());
 }
@@ -33,14 +35,23 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final authService = AuthService();
     final preferenceService = PreferenceService();
+    final tripService = TripService();
+    final itineraryService = ItineraryService();
+    final feedbackService = FeedbackService();
 
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => AuthViewModel(authService),
-        ),
+        ChangeNotifierProvider(create: (_) => AuthViewModel(authService)),
         ChangeNotifierProvider(
           create: (_) => PreferenceViewmodel(preferenceService),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => TripViewModel(
+            tripService: tripService,
+            itineraryService: itineraryService,
+            preferencesService: preferenceService,
+            feedbackService: feedbackService,
+          ),
         ),
       ],
       child: MaterialApp(

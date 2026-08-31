@@ -3,25 +3,29 @@ import 'package:travel/models/trip/trip.dart';
 import 'package:travel/models/trip/trip_result.dart';
 
 class TripService {
-
   // Reference to Trip collection
   // FirebaseFirestore.instance gives you the Firestore database you app is connected to.
   // collection('trips') this selects the collection named "trips" inside Firestore
-  final CollectionReference tripRef = FirebaseFirestore.instance.collection('trips');
+  final CollectionReference tripRef = FirebaseFirestore.instance.collection(
+    'trips',
+  );
 
   /// CRUD
-  
+
   // CREATE - Add a new trip
   Future<TripResult> addTrip(Trip trip) async {
     try {
-
-      // doc(trip.id) selects a specific document inside the trips collection 
+      // doc(trip.id) selects a specific document inside the trips collection
       // if the document does not exist, Firestore will create it.
       // If it already exists, Firestore will overwrite it (because .set() overwrites)
       // .set(trip.toMap()) this writes data into that document
       // await tells flutter to wait for Firestore finishes saving before continuing
-      await tripRef.doc(trip.id).set(trip.toMap());
-      return TripResult(success: true, data: null, error: "");
+      await tripRef.doc(trip.id).set({
+        ...trip.toMap(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return TripResult(success: true, data: trip, error: null);
     } catch (e) {
       return TripResult(success: false, data: null, error: e.toString());
     }
@@ -30,31 +34,19 @@ class TripService {
   // READ - Get a single trip by ID
   Future<TripResult> getTripById(String id) async {
     try {
-      // get trip document 
+      // get trip document
       final doc = await tripRef.doc(id).get();
 
       if (!doc.exists) {
-        return TripResult(
-          success: false,
-          data: null,
-          error: "Trip not found",
-        );
+        return TripResult(success: false, data: null, error: "Trip not found");
       }
 
       // convert trip doc to Trip object
       final trip = Trip.fromMap(doc.data() as Map<String, dynamic>, doc.id);
 
-      return TripResult(
-        success: true, 
-        data: trip, 
-        error: "",
-      );
+      return TripResult(success: true, data: trip, error: "");
     } catch (e) {
-      return TripResult(
-        success: false, 
-        data: null, 
-        error: e.toString(),
-      );
+      return TripResult(success: false, data: null, error: e.toString());
     }
   }
 
@@ -65,56 +57,67 @@ class TripService {
   Stream<List<Trip>> getTripsByUser(String userId) {
     // Listen to Firestore in real time
     return tripRef
-      .where('ownerId', isEqualTo: userId) // Filters only documents where ownerId == userId
-      .snapshots() // turn firestore query into a Stream
-      .map((snapshot) { // transform each snapshot into something else
-        // snapshot.docs is a list of Firesotre documents
-        // snapshot.docs.map loops through each document
-        return snapshot.docs.map((doc) { 
-          // This converts Firestore data to Trip model
-          return Trip.fromMap(doc.data() as Map<String, dynamic>, doc.id);
-        }).toList(); // turns the mapped items into real List<Trip>
-      });
+        .where(
+          'ownerId',
+          isEqualTo: userId,
+        ) // Filters only documents where ownerId == userId
+        .snapshots() // turn firestore query into a Stream
+        .map((snapshot) {
+          // transform each snapshot into something else
+          // snapshot.docs is a list of Firesotre documents
+          // snapshot.docs.map loops through each document
+          final trips = snapshot.docs.map((doc) {
+            // This converts Firestore data to Trip model
+            return Trip.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+          }).toList(); // turns the mapped items into real List<Trip>
+          trips.sort((a, b) {
+            final aDate = a.createdAt ?? a.startDate ?? DateTime(1970);
+            final bDate = b.createdAt ?? b.startDate ?? DateTime(1970);
+            return bDate.compareTo(aDate);
+          });
+          return trips;
+        });
   }
 
-  // UPDATE 
+  // UPDATE
   Future<TripResult> updateTrip(Trip trip) async {
     try {
       // Use update() so Firestore only updates changed fields instead of
       // overwriting the whole document.
       // update() fails if the document doesn't exist -> safer than set()
-      await tripRef.doc(trip.id).update(trip.toMap());
-    
-      return TripResult(
-        success: true,
-        data: trip,
-        error: null,
-      );
+      await tripRef.doc(trip.id).update({
+        ...trip.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      return TripResult(success: true, data: trip, error: null);
     } catch (e) {
-      return TripResult(
-        success: false,
-        data: null,
-        error: e.toString(),
-      );
+      return TripResult(success: false, data: null, error: e.toString());
     }
   }
 
-  // DELETE 
+  // DELETE
   Future<TripResult> deleteTrip(String id) async {
     try {
-      await tripRef.doc(id).delete();
+      final database = FirebaseFirestore.instance;
+      final batch = database.batch();
+      final itinerary = await database
+          .collection('itineraries')
+          .where('tripId', isEqualTo: id)
+          .get();
+      final feedback = await database
+          .collection('feedbacks')
+          .where('tripId', isEqualTo: id)
+          .get();
+      for (final document in [...itinerary.docs, ...feedback.docs]) {
+        batch.delete(document.reference);
+      }
+      batch.delete(tripRef.doc(id));
+      await batch.commit();
 
-      return TripResult(
-        success: true,
-        data: null,
-        error: null,
-      );
+      return TripResult(success: true, data: null, error: null);
     } catch (e) {
-      return TripResult(
-        success: false,
-        data: null,
-        error: e.toString(),
-      );
+      return TripResult(success: false, data: null, error: e.toString());
     }
   }
 }

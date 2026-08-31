@@ -35,9 +35,9 @@ class _LoginPageState extends State<LoginPage> {
     if (!mounted || authViewModel.user != null) return;
 
     if (authViewModel.errorMessage != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(authViewModel.errorMessage!)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(authViewModel.errorMessage!)));
     }
   }
 
@@ -96,7 +96,8 @@ class _LoginPageState extends State<LoginPage> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
-                onPressed: () => Navigator.pushNamed(context, '/forgot-password'),
+                onPressed: () =>
+                    Navigator.pushNamed(context, '/forgot-password'),
                 child: const Text('Forgot password?'),
               ),
             ),
@@ -129,7 +130,9 @@ class _LoginPageState extends State<LoginPage> {
                 Text(
                   'New to Travel App?',
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.62),
                   ),
                 ),
                 TextButton(

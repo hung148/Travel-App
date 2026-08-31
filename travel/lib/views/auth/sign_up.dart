@@ -47,9 +47,9 @@ class _SignupPageState extends State<SignupPage> {
     }
 
     if (authViewModel.errorMessage != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(authViewModel.errorMessage!)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(authViewModel.errorMessage!)));
     }
   }
 
@@ -57,7 +57,8 @@ class _SignupPageState extends State<SignupPage> {
   Widget build(BuildContext context) {
     return AuthLayout(
       title: 'Create your account',
-      subtitle: 'A few details now, then we can personalize every trip you plan.',
+      subtitle:
+          'A few details now, then we can personalize every trip you plan.',
       icon: Icons.person_add_alt_1_rounded,
       child: Form(
         key: _formKey,
@@ -111,7 +112,9 @@ class _SignupPageState extends State<SignupPage> {
                 ),
               ),
               validator: (value) {
-                if ((value ?? '').length < 6) return 'Password must be at least 6 characters';
+                if ((value ?? '').length < 6) {
+                  return 'Password must be at least 6 characters';
+                }
                 return null;
               },
             ),
@@ -136,7 +139,9 @@ class _SignupPageState extends State<SignupPage> {
                 ),
               ),
               validator: (value) {
-                if (value != passwordController.text) return 'Passwords do not match';
+                if (value != passwordController.text) {
+                  return 'Passwords do not match';
+                }
                 return null;
               },
             ),

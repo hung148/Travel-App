@@ -1,32 +1,18 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:travel/config/app_config.dart';
 import 'package:travel/models/preference/preference_result.dart';
 import 'package:travel/models/preference/preferences.dart';
 
 class PreferenceService {
-  final CollectionReference preferenceRef = FirebaseFirestore.instance.collection('preferences');
-
-    // Fake data
-    static final Preference _fakePreference = Preference(
-      id: 'debug-preference-id',
-      ownerId: 'test-user',
-      experienceType: [],
-      activityLevel: "",
-      spendingStyle: "",
-      interests: [],
-    );
+  final CollectionReference preferenceRef = FirebaseFirestore.instance
+      .collection('preferences');
 
   /// CRUD
-  
+
   // CREATE - add a new preference
   Future<PreferenceResult> addPreference(Preference preference) async {
-    if (AppConfig.isDebug) {
-      return PreferenceResult(success: true, data: null, error: "");
-    }
-
     try {
       await preferenceRef.doc(preference.id).set(preference.toMap());
-      return PreferenceResult(success: true, data: null, error: "");
+      return const PreferenceResult(success: true, data: null, error: null);
     } catch (e) {
       return PreferenceResult(success: false, data: null, error: e.toString());
     }
@@ -34,20 +20,16 @@ class PreferenceService {
 
   // READ - by user id
   Future<PreferenceResult> getPreferences(String ownerId) async {
-    if (AppConfig.isDebug) {
-      return PreferenceResult(success: true, data: _fakePreference, error: "");
-    }
-
     try {
       final snapshot = await preferenceRef
-        .where('ownerId', isEqualTo: ownerId)
-        .limit(1)
-        .get();
-      
-      if(snapshot.docs.isEmpty) {
+          .where('ownerId', isEqualTo: ownerId)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
         return PreferenceResult(
-          success: false, 
-          data: null, 
+          success: false,
+          data: null,
           error: "No preference found",
         );
       }
@@ -59,17 +41,9 @@ class PreferenceService {
         doc.id,
       );
 
-      return PreferenceResult(
-        success: true,
-        data: preference,
-        error: "",
-      );
+      return PreferenceResult(success: true, data: preference, error: null);
     } catch (e) {
-      return PreferenceResult(
-        success: false,
-        data: null,
-        error: e.toString(),
-      );
+      return PreferenceResult(success: false, data: null, error: e.toString());
     }
   }
 }

@@ -14,9 +14,7 @@ class TripHistoryWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (trips.isEmpty) {
-      return const Center(
-        child: Text('No trips yet'),
-      );
+      return const Center(child: Text('No trips yet'));
     }
 
     return ListView.builder(

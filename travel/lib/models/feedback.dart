@@ -1,7 +1,7 @@
-class Feedback{
+class Feedback {
   final String id;
   final String userId;
-  final String tripId; 
+  final String tripId;
   final double rating;
   final String best;
   final String worst;
@@ -20,7 +20,7 @@ class Feedback{
       id: id,
       userId: data['userId'] ?? '',
       tripId: data['tripId'] ?? '',
-      rating: (data['rating'] as num).toDouble(), // Firestore returns num, so Dart can complain sometimes.
+      rating: (data['rating'] as num?)?.toDouble() ?? 0,
       best: data['best'] ?? '',
       worst: data['worst'] ?? '',
     );
