@@ -53,7 +53,6 @@ class MyApp extends StatelessWidget {
         routes: {
           '/signup': (_) => const SignupPage(),
           '/forgot-password': (_) => const ForgotPasswordPage(),
-          '/home': (_) => const ProfilePage(),
           '/profile': (_) => const ProfilePage(),
           '/plan-trip': (_) => const PlanTripPage(),
           '/summary': (_) => const SummaryPage(),
