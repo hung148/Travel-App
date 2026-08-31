@@ -122,30 +122,53 @@ class AuthService {
   /// Returns:
   /// - AppUser if successful
   /// - throws Exception if failed
-  Future<AppUser> login({
-    required String email,
-    required String password,
-  }) async {
-    try {
-      UserCredential credential = await _auth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password.trim(),
-      );
+ Future<AppUser> login({
+  required String email,
+  required String password,
+}) async {
+  try {
+    final credential = await _auth.signInWithEmailAndPassword(
+      email: email.trim(),
+      password: password.trim(),
+    );
 
-      User? user = credential.user;
+    final firebaseUser = credential.user;
 
-      if (user == null) {
-        throw Exception('Login failed.');
-      }
-
-      return AppUser.fromFirebaseUser(user);
-    } on FirebaseAuthException catch (e) {
-      throw Exception(_handleError(e));
-    } catch (e) {
-      throw Exception('Login error: $e');
+    if (firebaseUser == null) {
+      throw Exception('Login failed.');
     }
-  }
 
+    final snapshot = await _users.doc(firebaseUser.uid).get();
+
+    if (!snapshot.exists) {
+      final appUser = AppUser.fromFirebaseUser(firebaseUser);
+
+      await _users.doc(firebaseUser.uid).set({
+        ...appUser.toMap(),
+        'onboardingCompleted': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      return appUser;
+    }
+
+    final data = snapshot.data()!;
+
+    return AppUser.fromMap({
+      ...data,
+      'uid': firebaseUser.uid,
+      'email': firebaseUser.email ?? data['email'] ?? '',
+      'name': firebaseUser.displayName ?? data['name'] ?? '',
+      'profileImage':
+          firebaseUser.photoURL ?? data['profileImage'],
+    });
+  } on FirebaseAuthException catch (e) {
+    throw Exception(_handleError(e));
+  } catch (e) {
+    throw Exception('Login error: $e');
+  }
+}
   /// ==============================
   /// Logout
   /// ==============================

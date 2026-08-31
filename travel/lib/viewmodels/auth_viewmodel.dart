@@ -31,13 +31,22 @@ class AuthViewModel extends ChangeNotifier {
     );
   }
 
-  Future<void> login(String email, String password) async {
-    await _run(
-      () async =>
-          user = await _authService.login(email: email, password: password),
-      'Unable to sign in. Please try again.',
+  Future<void> login(
+  String email,
+  String password,
+) async {
+  await _run(() async {
+    final loggedInUser =
+        await _authService.login(
+      email: email,
+      password: password,
     );
-  }
+
+    user = loggedInUser;
+    isNewUser =
+        !loggedInUser.onboardingCompleted;
+  }, 'Unable to sign in. Please try again.');
+}
 
   Future<void> register(String name, String email, String password) async {
     await _run(() async {

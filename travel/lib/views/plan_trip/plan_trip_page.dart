@@ -1,4 +1,11 @@
 import 'package:flutter/material.dart';
+
+import '../../models/planner_result.dart';
+import '../../models/preference/preferences.dart';
+import '../../models/trip/trip.dart';
+import '../../service/planner/mock_places.dart';
+import '../../service/planner/place_scoring_service.dart';
+import '../../service/planner/travel_planner_service.dart';
 import 'ai_chat_widget.dart';
 
 class PlanTripPage extends StatefulWidget {
@@ -12,10 +19,16 @@ class _PlanTripPageState extends State<PlanTripPage> {
   final destinationController = TextEditingController(text: 'Tokyo, Japan');
   final budgetController = TextEditingController(text: '2000');
 
+  final TravelPlannerService _planner = TravelPlannerService(
+    placeScoringService: PlaceScoringService(),
+  );
+
   DateTimeRange? dates;
   int travelers = 2;
   bool planGenerated = false;
+  bool isGenerating = false;
   String selectedPlan = 'Balanced';
+  PlannerResult? plannerResult;
 
   @override
   void dispose() {
@@ -43,6 +56,28 @@ class _PlanTripPageState extends State<PlanTripPage> {
     return '${format(dates!.start)} – ${format(dates!.end)}';
   }
 
+  String _activityLevelForPlan(String plan) {
+    switch (plan) {
+      case 'Relaxed':
+        return 'Relaxed';
+      case 'Explorer':
+        return 'Very Active';
+      default:
+        return 'Moderate';
+    }
+  }
+
+  Preference _testPreference() {
+    return Preference(
+      id: 'ui_test_preference',
+      ownerId: 'ui_test_user',
+      experienceType: const ['Food', 'History', 'Culture'],
+      activityLevel: _activityLevelForPlan(selectedPlan),
+      spendingStyle: 'Normal',
+      interests: const ['Local food', 'Museums', 'Photography', 'Attractions'],
+    );
+  }
+
   void _generatePlan() {
     final destination = destinationController.text.trim();
     final budget = double.tryParse(budgetController.text.trim());
@@ -56,7 +91,56 @@ class _PlanTripPageState extends State<PlanTripPage> {
       return;
     }
 
-    setState(() => planGenerated = true);
+    setState(() => isGenerating = true);
+
+    try {
+      final dayCount = dates == null
+          ? 3
+          : dates!.end.difference(dates!.start).inDays + 1;
+
+      final trip = Trip(
+        id: 'ui_test_trip',
+        ownerId: 'ui_test_user',
+        destination: destination,
+        budget: budget,
+        days: dayCount,
+        status: 'draft',
+        startDate: dates?.start,
+        endDate: dates?.end,
+      );
+
+      final result = _planner.generatePlan(
+        trip: trip,
+        preference: _testPreference(),
+        candidatePlaces: mockTokyoPlaces,
+        centerLatitude: 35.6762,
+        centerLongitude: 139.6503,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        plannerResult = result;
+        planGenerated = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not generate plan: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => isGenerating = false);
+      }
+    }
+  }
+
+  void _selectPlan(String value) {
+    setState(() => selectedPlan = value);
+
+    if (planGenerated) {
+      _generatePlan();
+    }
   }
 
   @override
@@ -134,12 +218,22 @@ class _PlanTripPageState extends State<PlanTripPage> {
                         ),
                         if (desktop)
                           FilledButton.icon(
-                            onPressed: _generatePlan,
-                            icon: const Icon(Icons.auto_awesome_rounded),
+                            onPressed: isGenerating ? null : _generatePlan,
+                            icon: isGenerating
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.auto_awesome_rounded),
                             label: Text(
-                              planGenerated
-                                  ? 'Regenerate plan'
-                                  : 'Generate plan',
+                              isGenerating
+                                  ? 'Generating...'
+                                  : planGenerated
+                                      ? 'Regenerate plan'
+                                      : 'Generate plan',
                             ),
                             style: FilledButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
@@ -165,10 +259,22 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton.icon(
-                          onPressed: _generatePlan,
-                          icon: const Icon(Icons.auto_awesome_rounded),
+                          onPressed: isGenerating ? null : _generatePlan,
+                          icon: isGenerating
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.auto_awesome_rounded),
                           label: Text(
-                            planGenerated ? 'Regenerate plan' : 'Generate plan',
+                            isGenerating
+                                ? 'Generating...'
+                                : planGenerated
+                                    ? 'Regenerate plan'
+                                    : 'Generate plan',
                           ),
                         ),
                       ),
@@ -187,7 +293,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                               child: AiChatWidget(
                                 onPlanChanged: () {
                                   if (!planGenerated) {
-                                    setState(() => planGenerated = true);
+                                    _generatePlan();
                                   }
                                 },
                               ),
@@ -203,7 +309,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                         child: AiChatWidget(
                           onPlanChanged: () {
                             if (!planGenerated) {
-                              setState(() => planGenerated = true);
+                              _generatePlan();
                             }
                           },
                         ),
@@ -213,8 +319,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                     _PlanOptions(
                       selectedPlan: selectedPlan,
                       enabled: planGenerated,
-                      onSelected: (value) =>
-                          setState(() => selectedPlan = value),
+                      onSelected: _selectPlan,
                     ),
                     const SizedBox(height: 20),
                     _PlanPreview(
@@ -223,6 +328,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       destination: destinationController.text.trim().isEmpty
                           ? 'your destination'
                           : destinationController.text.trim(),
+                      result: plannerResult,
                       onGenerate: _generatePlan,
                       onReview: () => Navigator.pushNamed(context, '/summary'),
                     ),
@@ -397,9 +503,10 @@ class _MapPlaceholder extends StatelessWidget {
             children: [
               Positioned.fill(
                 child: Container(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.primary.withValues(alpha: 0.06),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.06),
                   child: CustomPaint(painter: _MapGridPainter()),
                 ),
               ),
@@ -484,19 +591,19 @@ class _PlanOptions extends StatelessWidget {
     final plans = [
       (
         'Relaxed',
-        '\$1,650',
+        '3 stops/day',
         'Fewer stops • more free time',
         Icons.spa_outlined,
       ),
       (
         'Balanced',
-        '\$1,820',
+        '4 stops/day',
         'Best mix of places and rest',
         Icons.balance_outlined,
       ),
       (
         'Explorer',
-        '\$1,940',
+        '6 stops/day',
         'More activities • fuller days',
         Icons.explore_outlined,
       ),
@@ -517,7 +624,9 @@ class _PlanOptions extends StatelessWidget {
               const Spacer(),
               Chip(
                 label: Text(
-                  enabled ? '3 mock options ready' : 'Generate a plan first',
+                  enabled
+                      ? 'Changes regenerate the algorithm'
+                      : 'Generate a plan first',
                 ),
               ),
             ],
@@ -543,17 +652,18 @@ class _PlanOptions extends StatelessWidget {
                         padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
                           color: selected && enabled
-                              ? Theme.of(
-                                  context,
-                                ).colorScheme.primary.withValues(alpha: 0.08)
+                              ? Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withValues(alpha: 0.08)
                               : Theme.of(context).colorScheme.surface,
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(
                             color: selected && enabled
                                 ? Theme.of(context).colorScheme.primary
-                                : Theme.of(
-                                    context,
-                                  ).dividerColor.withValues(alpha: 0.45),
+                                : Theme.of(context)
+                                    .dividerColor
+                                    .withValues(alpha: 0.45),
                             width: selected && enabled ? 2 : 1,
                           ),
                         ),
@@ -615,6 +725,7 @@ class _PlanPreview extends StatelessWidget {
   final bool generated;
   final String selectedPlan;
   final String destination;
+  final PlannerResult? result;
   final VoidCallback onGenerate;
   final VoidCallback onReview;
 
@@ -622,6 +733,7 @@ class _PlanPreview extends StatelessWidget {
     required this.generated,
     required this.selectedPlan,
     required this.destination,
+    required this.result,
     required this.onGenerate,
     required this.onReview,
   });
@@ -649,44 +761,35 @@ class _PlanPreview extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          if (!generated) ...[
+          if (!generated || result == null) ...[
             Text(
               'Generate a plan to preview a day-by-day itinerary for $destination.',
               style: TextStyle(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.6),
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.6),
               ),
             ),
             const SizedBox(height: 18),
             FilledButton.icon(
               onPressed: onGenerate,
               icon: const Icon(Icons.auto_awesome_rounded),
-              label: const Text('Generate mock plan'),
+              label: const Text('Generate algorithm plan'),
             ),
           ] else ...[
-            const _DayPreview(
-              day: 'Day 1',
-              title: 'Shibuya & Harajuku',
-              items: [
-                '10:00  Coffee & breakfast',
-                '11:30  Meiji Shrine',
-                '13:30  Japanese lunch',
-                '15:00  Harajuku & Omotesando',
-                '18:30  Shibuya Sky',
-              ],
-            ),
+            _RankingSummary(result: result!),
             const Divider(height: 32),
-            const _DayPreview(
-              day: 'Day 2',
-              title: 'Asakusa & Ueno',
-              items: [
-                '09:30  Senso-ji',
-                '11:30  Nakamise shopping',
-                '13:00  Local lunch',
-                '15:00  Ueno Park',
+            if (result!.days.every((day) => day.places.isEmpty))
+              const Text(
+                'No places fit the current activity budget. Try increasing the budget.',
+              )
+            else
+              for (int i = 0; i < result!.days.length; i++) ...[
+                _GeneratedDayPreview(day: result!.days[i]),
+                if (i != result!.days.length - 1)
+                  const Divider(height: 32),
               ],
-            ),
             const SizedBox(height: 18),
             Align(
               alignment: Alignment.centerRight,
@@ -703,16 +806,46 @@ class _PlanPreview extends StatelessWidget {
   }
 }
 
-class _DayPreview extends StatelessWidget {
-  final String day;
-  final String title;
-  final List<String> items;
+class _RankingSummary extends StatelessWidget {
+  final PlannerResult result;
 
-  const _DayPreview({
-    required this.day,
-    required this.title,
-    required this.items,
-  });
+  const _RankingSummary({required this.result});
+
+  @override
+  Widget build(BuildContext context) {
+    final top = result.rankedPlaces.take(5).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Top ranked places',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: top
+              .map(
+                (item) => Chip(
+                  avatar: CircleAvatar(
+                    child: Text(item.totalScore.toStringAsFixed(0)),
+                  ),
+                  label: Text(item.place.name),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+}
+
+class _GeneratedDayPreview extends StatelessWidget {
+  final PlannerDay day;
+
+  const _GeneratedDayPreview({required this.day});
 
   @override
   Widget build(BuildContext context) {
@@ -722,31 +855,70 @@ class _DayPreview extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: Theme.of(
-              context,
-            ).colorScheme.primary.withValues(alpha: 0.09),
+            color:
+                Theme.of(context).colorScheme.primary.withValues(alpha: 0.09),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Text(day, style: const TextStyle(fontWeight: FontWeight.w900)),
+          child: Text(
+            'Day ${day.dayNumber}',
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
         ),
         const SizedBox(width: 16),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (day.places.isEmpty)
+                const Text('Free day / no place selected')
+              else
+                for (final scored in day.places)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.place_outlined, size: 19),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                scored.place.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${scored.place.category} • '
+                                '${scored.place.estimatedVisitMinutes} min • '
+                                'score ${scored.totalScore.toStringAsFixed(1)}',
+                                style: TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurface
+                                      .withValues(alpha: 0.62),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          '\$${scored.place.estimatedCost.toStringAsFixed(0)}',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
+                  ),
+              const SizedBox(height: 4),
               Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                ),
+                'Estimated activity cost: '
+                '\$${day.estimatedCost.toStringAsFixed(0)}',
+                style: const TextStyle(fontWeight: FontWeight.w800),
               ),
-              const SizedBox(height: 10),
-              for (final item in items)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 7),
-                  child: Text(item),
-                ),
             ],
           ),
         ),

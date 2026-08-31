@@ -1,5 +1,6 @@
 import '../../models/planner_result.dart';
 import '../../models/preference/preferences.dart';
+import '../../models/score_place.dart';
 import '../../models/travel_place.dart';
 import '../../models/trip/trip.dart';
 import 'place_scoring_service.dart';
@@ -29,17 +30,14 @@ class TravelPlannerService {
       );
     }
 
-    final activityBudget =
-        _calculateActivityBudget(
+    final activityBudget = _calculateActivityBudget(
       trip: trip,
       preference: preference,
     );
 
-    final dailyActivityBudget =
-        activityBudget / trip.days;
+    final dailyActivityBudget = activityBudget / trip.days;
 
-    final rankedPlaces =
-        placeScoringService.rankPlaces(
+    final rankedPlaces = placeScoringService.rankPlaces(
       places: candidatePlaces,
       preference: preference,
       dailyActivityBudget: dailyActivityBudget,
@@ -47,14 +45,9 @@ class TravelPlannerService {
       centerLongitude: centerLongitude,
     );
 
-    final maxPerDay =
-        _activitiesPerDay(preference.activityLevel);
-
-    final maxPlaces =
-        trip.days * maxPerDay;
-
-    final selectedPlaces =
-        rankedPlaces.take(maxPlaces).toList();
+    final maxPerDay = _activitiesPerDay(preference.activityLevel);
+    final maxPlaces = trip.days * maxPerDay;
+    final selectedPlaces = rankedPlaces.take(maxPlaces).toList();
 
     final days = List.generate(
       trip.days,
@@ -87,22 +80,17 @@ class TravelPlannerService {
       case 'budget':
         activityPercentage = 0.18;
         break;
-
       case 'luxury':
         activityPercentage = 0.25;
         break;
-
       default:
         activityPercentage = 0.20;
     }
 
-    final interests = preference.interests
-        .map((e) => e.toLowerCase())
-        .toList();
-
-    final experienceTypes = preference.experienceType
-        .map((e) => e.toLowerCase())
-        .toList();
+    final interests =
+        preference.interests.map((e) => e.toLowerCase()).toList();
+    final experienceTypes =
+        preference.experienceType.map((e) => e.toLowerCase()).toList();
 
     if (interests.contains('attractions') ||
         interests.contains('museums') ||
@@ -117,26 +105,20 @@ class TravelPlannerService {
     switch (activityLevel.toLowerCase()) {
       case 'relaxed':
         return 3;
-
       case 'very active':
         return 6;
-
       default:
         return 4;
     }
   }
 
   void _distributePlaces({
-    required List selectedPlaces,
+    required List<ScoredPlace> selectedPlaces,
     required List<PlannerDay> days,
     required int maxPerDay,
     required double dailyActivityBudget,
   }) {
-    final dayCosts = List<double>.filled(
-      days.length,
-      0,
-    );
-
+    final dayCosts = List<double>.filled(days.length, 0);
     int dayIndex = 0;
 
     for (final scoredPlace in selectedPlaces) {
@@ -144,31 +126,19 @@ class TravelPlannerService {
 
       while (attempts < days.length) {
         final day = days[dayIndex];
-
-        final hasSpace =
-            day.places.length < maxPerDay;
-
+        final hasSpace = day.places.length < maxPerDay;
         final projectedCost =
-            dayCosts[dayIndex] +
-            scoredPlace.place.estimatedCost;
-
-        final withinBudget =
-            projectedCost <= dailyActivityBudget;
+            dayCosts[dayIndex] + scoredPlace.place.estimatedCost;
+        final withinBudget = projectedCost <= dailyActivityBudget;
 
         if (hasSpace && withinBudget) {
           day.places.add(scoredPlace);
-          dayCosts[dayIndex] =
-              projectedCost;
-
-          dayIndex =
-              (dayIndex + 1) % days.length;
-
+          dayCosts[dayIndex] = projectedCost;
+          dayIndex = (dayIndex + 1) % days.length;
           break;
         }
 
-        dayIndex =
-            (dayIndex + 1) % days.length;
-
+        dayIndex = (dayIndex + 1) % days.length;
         attempts++;
       }
     }
