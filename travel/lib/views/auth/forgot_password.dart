@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travel/viewmodels/auth_viewmodel.dart';
+import 'package:travel/widgets/auth_error_banner.dart';
 import 'package:travel/widgets/auth_layout.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
@@ -25,11 +26,13 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final authViewModel = context.read<AuthViewModel>();
-    await authViewModel.resetPassword(emailController.text.trim());
+    final success = await authViewModel.resetPassword(
+      emailController.text.trim(),
+    );
 
     if (!mounted) return;
 
-    if (authViewModel.errorMessage != null) {
+    if (!success) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(authViewModel.errorMessage!)));
@@ -56,6 +59,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       key: _formKey,
       child: Column(
         children: [
+          Consumer<AuthViewModel>(
+            builder: (context, authViewModel, _) =>
+                AuthErrorBanner(message: authViewModel.errorMessage),
+          ),
           TextFormField(
             controller: emailController,
             keyboardType: TextInputType.emailAddress,

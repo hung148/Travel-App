@@ -6,8 +6,13 @@ import 'package:travel/viewmodels/preference_viewmodel.dart';
 
 class PreferencePage extends StatefulWidget {
   final String ownerId;
+  final bool returnOnSave;
 
-  const PreferencePage({super.key, required this.ownerId});
+  const PreferencePage({
+    super.key,
+    required this.ownerId,
+    this.returnOnSave = false,
+  });
 
   @override
   State<PreferencePage> createState() => _PreferencePageState();
@@ -175,6 +180,10 @@ class _PreferencePageState extends State<PreferencePage> {
                 WidgetsBinding.instance.addPostFrameCallback((_) async {
                   if (!mounted) return;
                   vm.resetSavedFlag();
+                  if (widget.returnOnSave) {
+                    Navigator.pop(this.context, true);
+                    return;
+                  }
                   final authViewModel = context.read<AuthViewModel>();
                   await authViewModel.completeOnboarding();
                   if (!mounted) return;

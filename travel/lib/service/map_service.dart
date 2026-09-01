@@ -24,12 +24,14 @@ import 'package:http/http.dart' as http;
 /// - adding route optimization logic
 class MapService {
   final String apiKey;
+  final http.Client _client;
 
   /// Constructor
   ///
   /// Example:
   /// final mapService = MapService(apiKey: 'YOUR_API_KEY');
-  MapService({required this.apiKey});
+  MapService({required this.apiKey, http.Client? client})
+    : _client = client ?? http.Client();
 
   /// ==============================
   /// Get autocomplete place suggestions
@@ -43,12 +45,13 @@ class MapService {
     if (input.trim().isEmpty) return [];
 
     final uri = Uri.parse(
-      'https://maps.googleapis.com/maps/api/place/autocomplete/json'
-      '?input=${Uri.encodeComponent(input.trim())}'
-      '&key=$apiKey',
+      'https://places.googleapis.com/v1/places:autocomplete',
     );
-
-    final response = await http.get(uri);
+    final response = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json', 'X-Goog-Api-Key': apiKey},
+      body: jsonEncode({'input': input.trim()}),
+    );
 
     if (response.statusCode != 200) {
       throw Exception('Failed to fetch place suggestions.');
@@ -56,16 +59,13 @@ class MapService {
 
     final data = jsonDecode(response.body);
 
-    if (data['status'] != 'OK' && data['status'] != 'ZERO_RESULTS') {
-      throw Exception(data['error_message'] ?? 'Autocomplete error.');
-    }
+    final suggestions = data['suggestions'] as List<dynamic>? ?? const [];
 
-    final predictions = data['predictions'] as List<dynamic>;
-
-    return predictions.map((item) {
+    return suggestions.map((item) {
+      final prediction = item['placePrediction'] as Map<String, dynamic>? ?? {};
       return PlaceSuggestion(
-        placeId: item['place_id'] ?? '',
-        description: item['description'] ?? '',
+        placeId: prediction['placeId'] ?? '',
+        description: prediction['text']?['text'] ?? '',
       );
     }).toList();
   }
@@ -83,13 +83,16 @@ class MapService {
   /// - types
   Future<PlaceDetails> getPlaceDetails(String placeId) async {
     final uri = Uri.parse(
-      'https://maps.googleapis.com/maps/api/place/details/json'
-      '?place_id=$placeId'
-      '&fields=place_id,name,formatted_address,geometry,rating,types'
-      '&key=$apiKey',
+      'https://places.googleapis.com/v1/places/${Uri.encodeComponent(placeId)}',
     );
-
-    final response = await http.get(uri);
+    final response = await _client.get(
+      uri,
+      headers: {
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask':
+            'id,displayName,formattedAddress,location,rating,types',
+      },
+    );
 
     if (response.statusCode != 200) {
       throw Exception('Failed to fetch place details.');
@@ -97,20 +100,14 @@ class MapService {
 
     final data = jsonDecode(response.body);
 
-    if (data['status'] != 'OK') {
-      throw Exception(data['error_message'] ?? 'Place details error.');
-    }
-
-    final result = data['result'];
-
     return PlaceDetails(
-      placeId: result['place_id'] ?? '',
-      name: result['name'] ?? '',
-      address: result['formatted_address'] ?? '',
-      latitude: result['geometry']?['location']?['lat']?.toDouble() ?? 0.0,
-      longitude: result['geometry']?['location']?['lng']?.toDouble() ?? 0.0,
-      rating: (result['rating'] ?? 0).toDouble(),
-      types: List<String>.from(result['types'] ?? []),
+      placeId: data['id'] ?? '',
+      name: data['displayName']?['text'] ?? '',
+      address: data['formattedAddress'] ?? '',
+      latitude: data['location']?['latitude']?.toDouble() ?? 0.0,
+      longitude: data['location']?['longitude']?.toDouble() ?? 0.0,
+      rating: (data['rating'] ?? 0).toDouble(),
+      types: List<String>.from(data['types'] ?? []),
     );
   }
 
@@ -137,14 +134,29 @@ class MapService {
     required String type,
   }) async {
     final uri = Uri.parse(
-      'https://maps.googleapis.com/maps/api/place/nearbysearch/json'
-      '?location=$latitude,$longitude'
-      '&radius=$radius'
-      '&type=${Uri.encodeComponent(type)}'
-      '&key=$apiKey',
+      'https://places.googleapis.com/v1/places:searchNearby',
     );
-
-    final response = await http.get(uri);
+    final response = await _client.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask':
+            'places.id,places.displayName,places.formattedAddress,'
+            'places.location,places.rating,places.userRatingCount,'
+            'places.types,places.priceLevel',
+      },
+      body: jsonEncode({
+        'includedTypes': [type],
+        'maxResultCount': 20,
+        'locationRestriction': {
+          'circle': {
+            'center': {'latitude': latitude, 'longitude': longitude},
+            'radius': radius.toDouble(),
+          },
+        },
+      }),
+    );
 
     if (response.statusCode != 200) {
       throw Exception('Failed to fetch nearby places.');
@@ -152,22 +164,19 @@ class MapService {
 
     final data = jsonDecode(response.body);
 
-    if (data['status'] != 'OK' && data['status'] != 'ZERO_RESULTS') {
-      throw Exception(data['error_message'] ?? 'Nearby search error.');
-    }
-
-    final results = data['results'] as List<dynamic>;
+    final results = data['places'] as List<dynamic>? ?? const [];
 
     return results.map((item) {
       return NearbyPlace(
-        placeId: item['place_id'] ?? '',
-        name: item['name'] ?? '',
-        address: item['vicinity'] ?? '',
-        latitude: item['geometry']?['location']?['lat']?.toDouble() ?? 0.0,
-        longitude: item['geometry']?['location']?['lng']?.toDouble() ?? 0.0,
+        placeId: item['id'] ?? '',
+        name: item['displayName']?['text'] ?? '',
+        address: item['formattedAddress'] ?? '',
+        latitude: item['location']?['latitude']?.toDouble() ?? 0.0,
+        longitude: item['location']?['longitude']?.toDouble() ?? 0.0,
         rating: (item['rating'] ?? 0).toDouble(),
-        userRatingsTotal: item['user_ratings_total'] ?? 0,
+        userRatingsTotal: item['userRatingCount'] ?? 0,
         types: List<String>.from(item['types'] ?? []),
+        priceLevel: _priceLevelFromGoogle(item['priceLevel']),
       );
     }).toList();
   }
@@ -187,7 +196,7 @@ class MapService {
       '&key=$apiKey',
     );
 
-    final response = await http.get(uri);
+    final response = await _client.get(uri);
 
     if (response.statusCode != 200) {
       throw Exception('Failed to geocode address.');
@@ -294,6 +303,17 @@ class MapService {
   double _degreesToRadians(double degrees) {
     return degrees * pi / 180;
   }
+
+  int? _priceLevelFromGoogle(Object? value) {
+    return switch (value) {
+      'PRICE_LEVEL_FREE' => 0,
+      'PRICE_LEVEL_INEXPENSIVE' => 1,
+      'PRICE_LEVEL_MODERATE' => 2,
+      'PRICE_LEVEL_EXPENSIVE' => 3,
+      'PRICE_LEVEL_VERY_EXPENSIVE' => 4,
+      _ => null,
+    };
+  }
 }
 
 /// ==============================
@@ -351,6 +371,7 @@ class NearbyPlace {
   final double rating;
   final int userRatingsTotal;
   final List<String> types;
+  final int? priceLevel;
 
   NearbyPlace({
     required this.placeId,
@@ -361,11 +382,12 @@ class NearbyPlace {
     required this.rating,
     required this.userRatingsTotal,
     required this.types,
+    this.priceLevel,
   });
 
   @override
   String toString() {
-    return 'NearbyPlace(placeId: $placeId, name: $name, address: $address, latitude: $latitude, longitude: $longitude, rating: $rating, userRatingsTotal: $userRatingsTotal, types: $types)';
+    return 'NearbyPlace(placeId: $placeId, name: $name, address: $address, latitude: $latitude, longitude: $longitude, rating: $rating, userRatingsTotal: $userRatingsTotal, types: $types, priceLevel: $priceLevel)';
   }
 }
 

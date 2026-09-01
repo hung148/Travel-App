@@ -1,15 +1,32 @@
+import '../../models/planner_profile.dart';
 import '../../models/planner_result.dart';
+import '../../models/place_role.dart';
 import '../../models/preference/preferences.dart';
 import '../../models/score_place.dart';
 import '../../models/travel_place.dart';
 import '../../models/trip/trip.dart';
+import '../budget_service.dart';
+import 'daily_composition_service.dart';
+import 'place_role_classifier.dart';
 import 'place_scoring_service.dart';
+import 'planner_validation_service.dart';
+import 'route_optimizer.dart';
 
 class TravelPlannerService {
   final PlaceScoringService placeScoringService;
+  final RouteOptimizer routeOptimizer;
+  final BudgetService budgetService;
+  final PlannerValidationService validationService;
+  final PlaceRoleClassifier roleClassifier;
+  final DailyCompositionService compositionService;
 
   TravelPlannerService({
     required this.placeScoringService,
+    this.routeOptimizer = const RouteOptimizer(),
+    this.budgetService = const BudgetService(),
+    this.validationService = const PlannerValidationService(),
+    this.roleClassifier = const PlaceRoleClassifier(),
+    this.compositionService = const DailyCompositionService(),
   });
 
   PlannerResult generatePlan({
@@ -19,23 +36,40 @@ class TravelPlannerService {
     required double centerLatitude,
     required double centerLongitude,
   }) {
+    final profile = PlannerProfile.fromActivityLevel(preference.activityLevel);
+    final budgetAllocation = budgetService.allocate(
+      totalBudget: trip.budget,
+      spendingStyle: preference.spendingStyle,
+    );
+
     if (trip.days <= 0) {
       throw ArgumentError('Trip must have at least one day.');
     }
 
+    final days = List.generate(
+      trip.days,
+      (index) => PlannerDay(dayNumber: index + 1, places: []),
+    );
+
     if (candidatePlaces.isEmpty) {
-      return const PlannerResult(
-        rankedPlaces: [],
-        days: [],
+      final validation = validationService.validate(
+        days: days,
+        rankedPlaces: const [],
+        profile: profile,
+        budgetAllocation: budgetAllocation,
+      );
+      return PlannerResult(
+        budgetAllocation: budgetAllocation,
+        validation: validation,
+        profile: profile,
+        rankedPlaces: const [],
+        days: days,
       );
     }
 
-    final activityBudget = _calculateActivityBudget(
-      trip: trip,
-      preference: preference,
+    final dailyActivityBudget = budgetAllocation.dailyActivitiesBudget(
+      trip.days,
     );
-
-    final dailyActivityBudget = activityBudget / trip.days;
 
     final rankedPlaces = placeScoringService.rankPlaces(
       places: candidatePlaces,
@@ -43,97 +77,107 @@ class TravelPlannerService {
       dailyActivityBudget: dailyActivityBudget,
       centerLatitude: centerLatitude,
       centerLongitude: centerLongitude,
-    );
-
-    final maxPerDay = _activitiesPerDay(preference.activityLevel);
-    final maxPlaces = trip.days * maxPerDay;
-    final selectedPlaces = rankedPlaces.take(maxPlaces).toList();
-
-    final days = List.generate(
-      trip.days,
-      (index) => PlannerDay(
-        dayNumber: index + 1,
-        places: [],
-      ),
+      profile: profile,
     );
 
     _distributePlaces(
-      selectedPlaces: selectedPlaces,
+      rankedPlaces: rankedPlaces,
       days: days,
-      maxPerDay: maxPerDay,
+      profile: profile,
       dailyActivityBudget: dailyActivityBudget,
     );
 
+    _optimizeDailyRoutes(
+      days: days,
+      centerLatitude: centerLatitude,
+      centerLongitude: centerLongitude,
+    );
+
+    _composeDays(days: days, profile: profile);
+
+    final validation = validationService.validate(
+      days: days,
+      rankedPlaces: rankedPlaces,
+      profile: profile,
+      budgetAllocation: budgetAllocation,
+    );
+
     return PlannerResult(
+      budgetAllocation: budgetAllocation,
+      validation: validation,
+      profile: profile,
       rankedPlaces: rankedPlaces,
       days: days,
     );
   }
 
-  double _calculateActivityBudget({
-    required Trip trip,
-    required Preference preference,
+  void _composeDays({
+    required List<PlannerDay> days,
+    required PlannerProfile profile,
   }) {
-    double activityPercentage;
-
-    switch (preference.spendingStyle.toLowerCase()) {
-      case 'budget':
-        activityPercentage = 0.18;
-        break;
-      case 'luxury':
-        activityPercentage = 0.25;
-        break;
-      default:
-        activityPercentage = 0.20;
+    for (final day in days) {
+      final arranged = compositionService.arrange(
+        routeOrderedPlaces: day.places,
+        profile: profile,
+      );
+      day.places
+        ..clear()
+        ..addAll(arranged);
     }
-
-    final interests =
-        preference.interests.map((e) => e.toLowerCase()).toList();
-    final experienceTypes =
-        preference.experienceType.map((e) => e.toLowerCase()).toList();
-
-    if (interests.contains('attractions') ||
-        interests.contains('museums') ||
-        experienceTypes.contains('adventure')) {
-      activityPercentage += 0.05;
-    }
-
-    return trip.budget * activityPercentage;
   }
 
-  int _activitiesPerDay(String activityLevel) {
-    switch (activityLevel.toLowerCase()) {
-      case 'relaxed':
-        return 3;
-      case 'very active':
-        return 6;
-      default:
-        return 4;
+  void _optimizeDailyRoutes({
+    required List<PlannerDay> days,
+    required double centerLatitude,
+    required double centerLongitude,
+  }) {
+    for (final day in days) {
+      final optimized = routeOptimizer.optimize(
+        places: day.places,
+        startLatitude: centerLatitude,
+        startLongitude: centerLongitude,
+      );
+
+      day.places
+        ..clear()
+        ..addAll(optimized);
     }
   }
 
   void _distributePlaces({
-    required List<ScoredPlace> selectedPlaces,
+    required List<ScoredPlace> rankedPlaces,
     required List<PlannerDay> days,
-    required int maxPerDay,
+    required PlannerProfile profile,
     required double dailyActivityBudget,
   }) {
     final dayCosts = List<double>.filled(days.length, 0);
+    final dayMinutes = List<int>.filled(days.length, 0);
+    final dayDiningCounts = List<int>.filled(days.length, 0);
     int dayIndex = 0;
 
-    for (final scoredPlace in selectedPlaces) {
+    for (final scoredPlace in rankedPlaces) {
       int attempts = 0;
 
       while (attempts < days.length) {
         final day = days[dayIndex];
-        final hasSpace = day.places.length < maxPerDay;
+        final hasSpace = day.places.length < profile.maxPlacesPerDay;
         final projectedCost =
             dayCosts[dayIndex] + scoredPlace.place.estimatedCost;
         final withinBudget = projectedCost <= dailyActivityBudget;
+        final projectedMinutes =
+            dayMinutes[dayIndex] + scoredPlace.place.estimatedVisitMinutes;
+        final withinTime = projectedMinutes <= profile.targetMinutesPerDay;
+        final isDining =
+            roleClassifier.classify(scoredPlace.place) == PlaceRole.dining;
+        final withinDiningLimit =
+            !isDining ||
+            dayDiningCounts[dayIndex] < profile.maxDiningPlacesPerDay;
 
-        if (hasSpace && withinBudget) {
+        if (hasSpace && withinBudget && withinTime && withinDiningLimit) {
           day.places.add(scoredPlace);
           dayCosts[dayIndex] = projectedCost;
+          dayMinutes[dayIndex] = projectedMinutes;
+          if (isDining) dayDiningCounts[dayIndex]++;
           dayIndex = (dayIndex + 1) % days.length;
           break;
         }

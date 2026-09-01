@@ -4,6 +4,19 @@ A new Flutter project.
 
 ## Getting Started
 
+### Google Places planner data
+
+For live destination candidates, enable the Google Places API (New) and
+Geocoding API for a restricted development key, then run:
+
+```powershell
+flutter run --dart-define=GOOGLE_MAPS_API_KEY=YOUR_RESTRICTED_KEY
+```
+
+Without this define, the planner remains usable with the labeled mock Tokyo
+dataset. Production builds should call Google Maps Platform through a protected
+backend rather than distributing an unrestricted web-service key in the app.
+
 This project is a starting point for a Flutter application.
 
 A few resources to get you started if this is your first Flutter project:

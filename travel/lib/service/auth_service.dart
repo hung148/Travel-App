@@ -122,53 +122,53 @@ class AuthService {
   /// Returns:
   /// - AppUser if successful
   /// - throws Exception if failed
- Future<AppUser> login({
-  required String email,
-  required String password,
-}) async {
-  try {
-    final credential = await _auth.signInWithEmailAndPassword(
-      email: email.trim(),
-      password: password.trim(),
-    );
+  Future<AppUser> login({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password.trim(),
+      );
 
-    final firebaseUser = credential.user;
+      final firebaseUser = credential.user;
 
-    if (firebaseUser == null) {
-      throw Exception('Login failed.');
-    }
+      if (firebaseUser == null) {
+        throw Exception('Login failed.');
+      }
 
-    final snapshot = await _users.doc(firebaseUser.uid).get();
+      final snapshot = await _users.doc(firebaseUser.uid).get();
 
-    if (!snapshot.exists) {
-      final appUser = AppUser.fromFirebaseUser(firebaseUser);
+      if (!snapshot.exists) {
+        final appUser = AppUser.fromFirebaseUser(firebaseUser);
 
-      await _users.doc(firebaseUser.uid).set({
-        ...appUser.toMap(),
-        'onboardingCompleted': false,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
+        await _users.doc(firebaseUser.uid).set({
+          ...appUser.toMap(),
+          'onboardingCompleted': false,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        return appUser;
+      }
+
+      final data = snapshot.data()!;
+
+      return AppUser.fromMap({
+        ...data,
+        'uid': firebaseUser.uid,
+        'email': firebaseUser.email ?? data['email'] ?? '',
+        'name': firebaseUser.displayName ?? data['name'] ?? '',
+        'profileImage': firebaseUser.photoURL ?? data['profileImage'],
       });
-
-      return appUser;
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_handleError(e));
+    } catch (e) {
+      throw Exception('Login error: $e');
     }
-
-    final data = snapshot.data()!;
-
-    return AppUser.fromMap({
-      ...data,
-      'uid': firebaseUser.uid,
-      'email': firebaseUser.email ?? data['email'] ?? '',
-      'name': firebaseUser.displayName ?? data['name'] ?? '',
-      'profileImage':
-          firebaseUser.photoURL ?? data['profileImage'],
-    });
-  } on FirebaseAuthException catch (e) {
-    throw Exception(_handleError(e));
-  } catch (e) {
-    throw Exception('Login error: $e');
   }
-}
+
   /// ==============================
   /// Logout
   /// ==============================
@@ -203,7 +203,11 @@ class AuthService {
   ///
   /// Converts Firebase error codes into readable messages
   String _handleError(FirebaseAuthException e) {
-    switch (e.code) {
+    return authErrorMessage(e.code, fallback: e.message);
+  }
+
+  static String authErrorMessage(String code, {String? fallback}) {
+    switch (code) {
       case 'email-already-in-use':
         return 'This email is already in use.';
       case 'invalid-email':
@@ -216,8 +220,20 @@ class AuthService {
         return 'Incorrect password.';
       case 'invalid-credential':
         return 'Invalid email or password.';
+      case 'user-disabled':
+        return 'This account has been disabled. Contact support for help.';
+      case 'too-many-requests':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'network-request-failed':
+        return 'Unable to connect. Check your internet connection and try again.';
+      case 'operation-not-allowed':
+        return 'This sign-in method is not currently available.';
+      case 'missing-email':
+        return 'Enter your email address.';
       default:
-        return e.message ?? 'Authentication error.';
+        return fallback?.trim().isNotEmpty == true
+            ? fallback!.trim()
+            : 'Authentication failed. Please try again.';
     }
   }
 }

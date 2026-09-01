@@ -9,6 +9,7 @@ class AuthViewModel extends ChangeNotifier {
   late final StreamSubscription<AppUser?> _authSubscription;
 
   bool isLoading = true;
+  bool isRestoringSession = true;
   String? errorMessage;
   AppUser? user;
   bool isNewUser = false;
@@ -19,37 +20,34 @@ class AuthViewModel extends ChangeNotifier {
         user = currentUser;
         isNewUser = currentUser != null && !currentUser.onboardingCompleted;
         isLoading = false;
+        isRestoringSession = false;
         errorMessage = null;
         notifyListeners();
       },
       onError: (Object error, StackTrace stackTrace) {
         debugPrint('Failed to restore auth state: $error\n$stackTrace');
         isLoading = false;
+        isRestoringSession = false;
         errorMessage = 'Unable to restore your session. Please try again.';
         notifyListeners();
       },
     );
   }
 
-  Future<void> login(
-  String email,
-  String password,
-) async {
-  await _run(() async {
-    final loggedInUser =
-        await _authService.login(
-      email: email,
-      password: password,
-    );
+  Future<bool> login(String email, String password) async {
+    return _run(() async {
+      final loggedInUser = await _authService.login(
+        email: email,
+        password: password,
+      );
 
-    user = loggedInUser;
-    isNewUser =
-        !loggedInUser.onboardingCompleted;
-  }, 'Unable to sign in. Please try again.');
-}
+      user = loggedInUser;
+      isNewUser = !loggedInUser.onboardingCompleted;
+    }, 'Unable to sign in. Please try again.');
+  }
 
-  Future<void> register(String name, String email, String password) async {
-    await _run(() async {
+  Future<bool> register(String name, String email, String password) async {
+    return _run(() async {
       user = await _authService.register(
         name: name,
         email: email,
@@ -76,23 +74,25 @@ class AuthViewModel extends ChangeNotifier {
     }, 'Unable to sign out.');
   }
 
-  Future<void> resetPassword(String email) async {
-    await _run(
+  Future<bool> resetPassword(String email) async {
+    return _run(
       () => _authService.resetPassword(email),
       'Unable to send the reset email.',
     );
   }
 
-  Future<void> _run(Future<void> Function() action, String fallback) async {
+  Future<bool> _run(Future<void> Function() action, String fallback) async {
     try {
       isLoading = true;
       errorMessage = null;
       notifyListeners();
       await action();
+      return true;
     } catch (error, stackTrace) {
       debugPrint('$error\n$stackTrace');
       final message = error.toString().replaceFirst('Exception: ', '').trim();
       errorMessage = message.isEmpty ? fallback : message;
+      return false;
     } finally {
       isLoading = false;
       notifyListeners();

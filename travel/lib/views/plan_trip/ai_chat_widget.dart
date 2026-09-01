@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 class AiChatWidget extends StatefulWidget {
-  final VoidCallback? onPlanChanged;
+  final Future<String> Function(String instruction)? onRefinePlan;
 
-  const AiChatWidget({super.key, this.onPlanChanged});
+  const AiChatWidget({super.key, this.onRefinePlan});
 
   @override
   State<AiChatWidget> createState() => _AiChatWidgetState();
@@ -23,7 +23,7 @@ class _AiChatWidgetState extends State<AiChatWidget> {
     'Make it cheaper',
     'Less walking',
     'More food',
-    'More nightlife',
+    'Remove museums',
     'Relax schedule',
   ];
 
@@ -33,29 +33,18 @@ class _AiChatWidgetState extends State<AiChatWidget> {
     super.dispose();
   }
 
-  void _send([String? preset]) {
+  Future<void> _send([String? preset]) async {
     final text = (preset ?? _controller.text).trim();
     if (text.isEmpty) return;
-    setState(() {
-      _messages.add(_ChatMessage(fromUser: true, text: text));
-      _messages.add(_ChatMessage(fromUser: false, text: _mockResponse(text)));
-    });
+    setState(() => _messages.add(_ChatMessage(fromUser: true, text: text)));
     _controller.clear();
-    widget.onPlanChanged?.call();
-  }
-
-  String _mockResponse(String message) {
-    final lower = message.toLowerCase();
-    if (lower.contains('cheap')) {
-      return 'I can reduce the sample plan by about \$120 by switching one premium dinner and one paid attraction. This is mock UI for now — later the AI will calculate real alternatives.';
-    }
-    if (lower.contains('walk')) {
-      return 'I’ll group nearby activities and favor shorter transfers. The real version will use Google Routes travel times.';
-    }
-    if (lower.contains('food')) {
-      return 'I’ll shift more of the budget toward restaurants and cafés and reduce spending in lower-priority categories.';
-    }
-    return 'Got it. I’ll treat that as a planning preference. When the AI backend is connected, this message can update the actual itinerary.';
+    final response =
+        await widget.onRefinePlan?.call(text) ??
+        'Generate a plan first, then ask me to refine it.';
+    if (!mounted) return;
+    setState(
+      () => _messages.add(_ChatMessage(fromUser: false, text: response)),
+    );
   }
 
   @override
@@ -86,7 +75,7 @@ class _AiChatWidgetState extends State<AiChatWidget> {
                       style: TextStyle(fontWeight: FontWeight.w800),
                     ),
                     Text(
-                      'UI demo • mock responses',
+                      'Safe refinement • validation enabled',
                       style: TextStyle(fontSize: 12, color: Color(0xFF7A8499)),
                     ),
                   ],
@@ -139,7 +128,7 @@ class _AiChatWidgetState extends State<AiChatWidget> {
               scrollDirection: Axis.horizontal,
               itemBuilder: (_, index) => ActionChip(
                 label: Text(_quickActions[index]),
-                onPressed: () => _send(_quickActions[index]),
+                onPressed: () async => _send(_quickActions[index]),
               ),
               separatorBuilder: (_, _) => const SizedBox(width: 8),
               itemCount: _quickActions.length,
@@ -152,7 +141,7 @@ class _AiChatWidgetState extends State<AiChatWidget> {
                 Expanded(
                   child: TextField(
                     controller: _controller,
-                    onSubmitted: (_) => _send(),
+                    onSubmitted: (_) async => _send(),
                     decoration: const InputDecoration(
                       hintText: 'Ask AI to adjust your trip...',
                     ),
@@ -160,7 +149,7 @@ class _AiChatWidgetState extends State<AiChatWidget> {
                 ),
                 const SizedBox(width: 10),
                 IconButton.filled(
-                  onPressed: _send,
+                  onPressed: () async => _send(),
                   icon: const Icon(Icons.send_rounded),
                 ),
               ],

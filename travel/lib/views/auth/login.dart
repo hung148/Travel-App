@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travel/viewmodels/auth_viewmodel.dart';
+import 'package:travel/widgets/auth_error_banner.dart';
 import 'package:travel/widgets/auth_layout.dart';
 
 class LoginPage extends StatefulWidget {
@@ -27,12 +28,12 @@ class _LoginPageState extends State<LoginPage> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final authViewModel = context.read<AuthViewModel>();
-    await authViewModel.login(
+    final success = await authViewModel.login(
       emailController.text.trim(),
       passwordController.text,
     );
 
-    if (!mounted || authViewModel.user != null) return;
+    if (!mounted || success) return;
 
     if (authViewModel.errorMessage != null) {
       ScaffoldMessenger.of(
@@ -51,6 +52,10 @@ class _LoginPageState extends State<LoginPage> {
         key: _formKey,
         child: Column(
           children: [
+            Consumer<AuthViewModel>(
+              builder: (context, authViewModel, _) =>
+                  AuthErrorBanner(message: authViewModel.errorMessage),
+            ),
             TextFormField(
               controller: emailController,
               keyboardType: TextInputType.emailAddress,

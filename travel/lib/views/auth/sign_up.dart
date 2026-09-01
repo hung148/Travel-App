@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travel/viewmodels/auth_viewmodel.dart';
+import 'package:travel/widgets/auth_error_banner.dart';
 import 'package:travel/widgets/auth_layout.dart';
 
 class SignupPage extends StatefulWidget {
@@ -33,7 +34,7 @@ class _SignupPageState extends State<SignupPage> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final authViewModel = context.read<AuthViewModel>();
-    await authViewModel.register(
+    final success = await authViewModel.register(
       nameController.text.trim(),
       emailController.text.trim(),
       passwordController.text,
@@ -41,7 +42,7 @@ class _SignupPageState extends State<SignupPage> {
 
     if (!mounted) return;
 
-    if (authViewModel.user != null) {
+    if (success) {
       Navigator.pop(context);
       return;
     }
@@ -64,6 +65,10 @@ class _SignupPageState extends State<SignupPage> {
         key: _formKey,
         child: Column(
           children: [
+            Consumer<AuthViewModel>(
+              builder: (context, authViewModel, _) =>
+                  AuthErrorBanner(message: authViewModel.errorMessage),
+            ),
             TextFormField(
               controller: nameController,
               textInputAction: TextInputAction.next,

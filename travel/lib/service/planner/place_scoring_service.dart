@@ -1,16 +1,28 @@
 import 'dart:math';
 
 import '../../models/preference/preferences.dart';
+import '../../models/planner_profile.dart';
 import '../../models/score_place.dart';
 import '../../models/travel_place.dart';
+import 'preference_normalizer.dart';
+import 'place_role_classifier.dart';
 
 class PlaceScoringService {
+  final PreferenceNormalizer preferenceNormalizer;
+  final PlaceRoleClassifier roleClassifier;
+
+  const PlaceScoringService({
+    this.preferenceNormalizer = const PreferenceNormalizer(),
+    this.roleClassifier = const PlaceRoleClassifier(),
+  });
+
   ScoredPlace scorePlace({
     required TravelPlace place,
     required Preference preference,
     required double dailyActivityBudget,
     required double centerLatitude,
     required double centerLongitude,
+    required PlannerProfile profile,
   }) {
     final rating = _ratingScore(place.rating);
 
@@ -33,14 +45,18 @@ class PlaceScoringService {
       endLng: place.longitude,
     );
 
-    final distance = _distanceScore(distanceKm);
+    final distance = _distanceScore(
+      distanceKm: distanceKm,
+      toleranceKm: profile.distanceToleranceKm,
+    );
 
+    final weights = profile.scoringWeights;
     final total =
-        rating * 0.25 +
-        reviews * 0.15 +
-        preferenceMatch * 0.30 +
-        budget * 0.15 +
-        distance * 0.15;
+        rating * weights.rating +
+        reviews * weights.reviews +
+        preferenceMatch * weights.preference +
+        budget * weights.budget +
+        distance * weights.distance;
 
     return ScoredPlace(
       place: place,
@@ -59,6 +75,7 @@ class PlaceScoringService {
     required double dailyActivityBudget,
     required double centerLatitude,
     required double centerLongitude,
+    required PlannerProfile profile,
   }) {
     final scored = places.map((place) {
       return scorePlace(
@@ -67,12 +84,11 @@ class PlaceScoringService {
         dailyActivityBudget: dailyActivityBudget,
         centerLatitude: centerLatitude,
         centerLongitude: centerLongitude,
+        profile: profile,
       );
     }).toList();
 
-    scored.sort(
-      (a, b) => b.totalScore.compareTo(a.totalScore),
-    );
+    scored.sort((a, b) => b.totalScore.compareTo(a.totalScore));
 
     return scored;
   }
@@ -88,10 +104,7 @@ class PlaceScoringService {
 
     const maxUsefulReviews = 10000;
 
-    final score =
-        log(reviewCount + 1) /
-        log(maxUsefulReviews + 1) *
-        100;
+    final score = log(reviewCount + 1) / log(maxUsefulReviews + 1) * 100;
 
     return score.clamp(0, 100).toDouble();
   }
@@ -100,30 +113,28 @@ class PlaceScoringService {
     required TravelPlace place,
     required Preference preference,
   }) {
-    final userPreferences = <String>[
-      ...preference.experienceType,
-      ...preference.interests,
-    ]
-        .map((item) => item.toLowerCase().trim())
-        .where((item) => item.isNotEmpty)
-        .toSet();
+    final userPreferences =
+        <String>[...preference.experienceType, ...preference.interests]
+            .map(preferenceNormalizer.normalize)
+            .where((item) => item.isNotEmpty)
+            .toSet();
 
     if (userPreferences.isEmpty) {
       return 50;
     }
 
-    final placeTags = <String>[
+    final role = roleClassifier.classify(place);
+    final placeTags = preferenceNormalizer.expandAll([
       place.category,
       ...place.tags,
-    ]
-        .map((item) => item.toLowerCase().trim())
-        .where((item) => item.isNotEmpty)
-        .toSet();
+      ...roleClassifier.preferenceTerms(role),
+    ]);
 
     int matches = 0;
 
-    for (final preference in userPreferences) {
-      if (placeTags.contains(preference)) {
+    for (final userPreference in userPreferences) {
+      final preferenceTerms = preferenceNormalizer.expand(userPreference);
+      if (preferenceTerms.any(placeTags.contains)) {
         matches++;
       }
     }
@@ -132,8 +143,7 @@ class PlaceScoringService {
       return 20;
     }
 
-    final score =
-        matches / userPreferences.length * 100;
+    final score = matches / userPreferences.length * 100;
 
     // Give at least a reasonable score when there is
     // a genuine preference match.
@@ -177,20 +187,25 @@ class PlaceScoringService {
     return 10;
   }
 
-  double _distanceScore(double distanceKm) {
-    if (distanceKm <= 1) {
+  double _distanceScore({
+    required double distanceKm,
+    required double toleranceKm,
+  }) {
+    final distanceRatio = distanceKm / toleranceKm;
+
+    if (distanceRatio <= 0.25) {
       return 100;
     }
 
-    if (distanceKm <= 3) {
+    if (distanceRatio <= 0.50) {
       return 85;
     }
 
-    if (distanceKm <= 6) {
+    if (distanceRatio <= 0.75) {
       return 65;
     }
 
-    if (distanceKm <= 10) {
+    if (distanceRatio <= 1.0) {
       return 40;
     }
 
@@ -214,10 +229,7 @@ class PlaceScoringService {
             cos(_degreesToRadians(endLat)) *
             pow(sin(dLng / 2), 2);
 
-    final c = 2 * atan2(
-      sqrt(a.toDouble()),
-      sqrt((1 - a).toDouble()),
-    );
+    final c = 2 * atan2(sqrt(a.toDouble()), sqrt((1 - a).toDouble()));
 
     return earthRadiusKm * c;
   }
