@@ -1,0 +1,227 @@
+import 'package:flutter/material.dart';
+
+import '../plan_trip/models/destination_draft.dart';
+import 'review_widget.dart';
+
+class MultiDestinationReview extends StatelessWidget {
+  const MultiDestinationReview({
+    super.key,
+    required this.destinations,
+    required this.travelers,
+  });
+
+  final List<DestinationDraft> destinations;
+  final int travelers;
+
+  String _date(DateTime value) => '${value.month}/${value.day}/${value.year}';
+
+  @override
+  Widget build(BuildContext context) {
+    final planned = destinations.where((item) => item.plannerResult != null).toList();
+    final totalBudget = destinations.fold<double>(0, (sum, item) => sum + item.budget);
+    final hotelTotal = planned.fold<double>(
+      0,
+      (sum, item) => sum + (item.selectedHotel?.totalCost ?? 0),
+    );
+    final foodTotal = planned.fold<double>(
+      0,
+      (sum, item) => sum + item.plannerResult!.totalEstimatedFoodCost,
+    );
+    final activityTotal = planned.fold<double>(
+      0,
+      (sum, item) => sum + item.plannerResult!.totalEstimatedActivityCost,
+    );
+    final estimatedTotal = hotelTotal + foodTotal + activityTotal;
+    final firstDate = destinations
+        .where((item) => item.dates != null)
+        .map((item) => item.dates!.start)
+        .fold<DateTime?>(null, (min, value) => min == null || value.isBefore(min) ? value : min);
+    final lastDate = destinations
+        .where((item) => item.dates != null)
+        .map((item) => item.dates!.end)
+        .fold<DateTime?>(null, (max, value) => max == null || value.isAfter(max) ? value : max);
+
+    var dayOffset = 0;
+    final destinationCards = <Widget>[];
+    for (final destination in destinations) {
+      final plan = destination.plannerResult;
+      destinationCards.add(
+        _ReviewCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      destination.destination.toUpperCase(),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                  ),
+                  Icon(
+                    destination.scheduleSaved
+                        ? Icons.check_circle_rounded
+                        : Icons.pending_outlined,
+                    color: destination.scheduleSaved ? Colors.green : null,
+                  ),
+                ],
+              ),
+              if (destination.dates != null)
+                Text('${_date(destination.dates!.start)} - ${_date(destination.dates!.end)}'),
+              const SizedBox(height: 16),
+              if (destination.selectedHotel != null) ...[
+                Text('Hotel', style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 4),
+                Text(
+                  destination.selectedHotel!.name,
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  '\$${destination.selectedHotel!.nightlyRate.toStringAsFixed(0)}/night • '
+                  '\$${destination.selectedHotel!.totalCost.toStringAsFixed(0)} total',
+                ),
+                const Divider(height: 28),
+              ],
+              if (plan == null)
+                const Text('No schedule generated yet.')
+              else
+                for (var index = 0; index < plan.days.length; index++) ...[
+                  Text(
+                    'Day ${dayOffset + index + 1}',
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 7),
+                  for (final place in plan.days[index].places)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.place_outlined, size: 17),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(place.place.name)),
+                          Text('\$${place.place.estimatedCost.toStringAsFixed(0)}'),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                ],
+              const Divider(height: 24),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Destination subtotal', style: TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                  Text(
+                    '\$${destination.estimatedTotal.toStringAsFixed(0)}',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+      destinationCards.add(const SizedBox(height: 16));
+      dayOffset += plan?.days.length ?? 0;
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 18, 24, 40),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1050),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _ReviewCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      destinations.length == 1
+                          ? destinations.first.destination
+                          : '${destinations.first.destination} + ${destinations.length - 1} more',
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${firstDate == null ? 'Dates not set' : '${_date(firstDate)} - ${_date(lastDate!)}'} • '
+                      '${destinations.length} destinations • $travelers travelers • Budget \$${totalBudget.toStringAsFixed(0)}',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              ...destinationCards,
+              _ReviewCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('TRIP TOTAL', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 14),
+                    _TotalRow(label: 'Hotels', amount: hotelTotal),
+                    _TotalRow(label: 'Food', amount: foodTotal),
+                    _TotalRow(label: 'Activities', amount: activityTotal),
+                    const _TextRow(label: 'Transportation', value: 'Not calculated yet'),
+                    const Divider(height: 24),
+                    _TotalRow(label: 'Estimated total', amount: estimatedTotal, strong: true),
+                    _TotalRow(label: 'Budget', amount: totalBudget),
+                    _TotalRow(label: 'Remaining', amount: totalBudget - estimatedTotal, strong: true),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              const ReviewWidget(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TotalRow extends StatelessWidget {
+  const _TotalRow({required this.label, required this.amount, this.strong = false});
+  final String label;
+  final double amount;
+  final bool strong;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          children: [
+            Expanded(child: Text(label, style: TextStyle(fontWeight: strong ? FontWeight.w900 : null))),
+            Text('\$${amount.toStringAsFixed(0)}', style: TextStyle(fontWeight: strong ? FontWeight.w900 : null)),
+          ],
+        ),
+      );
+}
+
+class _TextRow extends StatelessWidget {
+  const _TextRow({required this.label, required this.value});
+  final String label;
+  final String value;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(children: [Expanded(child: Text(label)), Text(value)]),
+      );
+}
+
+class _ReviewCard extends StatelessWidget {
+  const _ReviewCard({required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: .35)),
+        ),
+        child: child,
+      );
+}

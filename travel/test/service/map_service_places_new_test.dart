@@ -86,6 +86,24 @@ void main() {
     expect(result.single.description, 'Paris, France');
   });
 
+  test(
+    'Trip destination autocomplete only requests city, state, and country types',
+    () async {
+      final client = MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['includedPrimaryTypes'], [
+          'locality',
+          'administrative_area_level_1',
+          'country',
+        ]);
+        return http.Response(jsonEncode({'suggestions': <Object>[]}), 200);
+      });
+      final service = MapService(apiKey: 'test-key', client: client);
+
+      await service.getPlaceSuggestions('Cal', tripDestinationsOnly: true);
+    },
+  );
+
   test('walking route uses Routes API and decodes its polyline', () async {
     final client = MockClient((request) async {
       expect(request.method, 'POST');

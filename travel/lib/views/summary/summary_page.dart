@@ -4,12 +4,15 @@ import '../../models/planner_result.dart';
 import '../../models/hotel_stay.dart';
 import '../../service/planner/daily_time_schedule_service.dart';
 import 'review_widget.dart';
+import '../plan_trip/models/destination_draft.dart';
+import 'multi_destination_review.dart';
 
 class SummaryPage extends StatelessWidget {
   final PlannerResult? result;
   final String? destination;
   final DateTimeRange? dates;
   final int travelers;
+  final List<DestinationDraft>? destinations;
 
   const SummaryPage({
     super.key,
@@ -17,6 +20,7 @@ class SummaryPage extends StatelessWidget {
     this.destination,
     this.dates,
     this.travelers = 1,
+    this.destinations,
   });
 
   @override
@@ -30,7 +34,12 @@ class SummaryPage extends StatelessWidget {
           icon: const Icon(Icons.arrow_back_rounded),
         ),
       ),
-      body: plan == null
+      body: destinations != null && destinations!.isNotEmpty
+          ? MultiDestinationReview(
+              destinations: destinations!,
+              travelers: travelers,
+            )
+          : plan == null
           ? _EmptyReview(
               onPlanTrip: () => Navigator.pushNamed(context, '/plan-trip'),
             )

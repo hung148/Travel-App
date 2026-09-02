@@ -44,6 +44,7 @@ class MapService {
   Future<List<PlaceSuggestion>> getPlaceSuggestions(
     String input, {
     bool destinationCitiesOnly = false,
+    bool tripDestinationsOnly = false,
   }) async {
     if (input.trim().isEmpty) return [];
 
@@ -55,7 +56,14 @@ class MapService {
       headers: {'Content-Type': 'application/json', 'X-Goog-Api-Key': apiKey},
       body: jsonEncode({
         'input': input.trim(),
-        if (destinationCitiesOnly) 'includedPrimaryTypes': ['(cities)'],
+        if (tripDestinationsOnly)
+          'includedPrimaryTypes': [
+            'locality',
+            'administrative_area_level_1',
+            'country',
+          ]
+        else if (destinationCitiesOnly)
+          'includedPrimaryTypes': ['(cities)'],
       }),
     );
 

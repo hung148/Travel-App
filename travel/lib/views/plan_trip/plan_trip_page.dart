@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -26,6 +24,13 @@ import '../../viewmodels/preference_viewmodel.dart';
 import 'ai_chat_widget.dart';
 import '../preferences/preference_page.dart';
 import '../summary/summary_page.dart';
+import 'models/destination_draft.dart';
+import 'models/destination_date_availability.dart';
+import 'models/travel_leg_draft.dart';
+import 'models/travel_time_estimator.dart';
+import 'widgets/add_destination_dialog.dart';
+import 'widgets/destination_selector.dart';
+import 'widgets/destination_autocomplete_field.dart';
 
 class PlanTripPage extends StatefulWidget {
   const PlanTripPage({super.key});
@@ -64,11 +69,240 @@ class _PlanTripPageState extends State<PlanTripPage> {
   PlannerResult? plannerResult;
   List<HotelStay> hotelRecommendations = const [];
   HotelStay? selectedHotel;
+  late final List<DestinationDraft> _destinations;
+  late String _selectedDestinationId;
+  final List<TravelLegDraft> _travelLegs = [];
+  final TravelTimeEstimator _travelTimeEstimator = const TravelTimeEstimator();
 
   @override
   void initState() {
     super.initState();
+    final initial = DestinationDraft(
+      id: 'destination-${DateTime.now().microsecondsSinceEpoch}',
+      destination: destinationController.text,
+      budget: double.parse(budgetController.text),
+      placeDataSource: placeDataSource,
+    );
+    _destinations = [initial];
+    _selectedDestinationId = initial.id;
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadPreference());
+  }
+
+  DestinationDraft get _selectedDestination =>
+      _destinations.firstWhere((item) => item.id == _selectedDestinationId);
+
+  void _persistSelectedDestination() {
+    final selected = _selectedDestination;
+    selected.destination = destinationController.text.trim().isEmpty
+        ? selected.destination
+        : destinationController.text.trim();
+    selected.budget =
+        double.tryParse(budgetController.text.trim()) ?? selected.budget;
+    selected.dates = dates;
+    selected.selectedPlan = selectedPlan;
+    selected.plannerResult = plannerResult;
+    selected.hotelRecommendations = hotelRecommendations;
+    selected.selectedHotel = selectedHotel;
+    selected.placeDataSource = placeDataSource;
+  }
+
+  void _loadDestination(DestinationDraft selected) {
+    destinationController.text = selected.destination;
+    budgetController.text = selected.budget.toStringAsFixed(
+      selected.budget == selected.budget.roundToDouble() ? 0 : 2,
+    );
+    dates = selected.dates;
+    selectedPlan = selected.selectedPlan;
+    plannerResult = selected.plannerResult;
+    hotelRecommendations = selected.hotelRecommendations;
+    selectedHotel = selected.selectedHotel;
+    placeDataSource = selected.placeDataSource;
+    planGenerated = selected.plannerResult != null;
+  }
+
+  void _selectDestination(String id) {
+    if (id == _selectedDestinationId) return;
+    setState(() {
+      _persistSelectedDestination();
+      _selectedDestinationId = id;
+      _loadDestination(_selectedDestination);
+    });
+  }
+
+  Future<void> _addDestination() async {
+    _persistSelectedDestination();
+    final previous = _destinations.last;
+    final value = await showDialog<AddDestinationValue>(
+      context: context,
+      builder: (_) => AddDestinationDialog(
+        unavailableDateRanges: _unavailableDateRanges(),
+        previousDestinationEnd: previous.dates?.end,
+        estimateIncomingTravel: (destination) =>
+            _estimateIncomingTravel(previous.destination, destination),
+      ),
+    );
+    if (value == null || !mounted) return;
+    final destination = DestinationDraft(
+      id: 'destination-${DateTime.now().microsecondsSinceEpoch}',
+      destination: value.destination,
+      dates: value.dates,
+      budget: value.budget,
+      selectedPlan: selectedPlan,
+      placeDataSource: AppConfig.hasGoogleMapsApiKey
+          ? 'Google Places ready'
+          : 'Mock Tokyo data • Google API key not configured',
+    );
+    setState(() {
+      _destinations.add(destination);
+      if (value.incomingTravelEstimate != null) {
+        _travelLegs.add(
+          TravelLegDraft(
+            fromDestinationId: previous.id,
+            toDestinationId: destination.id,
+            estimate: value.incomingTravelEstimate!,
+          ),
+        );
+      }
+      _selectedDestinationId = destination.id;
+      _loadDestination(destination);
+    });
+  }
+
+  Future<TravelEstimate?> _estimateIncomingTravel(
+    String origin,
+    String destination,
+  ) async {
+    if (!AppConfig.hasGoogleMapsApiKey) return null;
+    try {
+      return await _travelTimeEstimator.estimate(
+        mapService: MapService(apiKey: AppConfig.googleMapsApiKey),
+        origin: origin,
+        destination: destination,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _editTravelLeg(TravelLegDraft leg) async {
+    final controller = TextEditingController(
+      text: leg.durationHours.toStringAsFixed(1),
+    );
+    var mode = leg.mode;
+    final result = await showDialog<({TravelMode mode, double hours})>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Edit travel estimate'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<TravelMode>(
+                initialValue: mode,
+                decoration: const InputDecoration(labelText: 'Travel mode'),
+                items: TravelMode.values
+                    .map(
+                      (item) =>
+                          DropdownMenuItem(value: item, child: Text(item.name)),
+                    )
+                    .toList(),
+                onChanged: (value) => update(() => mode = value ?? mode),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: controller,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Duration (hours)',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final hours = double.tryParse(controller.text);
+                if (hours != null && hours > 0) {
+                  Navigator.pop(context, (mode: mode, hours: hours));
+                }
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (result == null || !mounted) return;
+    var datesCleared = false;
+    setState(() {
+      leg.overrideMode = result.mode;
+      leg.overrideDurationHours = result.hours;
+      final origin = _destinations
+          .where((item) => item.id == leg.fromDestinationId)
+          .firstOrNull;
+      final target = _destinations
+          .where((item) => item.id == leg.toDestinationId)
+          .firstOrNull;
+      final transit = origin?.dates == null
+          ? null
+          : transitDateRange(origin!.dates!.end, leg.transitDays);
+      if (target?.dates != null &&
+          transit != null &&
+          dateRangeOverlaps(target!.dates!, [transit])) {
+        target.dates = null;
+        target.scheduleSaved = false;
+        target.plannerResult = null;
+        datesCleared = true;
+        if (target.id == _selectedDestinationId) {
+          _loadDestination(target);
+        }
+      }
+    });
+    if (datesCleared && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'The next destination dates overlapped the updated travel time. Please choose new dates.',
+          ),
+        ),
+      );
+    }
+  }
+
+  List<DateTimeRange> _unavailableDateRanges({String? excludingId}) {
+    final ranges = _destinations
+        .where((item) => item.id != excludingId && item.dates != null)
+        .map((item) => item.dates!)
+        .toList();
+    for (final leg in _travelLegs) {
+      final origin = _destinations
+          .where((item) => item.id == leg.fromDestinationId)
+          .firstOrNull;
+      if (origin?.dates == null) continue;
+      final transit = transitDateRange(origin!.dates!.end, leg.transitDays);
+      if (transit != null) ranges.add(transit);
+    }
+    return ranges;
+  }
+
+  void _saveDestinationSchedule() {
+    if (plannerResult == null) return;
+    setState(() {
+      _persistSelectedDestination();
+      _selectedDestination.scheduleSaved = true;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${_selectedDestination.destination} schedule saved.'),
+      ),
+    );
   }
 
   @override
@@ -80,14 +314,32 @@ class _PlanTripPageState extends State<PlanTripPage> {
 
   Future<void> _pickDates() async {
     final now = DateTime.now();
+    final unavailableRanges = _unavailableDateRanges(
+      excludingId: _selectedDestinationId,
+    );
     final selected = await showDateRangePicker(
       context: context,
       firstDate: now,
       lastDate: DateTime(now.year + 3),
       initialDateRange: dates,
+      helpText: 'Select available destination dates',
+      selectableDayPredicate: (day, selectedStart, selectedEnd) =>
+          !isDateUnavailable(day, unavailableRanges),
     );
     if (selected != null && mounted) {
-      setState(() => dates = selected);
+      if (dateRangeOverlaps(selected, unavailableRanges)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('These dates overlap another destination.'),
+          ),
+        );
+        return;
+      }
+      setState(() {
+        dates = selected;
+        _selectedDestination.dates = selected;
+        _selectedDestination.scheduleSaved = false;
+      });
     }
   }
 
@@ -278,6 +530,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       setState(() {
         plannerResult = result;
         planGenerated = true;
+        _selectedDestination.scheduleSaved = false;
         placeDataSource = nextPlaceDataSource;
         hotelRecommendations = nextHotels
             .map(
@@ -285,6 +538,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
             )
             .toList();
         selectedHotel = nextHotel;
+        _persistSelectedDestination();
       });
     } catch (e) {
       if (!mounted) return;
@@ -557,8 +811,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
                               isGenerating
                                   ? 'Generating...'
                                   : planGenerated
-                                  ? 'Regenerate plan'
-                                  : 'Generate plan',
+                                  ? 'Regenerate schedule'
+                                  : 'Generate schedule',
                             ),
                             style: FilledButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
@@ -570,6 +824,15 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       ],
                     ),
                     const SizedBox(height: 24),
+                    DestinationSelector(
+                      destinations: _destinations,
+                      selectedId: _selectedDestinationId,
+                      onSelected: _selectDestination,
+                      onAdd: _addDestination,
+                      travelLegs: _travelLegs,
+                      onEditTravelLeg: _editTravelLeg,
+                    ),
+                    const SizedBox(height: 20),
                     _PreferenceStatusCard(
                       preference: savedPreference,
                       isLoading: isLoadingPreference,
@@ -630,8 +893,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
                             isGenerating
                                 ? 'Generating...'
                                 : planGenerated
-                                ? 'Regenerate plan'
-                                : 'Generate plan',
+                                ? 'Regenerate schedule'
+                                : 'Generate schedule',
                           ),
                         ),
                       ),
@@ -680,18 +943,47 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       placeDataSource: placeDataSource,
                       onGenerate: _generatePlan,
                       onManual: _openManualPlanner,
-                      onReview: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => SummaryPage(
-                            result: plannerResult,
-                            destination: destinationController.text.trim(),
-                            dates: dates,
-                            travelers: travelers,
+                      onReview: () {
+                        _persistSelectedDestination();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SummaryPage(
+                              destinations: List.unmodifiable(_destinations),
+                              travelers: travelers,
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
+                    if (plannerResult != null) ...[
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          FilledButton.icon(
+                            onPressed: _saveDestinationSchedule,
+                            icon: Icon(
+                              _selectedDestination.scheduleSaved
+                                  ? Icons.check_circle_rounded
+                                  : Icons.save_outlined,
+                            ),
+                            label: Text(
+                              _selectedDestination.scheduleSaved
+                                  ? '${_selectedDestination.destination} schedule saved'
+                                  : 'Save ${_selectedDestination.destination} Schedule',
+                            ),
+                          ),
+                          if (_selectedDestination.scheduleSaved)
+                            OutlinedButton.icon(
+                              onPressed: _addDestination,
+                              icon: const Icon(Icons.add_location_alt_outlined),
+                              label: const Text('Add Another Destination'),
+                            ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 30),
                   ],
                 ),
@@ -840,7 +1132,7 @@ class _TripSetupCard extends StatelessWidget {
           final fields = [
             _LabeledField(
               label: 'Destination',
-              child: _DestinationAutocompleteField(
+              child: DestinationAutocompleteField(
                 controller: destinationController,
                 onChanged: onDestinationChanged,
               ),
@@ -930,162 +1222,6 @@ class _TripSetupCard extends StatelessWidget {
           );
         },
       ),
-    );
-  }
-}
-
-class _DestinationAutocompleteField extends StatefulWidget {
-  final TextEditingController controller;
-  final VoidCallback onChanged;
-
-  const _DestinationAutocompleteField({
-    required this.controller,
-    required this.onChanged,
-  });
-
-  @override
-  State<_DestinationAutocompleteField> createState() =>
-      _DestinationAutocompleteFieldState();
-}
-
-class _DestinationAutocompleteFieldState
-    extends State<_DestinationAutocompleteField> {
-  final menuController = MenuController();
-  final focusNode = FocusNode();
-  Timer? debounce;
-  List<PlaceSuggestion> suggestions = const [];
-  bool loading = false;
-  int requestNumber = 0;
-
-  MapService? get _mapService => AppConfig.hasGoogleMapsApiKey
-      ? MapService(apiKey: AppConfig.googleMapsApiKey)
-      : null;
-
-  @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
-  void dispose() {
-    debounce?.cancel();
-    focusNode.dispose();
-    super.dispose();
-  }
-
-  void _queryChanged(String value) {
-    widget.onChanged();
-    debounce?.cancel();
-    final query = value.trim();
-    if (query.length < 2 || _mapService == null) {
-      requestNumber++;
-      setState(() {
-        loading = false;
-        suggestions = const [];
-      });
-      if (menuController.isOpen) menuController.close();
-      return;
-    }
-
-    debounce = Timer(const Duration(milliseconds: 350), () async {
-      final currentRequest = ++requestNumber;
-      if (mounted) setState(() => loading = true);
-      try {
-        final results = await _mapService!.getPlaceSuggestions(
-          query,
-          destinationCitiesOnly: true,
-        );
-        if (!mounted || currentRequest != requestNumber) return;
-        setState(() {
-          suggestions = results;
-          loading = false;
-        });
-        if (focusNode.hasFocus && suggestions.isNotEmpty) {
-          menuController.open();
-        } else if (menuController.isOpen) {
-          menuController.close();
-        }
-      } catch (_) {
-        if (!mounted || currentRequest != requestNumber) return;
-        setState(() {
-          loading = false;
-          suggestions = const [];
-        });
-        if (menuController.isOpen) menuController.close();
-      }
-    });
-  }
-
-  void _selectSuggestion(PlaceSuggestion suggestion) {
-    debounce?.cancel();
-    requestNumber++;
-    widget.controller.text = suggestion.description;
-    widget.controller.selection = TextSelection.collapsed(
-      offset: widget.controller.text.length,
-    );
-    setState(() => suggestions = const []);
-    menuController.close();
-    focusNode.unfocus();
-    widget.onChanged();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return MenuAnchor(
-          controller: menuController,
-          alignmentOffset: const Offset(0, 6),
-          menuChildren: [
-            for (final suggestion in suggestions)
-              SizedBox(
-                width: constraints.maxWidth,
-                child: MenuItemButton(
-                  leadingIcon: const Icon(Icons.location_city_outlined),
-                  onPressed: () => _selectSuggestion(suggestion),
-                  child: Text(
-                    suggestion.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-            if (suggestions.isNotEmpty)
-              SizedBox(
-                width: constraints.maxWidth,
-                child: const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 6, 16, 10),
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      'Powered by Google',
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-          builder: (context, controller, child) => TextField(
-            controller: widget.controller,
-            focusNode: focusNode,
-            onChanged: _queryChanged,
-            decoration: InputDecoration(
-              hintText: 'Tokyo, Japan',
-              prefixIcon: const Icon(Icons.location_on_outlined),
-              suffixIcon: loading
-                  ? const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : null,
-            ),
-          ),
-        );
-      },
     );
   }
 }
