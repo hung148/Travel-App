@@ -18,6 +18,7 @@ class DestinationDraft {
     this.selectedHotel,
     this.scheduleSaved = false,
     this.placeDataSource = '',
+    this.savedDays = const [],
   });
 
   final String id;
@@ -30,10 +31,15 @@ class DestinationDraft {
   HotelStay? selectedHotel;
   bool scheduleSaved;
   String placeDataSource;
+  List<PlannerDay> savedDays;
+
+  List<PlannerDay> get days => plannerResult?.days ?? savedDays;
 
   int get dayCount =>
       plannerResult?.days.length ??
       (dates == null ? 0 : dates!.end.difference(dates!.start).inDays + 1);
 
-  double get estimatedTotal => plannerResult?.totalEstimatedTripCost ?? 0;
+  double get estimatedTotal =>
+      days.fold<double>(0, (sum, day) => sum + day.estimatedCost) +
+      (selectedHotel?.totalCost ?? 0);
 }

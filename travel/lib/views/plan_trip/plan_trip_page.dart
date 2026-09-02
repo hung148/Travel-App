@@ -6,11 +6,13 @@ import 'package:provider/provider.dart';
 import '../../config/app_config.dart';
 import '../../models/planner_result.dart';
 import '../../models/hotel_stay.dart';
+import '../../models/hotel_selections.dart';
 import '../../models/preference/preferences.dart';
 import '../../models/planner_validation.dart';
 import '../../models/score_place.dart';
 import '../../models/travel_place.dart';
 import '../../models/trip/trip.dart';
+import '../../models/trip/trip_segment.dart';
 import '../../service/map_service.dart';
 import '../../service/planner/destination_place_service.dart';
 import '../../service/planner/mock_places.dart';
@@ -21,6 +23,7 @@ import '../../service/planner/planner_validation_service.dart';
 import '../../service/planner/travel_planner_service.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/preference_viewmodel.dart';
+import '../../viewmodels/trip_viewmodel.dart';
 import 'ai_chat_widget.dart';
 import '../preferences/preference_page.dart';
 import '../summary/summary_page.dart';
@@ -85,7 +88,93 @@ class _PlanTripPageState extends State<PlanTripPage> {
     );
     _destinations = [initial];
     _selectedDestinationId = initial.id;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPreference());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _loadSegmentsFromViewModel();
+      await _loadPreference();
+    });
+  }
+
+  TripViewModel get _tripViewModel => context.read<TripViewModel>();
+
+  void _loadSegmentsFromViewModel() {
+    final viewModel = _tripViewModel;
+    if (viewModel.draftSegments.isEmpty) return;
+    setState(() {
+      _destinations
+        ..clear()
+        ..addAll(viewModel.draftSegments.map(_draftFromSegment));
+      _selectedDestinationId =
+          viewModel.selectedSegmentId ?? _destinations.first.id;
+      _loadDestination(_selectedDestination);
+    });
+  }
+
+  DestinationDraft _draftFromSegment(TripSegment segment) {
+    final hotel = segment.hotel;
+    return DestinationDraft(
+      id: segment.id,
+      destination: segment.destination,
+      dates: DateTimeRange(start: segment.startDate, end: segment.endDate),
+      budget: segment.allocatedBudget,
+      selectedHotel: hotel == null
+          ? null
+          : HotelStay(
+              id: hotel.placeId ?? 'saved-${segment.id}',
+              name: hotel.name,
+              address: hotel.address,
+              latitude: hotel.latitude ?? 0,
+              longitude: hotel.longitude ?? 0,
+              rating: 0,
+              nightlyRate: hotel.nightlyPrice ?? 0,
+              nights: hotel.nights,
+              rooms: 1,
+              userProvided: true,
+            ),
+      scheduleSaved: segment.scheduleSaved,
+      savedDays: segment.days,
+      placeDataSource: 'Saved trip',
+    );
+  }
+
+  HotelSelection? _hotelSelection(HotelStay? hotel) => hotel == null
+      ? null
+      : HotelSelection(
+          placeId: hotel.id,
+          name: hotel.name,
+          address: hotel.address,
+          latitude: hotel.latitude,
+          longitude: hotel.longitude,
+          nightlyPrice: hotel.nightlyRate * hotel.rooms,
+          nights: hotel.nights,
+        );
+
+  void _syncDraftToViewModel(DestinationDraft draft) {
+    final range = draft.dates;
+    if (range == null) return;
+    final segment = TripSegment(
+      id: draft.id,
+      destination: draft.destination,
+      startDate: range.start,
+      endDate: range.end,
+      allocatedBudget: draft.budget,
+      hotel: _hotelSelection(draft.selectedHotel),
+      days: draft.days.isNotEmpty
+          ? draft.days
+          : _tripViewModel.draftSegments
+                    .where((item) => item.id == draft.id)
+                    .firstOrNull
+                    ?.days ??
+                const [],
+      scheduleSaved: draft.scheduleSaved,
+    );
+    final exists = _tripViewModel.draftSegments.any(
+      (item) => item.id == draft.id,
+    );
+    if (exists) {
+      _tripViewModel.updateSegment(draft.id, segment);
+    } else {
+      _tripViewModel.addSegment(segment);
+    }
   }
 
   DestinationDraft get _selectedDestination =>
@@ -104,6 +193,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     selected.hotelRecommendations = hotelRecommendations;
     selected.selectedHotel = selectedHotel;
     selected.placeDataSource = placeDataSource;
+    _syncDraftToViewModel(selected);
   }
 
   void _loadDestination(DestinationDraft selected) {
@@ -124,6 +214,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     if (id == _selectedDestinationId) return;
     setState(() {
       _persistSelectedDestination();
+      _tripViewModel.selectSegment(id);
       _selectedDestinationId = id;
       _loadDestination(_selectedDestination);
     });
@@ -165,6 +256,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       }
       _selectedDestinationId = destination.id;
       _loadDestination(destination);
+      _syncDraftToViewModel(destination);
     });
   }
 
@@ -297,6 +389,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
     setState(() {
       _persistSelectedDestination();
       _selectedDestination.scheduleSaved = true;
+      _syncDraftToViewModel(_selectedDestination);
+      _tripViewModel.markSegmentSaved(_selectedDestination.id);
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -339,6 +433,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
         dates = selected;
         _selectedDestination.dates = selected;
         _selectedDestination.scheduleSaved = false;
+        _syncDraftToViewModel(_selectedDestination);
       });
     }
   }
@@ -350,6 +445,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       plannerResult = null;
       hotelRecommendations = const [];
       selectedHotel = null;
+      _persistSelectedDestination();
     });
   }
 
@@ -606,6 +702,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       if (plannerResult != null) {
         plannerResult = _resultWithHotel(plannerResult!, updated);
       }
+      _persistSelectedDestination();
     });
   }
 
@@ -630,6 +727,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       if (plannerResult != null) {
         plannerResult = _resultWithHotel(plannerResult!, edited);
       }
+      _persistSelectedDestination();
     });
   }
 
@@ -673,6 +771,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
         hotel: current.hotel,
       );
       planGenerated = true;
+      _persistSelectedDestination();
     });
   }
 
@@ -720,6 +819,51 @@ class _PlanTripPageState extends State<PlanTripPage> {
     return refinement.message;
   }
 
+  Future<void> _saveTripDraft() async {
+    _persistSelectedDestination();
+    final viewModel = _tripViewModel;
+    final segments = viewModel.draftSegments;
+    final ownerId = context.read<AuthViewModel>().user?.uid;
+    if (segments.isEmpty || ownerId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add destination dates and sign in before saving.'),
+        ),
+      );
+      return;
+    }
+    if (viewModel.currentTrip == null) {
+      final first = segments.first;
+      final last = segments.last;
+      await viewModel.createTrip(
+        Trip(
+          id: 'trip-${DateTime.now().millisecondsSinceEpoch}',
+          ownerId: ownerId,
+          destination: segments.map((item) => item.destination).join(' → '),
+          budget: segments.fold(
+            0,
+            (total, item) => total + item.allocatedBudget,
+          ),
+          days: segments.fold(0, (total, item) => total + item.numberOfDays),
+          status: 'draft',
+          startDate: first.startDate,
+          endDate: last.endDate,
+          segments: segments,
+        ),
+      );
+    } else {
+      await viewModel.saveDraftSegmentsToCurrentTrip();
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          viewModel.errorMessage ?? 'Trip draft saved to Firestore.',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -737,13 +881,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
         ),
         actions: [
           TextButton.icon(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Draft saved locally for this UI demo.'),
-                ),
-              );
-            },
+            onPressed: _saveTripDraft,
             icon: const Icon(Icons.save_outlined),
             label: const Text('Save draft'),
           ),
