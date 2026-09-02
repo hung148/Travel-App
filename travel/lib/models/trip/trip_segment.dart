@@ -1,25 +1,16 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../hotel_selections.dart';
 import '../planner_result.dart';
 
 class TripSegment {
   final String id;
-
-  /// Example: Da Nang, Ho Chi Minh City, Tokyo
   final String destination;
-
   final DateTime startDate;
   final DateTime endDate;
-
-  /// Amount of the overall trip budget assigned to this destination.
   final double allocatedBudget;
-
-  /// Each destination owns its own hotel.
   final HotelSelection? hotel;
-
-  /// Generated schedule for this destination.
   final List<PlannerDay> days;
-
-  /// True after the user presses "Save Da Nang Schedule", etc.
   final bool scheduleSaved;
 
   const TripSegment({
@@ -48,6 +39,20 @@ class TripSegment {
     );
   }
 
+  double get foodCost {
+    return days.fold(
+      0,
+      (total, day) => total + day.estimatedFoodCost,
+    );
+  }
+
+  double get activityCost {
+    return days.fold(
+      0,
+      (total, day) => total + day.estimatedActivityCost,
+    );
+  }
+
   double get estimatedTotalCost {
     return hotelCost + scheduleCost;
   }
@@ -72,5 +77,53 @@ class TripSegment {
       days: days ?? this.days,
       scheduleSaved: scheduleSaved ?? this.scheduleSaved,
     );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'destination': destination,
+      'startDate': startDate,
+      'endDate': endDate,
+      'allocatedBudget': allocatedBudget,
+      'hotel': hotel?.toMap(),
+      'days': days.map((day) => day.toMap()).toList(),
+      'scheduleSaved': scheduleSaved,
+    };
+  }
+
+  factory TripSegment.fromMap(Map<String, dynamic> data) {
+    final hotelData = data['hotel'];
+    final dayList = data['days'] as List<dynamic>? ?? const [];
+
+    return TripSegment(
+      id: data['id'] as String? ?? '',
+      destination: data['destination'] as String? ?? '',
+      startDate: _dateFromFirestore(data['startDate']) ?? DateTime(1970),
+      endDate: _dateFromFirestore(data['endDate']) ?? DateTime(1970),
+      allocatedBudget:
+          (data['allocatedBudget'] as num?)?.toDouble() ?? 0,
+      hotel: hotelData is Map
+          ? HotelSelection.fromMap(
+              Map<String, dynamic>.from(hotelData),
+            )
+          : null,
+      days: dayList
+          .whereType<Map>()
+          .map(
+            (day) => PlannerDay.fromMap(
+              Map<String, dynamic>.from(day),
+            ),
+          )
+          .toList(),
+      scheduleSaved: data['scheduleSaved'] as bool? ?? false,
+    );
+  }
+
+  static DateTime? _dateFromFirestore(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
   }
 }
