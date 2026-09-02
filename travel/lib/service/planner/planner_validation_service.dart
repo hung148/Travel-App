@@ -24,6 +24,7 @@ class PlannerValidationService {
     final dailyActivityBudget = budgetAllocation.dailyActivitiesBudget(
       days.length,
     );
+    final dailyFoodBudget = budgetAllocation.dailyFoodBudget(days.length);
     final seenPlaceIds = <String>{};
     final constraintSeverity = allowUserOverrides
         ? PlannerValidationSeverity.warning
@@ -44,7 +45,7 @@ class PlannerValidationService {
         }
       }
 
-      if (day.estimatedCost > dailyActivityBudget + 0.001) {
+      if (day.estimatedActivityCost > dailyActivityBudget + 0.001) {
         issues.add(
           PlannerValidationIssue(
             code: PlannerValidationCode.dailyCostExceeded,
@@ -57,7 +58,7 @@ class PlannerValidationService {
         );
       }
 
-      if (day.estimatedVisitMinutes > profile.targetMinutesPerDay) {
+      if (day.estimatedActivityMinutes > profile.targetMinutesPerDay) {
         issues.add(
           PlannerValidationIssue(
             code: PlannerValidationCode.dailyTimeExceeded,
@@ -69,14 +70,14 @@ class PlannerValidationService {
         );
       }
 
-      if (day.places.length > profile.maxPlacesPerDay) {
+      if (day.activityCount > profile.maxPlacesPerDay) {
         issues.add(
           PlannerValidationIssue(
             code: PlannerValidationCode.dailyPlaceCountExceeded,
             severity: constraintSeverity,
             dayNumber: day.dayNumber,
             message:
-                'Day ${day.dayNumber} exceeds the ${profile.maxPlacesPerDay}-place limit.',
+                'Day ${day.dayNumber} exceeds the ${profile.maxPlacesPerDay}-activity limit.',
           ),
         );
       }
@@ -94,6 +95,30 @@ class PlannerValidationService {
             dayNumber: day.dayNumber,
             message:
                 'Day ${day.dayNumber} exceeds the ${profile.maxDiningPlacesPerDay}-meal-place limit.',
+          ),
+        );
+      }
+
+      if (diningCount < profile.minDiningPlacesPerDay) {
+        issues.add(
+          PlannerValidationIssue(
+            code: PlannerValidationCode.dailyMealMinimumMissing,
+            severity: PlannerValidationSeverity.warning,
+            dayNumber: day.dayNumber,
+            message:
+                'Day ${day.dayNumber} has $diningCount of ${profile.minDiningPlacesPerDay} required meals because not enough dining candidates were available.',
+          ),
+        );
+      }
+
+      if (day.estimatedFoodCost > dailyFoodBudget + 0.001) {
+        issues.add(
+          PlannerValidationIssue(
+            code: PlannerValidationCode.dailyFoodCostExceeded,
+            severity: PlannerValidationSeverity.warning,
+            dayNumber: day.dayNumber,
+            message:
+                'Day ${day.dayNumber} keeps three meals but exceeds the daily food allocation of \$${dailyFoodBudget.toStringAsFixed(0)}.',
           ),
         );
       }
@@ -117,10 +142,10 @@ class PlannerValidationService {
         (item) =>
             roleClassifier.classify(item.place) != PlaceRole.dining &&
             item.place.estimatedCost <=
-                dailyActivityBudget - day.estimatedCost &&
+                dailyActivityBudget - day.estimatedActivityCost &&
             item.place.estimatedVisitMinutes <=
-                profile.targetMinutesPerDay - day.estimatedVisitMinutes &&
-            day.places.length < profile.maxPlacesPerDay,
+                profile.targetMinutesPerDay - day.estimatedActivityMinutes &&
+            day.activityCount < profile.maxPlacesPerDay,
       );
       issues.add(
         PlannerValidationIssue(
@@ -162,7 +187,7 @@ class PlannerValidationService {
 
     final totalActivityCost = days.fold<double>(
       0,
-      (total, day) => total + day.estimatedCost,
+      (total, day) => total + day.estimatedActivityCost,
     );
     if (totalActivityCost > budgetAllocation.activities + 0.001) {
       issues.add(
@@ -170,6 +195,21 @@ class PlannerValidationService {
           code: PlannerValidationCode.totalActivityCostExceeded,
           severity: constraintSeverity,
           message: 'Total attraction cost exceeds the activities allocation.',
+        ),
+      );
+    }
+
+    final totalFoodCost = days.fold<double>(
+      0,
+      (total, day) => total + day.estimatedFoodCost,
+    );
+    if (totalFoodCost > budgetAllocation.food + 0.001) {
+      issues.add(
+        PlannerValidationIssue(
+          code: PlannerValidationCode.totalFoodCostExceeded,
+          severity: PlannerValidationSeverity.warning,
+          message:
+              'The required meals exceed the trip food allocation; consider increasing the budget.',
         ),
       );
     }

@@ -41,7 +41,10 @@ class MapService {
   /// "Paris"
   ///
   /// Returns a list of place suggestions from Google Places API
-  Future<List<PlaceSuggestion>> getPlaceSuggestions(String input) async {
+  Future<List<PlaceSuggestion>> getPlaceSuggestions(
+    String input, {
+    bool destinationCitiesOnly = false,
+  }) async {
     if (input.trim().isEmpty) return [];
 
     final uri = Uri.parse(
@@ -50,7 +53,10 @@ class MapService {
     final response = await _client.post(
       uri,
       headers: {'Content-Type': 'application/json', 'X-Goog-Api-Key': apiKey},
-      body: jsonEncode({'input': input.trim()}),
+      body: jsonEncode({
+        'input': input.trim(),
+        if (destinationCitiesOnly) 'includedPrimaryTypes': ['(cities)'],
+      }),
     );
 
     if (response.statusCode != 200) {
@@ -215,6 +221,97 @@ class MapService {
       latitude: location['lat'].toDouble(),
       longitude: location['lng'].toDouble(),
     );
+  }
+
+  /// Returns a street-following walking route through the supplied stops.
+  /// Google returns an encoded polyline, which is decoded into map coordinates.
+  Future<List<Coordinates>> getWalkingRoute(List<Coordinates> stops) async {
+    if (stops.length < 2) return List<Coordinates>.of(stops);
+
+    final response = await _client.post(
+      Uri.parse('https://routes.googleapis.com/directions/v2:computeRoutes'),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'routes.polyline.encodedPolyline',
+      },
+      body: jsonEncode({
+        'origin': _routeWaypoint(stops.first),
+        'destination': _routeWaypoint(stops.last),
+        if (stops.length > 2)
+          'intermediates': stops
+              .sublist(1, stops.length - 1)
+              .map(_routeWaypoint)
+              .toList(),
+        'travelMode': 'WALK',
+        'polylineQuality': 'HIGH_QUALITY',
+        'polylineEncoding': 'ENCODED_POLYLINE',
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to calculate walking route.');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final routes = data['routes'] as List<dynamic>? ?? const [];
+    final encoded = routes.isEmpty
+        ? null
+        : routes.first['polyline']?['encodedPolyline'] as String?;
+    if (encoded == null || encoded.isEmpty) {
+      throw Exception('Google Routes returned no walking route.');
+    }
+    return _decodePolyline(encoded);
+  }
+
+  Map<String, dynamic> _routeWaypoint(Coordinates coordinates) {
+    return {
+      'location': {
+        'latLng': {
+          'latitude': coordinates.latitude,
+          'longitude': coordinates.longitude,
+        },
+      },
+    };
+  }
+
+  List<Coordinates> _decodePolyline(String encoded) {
+    final points = <Coordinates>[];
+    var index = 0;
+    var latitude = 0;
+    var longitude = 0;
+
+    while (index < encoded.length) {
+      final latitudeResult = _decodePolylineValue(encoded, index);
+      index = latitudeResult.nextIndex;
+      latitude += latitudeResult.delta;
+
+      final longitudeResult = _decodePolylineValue(encoded, index);
+      index = longitudeResult.nextIndex;
+      longitude += longitudeResult.delta;
+
+      points.add(
+        Coordinates(latitude: latitude / 1e5, longitude: longitude / 1e5),
+      );
+    }
+    return points;
+  }
+
+  ({int delta, int nextIndex}) _decodePolylineValue(
+    String encoded,
+    int startIndex,
+  ) {
+    var result = 0;
+    var shift = 0;
+    var index = startIndex;
+    int byte;
+    do {
+      byte = encoded.codeUnitAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+    final delta = (result & 1) != 0 ? ~(result >> 1) : result >> 1;
+    return (delta: delta, nextIndex: index);
   }
 
   /// ==============================

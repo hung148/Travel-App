@@ -13,10 +13,18 @@ void main() {
 
       expect(result.center.latitude, 10);
       expect(result.center.longitude, 20);
-      expect(mapService.requestedTypes, hasLength(6));
+      expect(mapService.requestedTypes, hasLength(9));
       expect(mapService.requestedTypes, contains('tourist_attraction'));
       expect(mapService.requestedTypes, contains('restaurant'));
+      expect(
+        mapService.requestedTypes,
+        containsAll(['bakery', 'meal_takeaway', 'hotel']),
+      );
       expect(result.places.map((place) => place.id), ['shared-place']);
+      expect(
+        result.hotels.map((hotel) => hotel.id),
+        containsAll(['shared-place', 'hotel-place']),
+      );
     },
   );
 }

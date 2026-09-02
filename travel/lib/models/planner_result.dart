@@ -2,6 +2,7 @@ import 'budget_allocation.dart';
 import 'planner_profile.dart';
 import 'planner_validation.dart';
 import 'score_place.dart';
+import 'hotel_stay.dart';
 
 class PlannerDay {
   final int dayNumber;
@@ -13,12 +14,28 @@ class PlannerDay {
     return places.fold(0, (total, item) => total + item.place.estimatedCost);
   }
 
+  double get estimatedFoodCost => places
+      .where((item) => item.place.isDining)
+      .fold(0, (total, item) => total + item.place.estimatedCost);
+
+  double get estimatedActivityCost => places
+      .where((item) => !item.place.isDining)
+      .fold(0, (total, item) => total + item.place.estimatedCost);
+
   int get estimatedVisitMinutes {
     return places.fold(
       0,
       (total, item) => total + item.place.estimatedVisitMinutes,
     );
   }
+
+  int get estimatedActivityMinutes => places
+      .where((item) => !item.place.isDining)
+      .fold(0, (total, item) => total + item.place.estimatedVisitMinutes);
+
+  int get diningCount => places.where((item) => item.place.isDining).length;
+
+  int get activityCount => places.where((item) => !item.place.isDining).length;
 }
 
 class PlannerResult {
@@ -27,6 +44,7 @@ class PlannerResult {
   final PlannerProfile profile;
   final List<ScoredPlace> rankedPlaces;
   final List<PlannerDay> days;
+  final HotelStay? hotel;
 
   const PlannerResult({
     required this.budgetAllocation,
@@ -34,9 +52,19 @@ class PlannerResult {
     required this.profile,
     required this.rankedPlaces,
     required this.days,
+    this.hotel,
   });
 
   double get totalEstimatedCost {
     return days.fold(0, (total, day) => total + day.estimatedCost);
   }
+
+  double get totalEstimatedFoodCost =>
+      days.fold(0, (total, day) => total + day.estimatedFoodCost);
+
+  double get totalEstimatedActivityCost =>
+      days.fold(0, (total, day) => total + day.estimatedActivityCost);
+
+  double get totalEstimatedTripCost =>
+      totalEstimatedCost + (hotel?.totalCost ?? 0);
 }

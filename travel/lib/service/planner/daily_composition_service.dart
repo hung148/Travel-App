@@ -26,11 +26,14 @@ class DailyCompositionService {
         )
         .toList();
 
-    if (dining.isEmpty || nonDining.isEmpty) return [...nonDining, ...dining];
+    if (dining.isEmpty) return nonDining;
 
-    final arranged = List<ScoredPlace>.of(nonDining);
-    arranged.insert(arranged.length > 1 ? 1 : arranged.length, dining.first);
-    if (dining.length > 1) arranged.addAll(dining.skip(1));
+    final arranged = <ScoredPlace>[dining.first];
+    final lunchIndex = (nonDining.length / 2).ceil();
+    arranged.addAll(nonDining.take(lunchIndex));
+    if (dining.length > 1) arranged.add(dining[1]);
+    arranged.addAll(nonDining.skip(lunchIndex));
+    if (dining.length > 2) arranged.addAll(dining.skip(2));
     return arranged;
   }
 }

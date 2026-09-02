@@ -60,6 +60,7 @@ void main() {
     final client = MockClient((request) async {
       expect(request.method, 'POST');
       expect(request.headers['X-Goog-Api-Key'], 'test-key');
+      expect(jsonDecode(request.body)['includedPrimaryTypes'], ['(cities)']);
       return http.Response(
         jsonEncode({
           'suggestions': [
@@ -76,9 +77,51 @@ void main() {
     });
     final service = MapService(apiKey: 'test-key', client: client);
 
-    final result = await service.getPlaceSuggestions('Paris');
+    final result = await service.getPlaceSuggestions(
+      'Paris',
+      destinationCitiesOnly: true,
+    );
 
     expect(result.single.placeId, 'paris-id');
     expect(result.single.description, 'Paris, France');
+  });
+
+  test('walking route uses Routes API and decodes its polyline', () async {
+    final client = MockClient((request) async {
+      expect(request.method, 'POST');
+      expect(
+        request.url.toString(),
+        'https://routes.googleapis.com/directions/v2:computeRoutes',
+      );
+      expect(request.headers['X-Goog-Api-Key'], 'test-key');
+      expect(
+        request.headers['X-Goog-FieldMask'],
+        'routes.polyline.encodedPolyline',
+      );
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      expect(body['travelMode'], 'WALK');
+      expect(body['intermediates'], hasLength(1));
+      return http.Response(
+        jsonEncode({
+          'routes': [
+            {
+              'polyline': {'encodedPolyline': '_p~iF~ps|U_ulLnnqC_mqNvxq`@'},
+            },
+          ],
+        }),
+        200,
+      );
+    });
+    final service = MapService(apiKey: 'test-key', client: client);
+
+    final route = await service.getWalkingRoute([
+      Coordinates(latitude: 38.5, longitude: -120.2),
+      Coordinates(latitude: 40.7, longitude: -120.95),
+      Coordinates(latitude: 43.252, longitude: -126.453),
+    ]);
+
+    expect(route, hasLength(3));
+    expect(route.first.latitude, closeTo(38.5, 0.00001));
+    expect(route.last.longitude, closeTo(-126.453, 0.00001));
   });
 }

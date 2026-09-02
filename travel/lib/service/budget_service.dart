@@ -27,6 +27,25 @@ class BudgetService {
     );
   }
 
+  BudgetAllocation? ensureMinimumFoodBudget({
+    required BudgetAllocation allocation,
+    required double minimumFoodBudget,
+  }) {
+    if (minimumFoodBudget <= allocation.food) return allocation;
+
+    final additionalFood = minimumFoodBudget - allocation.food;
+    if (additionalFood > allocation.buffer + 0.001) return null;
+
+    return BudgetAllocation(
+      total: allocation.total,
+      accommodation: allocation.accommodation,
+      food: minimumFoodBudget,
+      transportation: allocation.transportation,
+      activities: allocation.activities,
+      buffer: allocation.buffer - additionalFood,
+    );
+  }
+
   _BudgetPercentages _percentagesFor(String spendingStyle) {
     return switch (spendingStyle.toLowerCase().trim()) {
       'budget' => const _BudgetPercentages(

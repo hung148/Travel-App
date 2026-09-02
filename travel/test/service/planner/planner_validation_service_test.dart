@@ -55,18 +55,31 @@ void main() {
     expect(result.isValid, isTrue);
     expect(result.errors, isEmpty);
     expect(
-      result.warnings.single.code,
-      PlannerValidationCode.unavoidableEmptyDay,
+      result.warnings.map((issue) => issue.code),
+      containsAll([
+        PlannerValidationCode.dailyMealMinimumMissing,
+        PlannerValidationCode.unavoidableEmptyDay,
+      ]),
     );
   });
 
   test('accepts a valid itinerary without issues', () {
     final place = _scoredPlace('valid', cost: 50, minutes: 120);
+    final meals = [
+      _scoredPlace('breakfast', cost: 10, minutes: 45, category: 'cafe'),
+      _scoredPlace('lunch', cost: 10, minutes: 60, category: 'restaurant'),
+      _scoredPlace(
+        'dinner',
+        cost: 10,
+        minutes: 60,
+        category: 'sushi_restaurant',
+      ),
+    ];
     final result = validator.validate(
       days: [
-        PlannerDay(dayNumber: 1, places: [place]),
+        PlannerDay(dayNumber: 1, places: [...meals, place]),
       ],
-      rankedPlaces: [place],
+      rankedPlaces: [...meals, place],
       profile: PlannerProfile.relaxed,
       budgetAllocation: allocation,
     );
@@ -88,6 +101,18 @@ void main() {
               category: 'restaurant',
             ),
             _scoredPlace('meal-2', cost: 10, minutes: 60, category: 'cafe'),
+            _scoredPlace(
+              'meal-3',
+              cost: 10,
+              minutes: 60,
+              category: 'sushi_restaurant',
+            ),
+            _scoredPlace(
+              'meal-4',
+              cost: 10,
+              minutes: 60,
+              category: 'ramen_restaurant',
+            ),
           ],
         ),
       ],
@@ -115,6 +140,18 @@ void main() {
               category: 'restaurant',
             ),
             _scoredPlace('meal-2', cost: 10, minutes: 180, category: 'cafe'),
+            _scoredPlace(
+              'meal-3',
+              cost: 10,
+              minutes: 180,
+              category: 'sushi_restaurant',
+            ),
+            _scoredPlace(
+              'meal-4',
+              cost: 10,
+              minutes: 180,
+              category: 'ramen_restaurant',
+            ),
           ],
         ),
       ],
@@ -128,9 +165,43 @@ void main() {
     expect(result.errors, isEmpty);
     expect(
       result.warnings.map((issue) => issue.code),
+      contains(PlannerValidationCode.dailyDiningLimitExceeded),
+    );
+  });
+
+  test('keeps required meals valid when the food allocation is too small', () {
+    final result = validator.validate(
+      days: [
+        PlannerDay(
+          dayNumber: 1,
+          places: [
+            _scoredPlace('breakfast', cost: 90, minutes: 45, category: 'cafe'),
+            _scoredPlace(
+              'lunch',
+              cost: 90,
+              minutes: 60,
+              category: 'restaurant',
+            ),
+            _scoredPlace(
+              'dinner',
+              cost: 90,
+              minutes: 75,
+              category: 'sushi_restaurant',
+            ),
+          ],
+        ),
+      ],
+      rankedPlaces: const [],
+      profile: PlannerProfile.relaxed,
+      budgetAllocation: allocation,
+    );
+
+    expect(result.isValid, isTrue);
+    expect(
+      result.warnings.map((issue) => issue.code),
       containsAll([
-        PlannerValidationCode.dailyTimeExceeded,
-        PlannerValidationCode.dailyDiningLimitExceeded,
+        PlannerValidationCode.dailyFoodCostExceeded,
+        PlannerValidationCode.totalFoodCostExceeded,
       ]),
     );
   });

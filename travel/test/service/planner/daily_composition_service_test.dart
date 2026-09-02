@@ -22,62 +22,67 @@ void main() {
     expect(classifier.classify(_place('park', 'park')), PlaceRole.nature);
   });
 
-  test('places one meal between non-dining activities', () {
+  test('places breakfast, lunch, and dinner around activities', () {
     const service = DailyCompositionService();
     final arranged = service.arrange(
       routeOrderedPlaces: [
         _scored('museum', 'museum'),
         _scored('park', 'park'),
+        _scored('breakfast', 'cafe'),
         _scored('lunch', 'restaurant'),
+        _scored('dinner', 'sushi_restaurant'),
       ],
       profile: PlannerProfile.relaxed,
     );
 
-    expect(arranged.map((item) => item.place.id), ['museum', 'lunch', 'park']);
+    expect(arranged.map((item) => item.place.id), [
+      'breakfast',
+      'museum',
+      'lunch',
+      'park',
+      'dinner',
+    ]);
   });
 
-  test(
-    'relaxed planner limits food and fills remaining slots with activities',
-    () {
-      final planner = TravelPlannerService(
-        placeScoringService: PlaceScoringService(),
-      );
-      final result = planner.generatePlan(
-        trip: Trip(
-          id: 'trip',
-          ownerId: 'user',
-          destination: 'Tokyo',
-          budget: 10000,
-          days: 1,
-          status: 'draft',
-        ),
-        preference: Preference(
-          id: 'preference',
-          ownerId: 'user',
-          experienceType: const ['food'],
-          activityLevel: 'Relaxed',
-          spendingStyle: 'Normal',
-          interests: const ['local food'],
-        ),
-        candidatePlaces: [
-          _place('food-1', 'ramen_restaurant', rating: 5),
-          _place('food-2', 'sushi_restaurant', rating: 4.9),
-          _place('food-3', 'restaurant', rating: 4.8),
-          _place('museum', 'museum', rating: 4.7),
-          _place('park', 'park', rating: 4.6),
-        ],
-        centerLatitude: 0,
-        centerLongitude: 0,
-      );
+  test('relaxed planner schedules three meals separately from activities', () {
+    final planner = TravelPlannerService(
+      placeScoringService: PlaceScoringService(),
+    );
+    final result = planner.generatePlan(
+      trip: Trip(
+        id: 'trip',
+        ownerId: 'user',
+        destination: 'Tokyo',
+        budget: 10000,
+        days: 1,
+        status: 'draft',
+      ),
+      preference: Preference(
+        id: 'preference',
+        ownerId: 'user',
+        experienceType: const ['food'],
+        activityLevel: 'Relaxed',
+        spendingStyle: 'Normal',
+        interests: const ['local food'],
+      ),
+      candidatePlaces: [
+        _place('food-1', 'ramen_restaurant', rating: 5),
+        _place('food-2', 'sushi_restaurant', rating: 4.9),
+        _place('food-3', 'restaurant', rating: 4.8),
+        _place('museum', 'museum', rating: 4.7),
+        _place('park', 'park', rating: 4.6),
+      ],
+      centerLatitude: 0,
+      centerLongitude: 0,
+    );
 
-      final roles = result.days.single.places
-          .map((item) => classifier.classify(item.place))
-          .toList();
-      expect(roles.where((role) => role == PlaceRole.dining), hasLength(1));
-      expect(roles.where((role) => role != PlaceRole.dining), hasLength(2));
-      expect(result.validation.isValid, isTrue);
-    },
-  );
+    final roles = result.days.single.places
+        .map((item) => classifier.classify(item.place))
+        .toList();
+    expect(roles.where((role) => role == PlaceRole.dining), hasLength(3));
+    expect(roles.where((role) => role != PlaceRole.dining), hasLength(2));
+    expect(result.validation.isValid, isTrue);
+  });
 }
 
 ScoredPlace _scored(String id, String category) => ScoredPlace(

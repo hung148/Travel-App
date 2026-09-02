@@ -22,4 +22,9 @@ class BudgetAllocation {
     if (days <= 0) throw ArgumentError.value(days, 'days', 'Must be positive');
     return activities / days;
   }
+
+  double dailyFoodBudget(int days) {
+    if (days <= 0) throw ArgumentError.value(days, 'days', 'Must be positive');
+    return food / days;
+  }
 }

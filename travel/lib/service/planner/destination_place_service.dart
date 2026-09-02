@@ -1,12 +1,18 @@
 import '../../models/travel_place.dart';
+import '../../models/hotel_stay.dart';
 import '../map_service.dart';
 import 'travel_place_mapper.dart';
 
 class DestinationCandidates {
   final Coordinates center;
   final List<TravelPlace> places;
+  final List<HotelStay> hotels;
 
-  const DestinationCandidates({required this.center, required this.places});
+  const DestinationCandidates({
+    required this.center,
+    required this.places,
+    required this.hotels,
+  });
 }
 
 class DestinationPlaceService {
@@ -24,6 +30,8 @@ class DestinationPlaceService {
     'park',
     'cafe',
     'restaurant',
+    'bakery',
+    'meal_takeaway',
     'shopping_mall',
   ];
 
@@ -53,6 +61,12 @@ class DestinationPlaceService {
         ),
       ),
     );
+    final hotelResults = await mapService.getNearbyPlaces(
+      latitude: center.latitude,
+      longitude: center.longitude,
+      radius: radiusMeters,
+      type: 'hotel',
+    );
 
     final uniquePlaces = <String, NearbyPlace>{};
     for (final nearbyPlace in searches.expand((places) => places)) {
@@ -68,6 +82,27 @@ class DestinationPlaceService {
     return DestinationCandidates(
       center: center,
       places: uniquePlaces.values.map(mapper.fromNearbyPlace).toList(),
+      hotels:
+          hotelResults
+              .where(
+                (hotel) =>
+                    hotel.placeId.isNotEmpty && hotel.name.trim().isNotEmpty,
+              )
+              .map(
+                (hotel) => HotelStay(
+                  id: hotel.placeId,
+                  name: hotel.name,
+                  address: hotel.address,
+                  latitude: hotel.latitude,
+                  longitude: hotel.longitude,
+                  rating: hotel.rating,
+                  nightlyRate: 0,
+                  nights: 1,
+                  rooms: 1,
+                ),
+              )
+              .toList()
+            ..sort((left, right) => right.rating.compareTo(left.rating)),
     );
   }
 }

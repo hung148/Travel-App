@@ -155,6 +155,7 @@ class PlanRefinementService {
       profile: original.profile,
       rankedPlaces: ranked,
       days: days,
+      hotel: original.hotel,
     );
     return PlanRefinementResult(
       plan: result,

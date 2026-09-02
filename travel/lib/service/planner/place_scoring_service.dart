@@ -20,6 +20,7 @@ class PlaceScoringService {
     required TravelPlace place,
     required Preference preference,
     required double dailyActivityBudget,
+    double? dailyFoodBudget,
     required double centerLatitude,
     required double centerLongitude,
     required PlannerProfile profile,
@@ -35,7 +36,9 @@ class PlaceScoringService {
 
     final budget = _budgetScore(
       placeCost: place.estimatedCost,
-      dailyActivityBudget: dailyActivityBudget,
+      dailyActivityBudget: place.isDining
+          ? dailyFoodBudget ?? dailyActivityBudget
+          : dailyActivityBudget,
     );
 
     final distanceKm = _calculateDistanceKm(
@@ -73,6 +76,7 @@ class PlaceScoringService {
     required List<TravelPlace> places,
     required Preference preference,
     required double dailyActivityBudget,
+    double? dailyFoodBudget,
     required double centerLatitude,
     required double centerLongitude,
     required PlannerProfile profile,
@@ -82,6 +86,7 @@ class PlaceScoringService {
         place: place,
         preference: preference,
         dailyActivityBudget: dailyActivityBudget,
+        dailyFoodBudget: dailyFoodBudget,
         centerLatitude: centerLatitude,
         centerLongitude: centerLongitude,
         profile: profile,

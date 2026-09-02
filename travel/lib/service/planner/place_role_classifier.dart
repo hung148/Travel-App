@@ -5,12 +5,12 @@ class PlaceRoleClassifier {
   const PlaceRoleClassifier();
 
   PlaceRole classify(TravelPlace place) {
+    if (place.isDining) return PlaceRole.dining;
     final types = {
       place.category,
       ...place.tags,
     }.map((type) => type.toLowerCase().trim()).toSet();
 
-    if (types.any(_isDiningType)) return PlaceRole.dining;
     if (types.any(_cultureTypes.contains)) return PlaceRole.culture;
     if (types.any(_natureTypes.contains)) return PlaceRole.nature;
     if (types.any(_entertainmentTypes.contains)) {
@@ -44,15 +44,6 @@ class PlaceRoleClassifier {
       PlaceRole.shopping => const {'shopping', 'shopping_mall', 'store'},
       PlaceRole.other => const {},
     };
-  }
-
-  bool _isDiningType(String type) {
-    return type == 'restaurant' ||
-        type.endsWith('_restaurant') ||
-        type == 'cafe' ||
-        type == 'bakery' ||
-        type == 'meal_takeaway' ||
-        type == 'meal_delivery';
   }
 
   static const _cultureTypes = {

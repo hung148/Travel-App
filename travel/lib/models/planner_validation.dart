@@ -9,6 +9,13 @@ enum PlannerValidationCode {
   dailyDiningLimitExceeded,
   avoidableFoodOnlyDay,
   unavoidableFoodOnlyDay,
+  dailyMealMinimumMissing,
+  dailyFoodCostExceeded,
+  totalFoodCostExceeded,
+  insufficientBudgetForRequiredMeals,
+  insufficientDiningCandidates,
+  accommodationCostExceeded,
+  totalTripCostExceeded,
 }
 
 enum PlannerValidationSeverity { warning, error }

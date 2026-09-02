@@ -26,4 +26,17 @@ class TravelPlace {
     required this.longitude,
     required this.estimatedVisitMinutes,
   });
+
+  bool get isDining {
+    final types = {category, ...tags}.map((value) => value.toLowerCase());
+    return types.any(
+      (type) =>
+          type == 'restaurant' ||
+          type.endsWith('_restaurant') ||
+          type == 'cafe' ||
+          type == 'bakery' ||
+          type == 'meal_takeaway' ||
+          type == 'meal_delivery',
+    );
+  }
 }

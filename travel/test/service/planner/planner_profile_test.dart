@@ -23,6 +23,9 @@ void main() {
       expect(relaxed.targetMinutesPerDay, 300);
       expect(balanced.targetMinutesPerDay, 420);
       expect(explorer.targetMinutesPerDay, 570);
+      expect(relaxed.minDiningPlacesPerDay, 3);
+      expect(balanced.minDiningPlacesPerDay, 3);
+      expect(explorer.minDiningPlacesPerDay, 3);
       expect(
         relaxed.distanceToleranceKm,
         lessThan(explorer.distanceToleranceKm),

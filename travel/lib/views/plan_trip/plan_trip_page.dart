@@ -1,24 +1,31 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/app_config.dart';
-import '../../models/place_role.dart';
 import '../../models/planner_result.dart';
+import '../../models/hotel_stay.dart';
 import '../../models/preference/preferences.dart';
 import '../../models/planner_validation.dart';
+import '../../models/score_place.dart';
 import '../../models/travel_place.dart';
 import '../../models/trip/trip.dart';
 import '../../service/map_service.dart';
 import '../../service/planner/destination_place_service.dart';
 import '../../service/planner/mock_places.dart';
-import '../../service/planner/place_role_classifier.dart';
+import '../../service/planner/daily_time_schedule_service.dart';
 import '../../service/planner/place_scoring_service.dart';
 import '../../service/planner/plan_refinement_service.dart';
+import '../../service/planner/planner_validation_service.dart';
 import '../../service/planner/travel_planner_service.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/preference_viewmodel.dart';
 import 'ai_chat_widget.dart';
 import '../preferences/preference_page.dart';
+import '../summary/summary_page.dart';
 
 class PlanTripPage extends StatefulWidget {
   const PlanTripPage({super.key});
@@ -55,6 +62,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
   Preference? savedPreference;
   String? preferenceError;
   PlannerResult? plannerResult;
+  List<HotelStay> hotelRecommendations = const [];
+  HotelStay? selectedHotel;
 
   @override
   void initState() {
@@ -80,6 +89,16 @@ class _PlanTripPageState extends State<PlanTripPage> {
     if (selected != null && mounted) {
       setState(() => dates = selected);
     }
+  }
+
+  void _destinationChanged() {
+    if (!planGenerated && plannerResult == null) return;
+    setState(() {
+      planGenerated = false;
+      plannerResult = null;
+      hotelRecommendations = const [];
+      selectedHotel = null;
+    });
   }
 
   String _dateLabel() {
@@ -183,6 +202,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       var centerLongitude = 139.6503;
       var nextPlaceDataSource =
           'Mock Tokyo data • Google API key not configured';
+      var nextHotels = <HotelStay>[];
 
       final destinationPlaceService = _destinationPlaceService;
       if (destinationPlaceService != null) {
@@ -195,6 +215,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
             centerLongitude = destinationCandidates.center.longitude;
             nextPlaceDataSource =
                 'Live Google Places • ${candidatePlaces.length} candidates';
+            nextHotels = destinationCandidates.hotels;
           } else {
             nextPlaceDataSource =
                 'Mock Tokyo data • Google returned no candidates';
@@ -228,7 +249,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
         endDate: dates?.end,
       );
 
-      final result = _planner.generatePlan(
+      final generatedResult = _planner.generatePlan(
         trip: trip,
         preference: preference,
         candidatePlaces: candidatePlaces,
@@ -236,12 +257,34 @@ class _PlanTripPageState extends State<PlanTripPage> {
         centerLongitude: centerLongitude,
       );
 
+      final nightCount = dates == null
+          ? (dayCount - 1).clamp(1, dayCount)
+          : dates!.end.difference(dates!.start).inDays.clamp(1, dayCount);
+      final roomCount = ((travelers + 1) ~/ 2).clamp(1, travelers);
+      var nextHotel = selectedHotel?.copyWith(
+        nights: nightCount,
+        rooms: roomCount,
+      );
+      if (nextHotel == null && nextHotels.isNotEmpty) {
+        nextHotel = nextHotels.first.copyWith(
+          nights: nightCount,
+          rooms: roomCount,
+        );
+      }
+      final result = _resultWithHotel(generatedResult, nextHotel);
+
       if (!mounted) return;
 
       setState(() {
         plannerResult = result;
         planGenerated = true;
         placeDataSource = nextPlaceDataSource;
+        hotelRecommendations = nextHotels
+            .map(
+              (hotel) => hotel.copyWith(nights: nightCount, rooms: roomCount),
+            )
+            .toList();
+        selectedHotel = nextHotel;
       });
     } catch (e) {
       if (!mounted) return;
@@ -253,6 +296,130 @@ class _PlanTripPageState extends State<PlanTripPage> {
         setState(() => isGenerating = false);
       }
     }
+  }
+
+  PlannerResult _resultWithHotel(PlannerResult result, HotelStay? hotel) {
+    final issues = result.validation.issues
+        .where(
+          (issue) =>
+              issue.code != PlannerValidationCode.accommodationCostExceeded &&
+              issue.code != PlannerValidationCode.totalTripCostExceeded,
+        )
+        .toList();
+    if (hotel != null &&
+        hotel.totalCost > result.budgetAllocation.accommodation + 0.001) {
+      issues.add(
+        PlannerValidationIssue(
+          code: PlannerValidationCode.accommodationCostExceeded,
+          severity: PlannerValidationSeverity.warning,
+          message:
+              'Your hotel estimate of \$${hotel.totalCost.toStringAsFixed(0)} exceeds the \$${result.budgetAllocation.accommodation.toStringAsFixed(0)} accommodation allocation.',
+        ),
+      );
+    }
+    if (hotel != null &&
+        result.totalEstimatedCost + hotel.totalCost >
+            result.budgetAllocation.total + 0.001) {
+      issues.add(
+        const PlannerValidationIssue(
+          code: PlannerValidationCode.totalTripCostExceeded,
+          severity: PlannerValidationSeverity.warning,
+          message:
+              'The hotel, meals, and activities exceed the total trip budget.',
+        ),
+      );
+    }
+    return PlannerResult(
+      budgetAllocation: result.budgetAllocation,
+      validation: PlannerValidationResult(issues: issues),
+      profile: result.profile,
+      rankedPlaces: result.rankedPlaces,
+      days: result.days,
+      hotel: hotel,
+    );
+  }
+
+  void _selectRecommendedHotel(HotelStay hotel) {
+    final updated = hotel.copyWith(
+      nightlyRate: selectedHotel?.id == hotel.id
+          ? selectedHotel?.nightlyRate ?? 0
+          : 0,
+      nights: selectedHotel?.nights ?? hotel.nights,
+      rooms: selectedHotel?.rooms ?? hotel.rooms,
+    );
+    setState(() {
+      selectedHotel = updated;
+      if (plannerResult != null) {
+        plannerResult = _resultWithHotel(plannerResult!, updated);
+      }
+    });
+  }
+
+  Future<void> _editHotel() async {
+    final initial = selectedHotel;
+    final edited = await showDialog<HotelStay>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _HotelEditorDialog(
+        initial: initial,
+        defaultNights:
+            dates?.end.difference(dates!.start).inDays.clamp(1, 365) ?? 1,
+        defaultRooms: ((travelers + 1) ~/ 2).clamp(1, travelers),
+        mapService: AppConfig.hasGoogleMapsApiKey
+            ? MapService(apiKey: AppConfig.googleMapsApiKey)
+            : null,
+      ),
+    );
+    if (!mounted || edited == null) return;
+    setState(() {
+      selectedHotel = edited;
+      if (plannerResult != null) {
+        plannerResult = _resultWithHotel(plannerResult!, edited);
+      }
+    });
+  }
+
+  Future<void> _openManualPlanner() async {
+    if (plannerResult == null || plannerResult!.rankedPlaces.isEmpty) {
+      await _generatePlan();
+    }
+    final current = plannerResult;
+    if (!mounted || current == null || current.rankedPlaces.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No destination places are available to add yet.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    final editedDays = await showDialog<List<PlannerDay>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _ManualPlannerDialog(result: current),
+    );
+    if (!mounted || editedDays == null) return;
+
+    final validation = const PlannerValidationService().validate(
+      days: editedDays,
+      rankedPlaces: current.rankedPlaces,
+      profile: current.profile,
+      budgetAllocation: current.budgetAllocation,
+      allowUserOverrides: true,
+    );
+    setState(() {
+      plannerResult = PlannerResult(
+        budgetAllocation: current.budgetAllocation,
+        validation: validation,
+        profile: current.profile,
+        rankedPlaces: current.rankedPlaces,
+        days: editedDays,
+        hotel: current.hotel,
+      );
+      planGenerated = true;
+    });
   }
 
   void _selectPlan(String value) {
@@ -431,8 +598,16 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       dateLabel: _dateLabel(),
                       travelers: travelers,
                       onPickDates: _pickDates,
+                      onDestinationChanged: _destinationChanged,
                       onTravelersChanged: (value) =>
                           setState(() => travelers = value),
+                    ),
+                    const SizedBox(height: 20),
+                    _HotelStayCard(
+                      recommendations: hotelRecommendations,
+                      selectedHotel: selectedHotel,
+                      onSelected: _selectRecommendedHotel,
+                      onEdit: _editHotel,
                     ),
                     if (!desktop) ...[
                       const SizedBox(height: 14),
@@ -466,7 +641,10 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Expanded(flex: 3, child: _MapPlaceholder()),
+                          Expanded(
+                            flex: 3,
+                            child: _DestinationMap(result: plannerResult),
+                          ),
                           const SizedBox(width: 20),
                           Expanded(
                             flex: 2,
@@ -478,7 +656,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                         ],
                       )
                     else ...[
-                      const _MapPlaceholder(),
+                      _DestinationMap(result: plannerResult),
                       const SizedBox(height: 20),
                       SizedBox(
                         height: 430,
@@ -501,7 +679,18 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       result: plannerResult,
                       placeDataSource: placeDataSource,
                       onGenerate: _generatePlan,
-                      onReview: () => Navigator.pushNamed(context, '/summary'),
+                      onManual: _openManualPlanner,
+                      onReview: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SummaryPage(
+                            result: plannerResult,
+                            destination: destinationController.text.trim(),
+                            dates: dates,
+                            travelers: travelers,
+                          ),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 30),
                   ],
@@ -629,6 +818,7 @@ class _TripSetupCard extends StatelessWidget {
   final String dateLabel;
   final int travelers;
   final VoidCallback onPickDates;
+  final VoidCallback onDestinationChanged;
   final ValueChanged<int> onTravelersChanged;
 
   const _TripSetupCard({
@@ -637,6 +827,7 @@ class _TripSetupCard extends StatelessWidget {
     required this.dateLabel,
     required this.travelers,
     required this.onPickDates,
+    required this.onDestinationChanged,
     required this.onTravelersChanged,
   });
 
@@ -649,12 +840,9 @@ class _TripSetupCard extends StatelessWidget {
           final fields = [
             _LabeledField(
               label: 'Destination',
-              child: TextField(
+              child: _DestinationAutocompleteField(
                 controller: destinationController,
-                decoration: const InputDecoration(
-                  hintText: 'Tokyo, Japan',
-                  prefixIcon: Icon(Icons.location_on_outlined),
-                ),
+                onChanged: onDestinationChanged,
               ),
             ),
             _LabeledField(
@@ -746,6 +934,162 @@ class _TripSetupCard extends StatelessWidget {
   }
 }
 
+class _DestinationAutocompleteField extends StatefulWidget {
+  final TextEditingController controller;
+  final VoidCallback onChanged;
+
+  const _DestinationAutocompleteField({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  @override
+  State<_DestinationAutocompleteField> createState() =>
+      _DestinationAutocompleteFieldState();
+}
+
+class _DestinationAutocompleteFieldState
+    extends State<_DestinationAutocompleteField> {
+  final menuController = MenuController();
+  final focusNode = FocusNode();
+  Timer? debounce;
+  List<PlaceSuggestion> suggestions = const [];
+  bool loading = false;
+  int requestNumber = 0;
+
+  MapService? get _mapService => AppConfig.hasGoogleMapsApiKey
+      ? MapService(apiKey: AppConfig.googleMapsApiKey)
+      : null;
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    debounce?.cancel();
+    focusNode.dispose();
+    super.dispose();
+  }
+
+  void _queryChanged(String value) {
+    widget.onChanged();
+    debounce?.cancel();
+    final query = value.trim();
+    if (query.length < 2 || _mapService == null) {
+      requestNumber++;
+      setState(() {
+        loading = false;
+        suggestions = const [];
+      });
+      if (menuController.isOpen) menuController.close();
+      return;
+    }
+
+    debounce = Timer(const Duration(milliseconds: 350), () async {
+      final currentRequest = ++requestNumber;
+      if (mounted) setState(() => loading = true);
+      try {
+        final results = await _mapService!.getPlaceSuggestions(
+          query,
+          destinationCitiesOnly: true,
+        );
+        if (!mounted || currentRequest != requestNumber) return;
+        setState(() {
+          suggestions = results;
+          loading = false;
+        });
+        if (focusNode.hasFocus && suggestions.isNotEmpty) {
+          menuController.open();
+        } else if (menuController.isOpen) {
+          menuController.close();
+        }
+      } catch (_) {
+        if (!mounted || currentRequest != requestNumber) return;
+        setState(() {
+          loading = false;
+          suggestions = const [];
+        });
+        if (menuController.isOpen) menuController.close();
+      }
+    });
+  }
+
+  void _selectSuggestion(PlaceSuggestion suggestion) {
+    debounce?.cancel();
+    requestNumber++;
+    widget.controller.text = suggestion.description;
+    widget.controller.selection = TextSelection.collapsed(
+      offset: widget.controller.text.length,
+    );
+    setState(() => suggestions = const []);
+    menuController.close();
+    focusNode.unfocus();
+    widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return MenuAnchor(
+          controller: menuController,
+          alignmentOffset: const Offset(0, 6),
+          menuChildren: [
+            for (final suggestion in suggestions)
+              SizedBox(
+                width: constraints.maxWidth,
+                child: MenuItemButton(
+                  leadingIcon: const Icon(Icons.location_city_outlined),
+                  onPressed: () => _selectSuggestion(suggestion),
+                  child: Text(
+                    suggestion.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            if (suggestions.isNotEmpty)
+              SizedBox(
+                width: constraints.maxWidth,
+                child: const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 6, 16, 10),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      'Powered by Google',
+                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+          builder: (context, controller, child) => TextField(
+            controller: widget.controller,
+            focusNode: focusNode,
+            onChanged: _queryChanged,
+            decoration: InputDecoration(
+              hintText: 'Tokyo, Japan',
+              prefixIcon: const Icon(Icons.location_on_outlined),
+              suffixIcon: loading
+                  ? const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : null,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _LabeledField extends StatelessWidget {
   final String label;
   final Widget child;
@@ -767,11 +1111,510 @@ class _LabeledField extends StatelessWidget {
   }
 }
 
-class _MapPlaceholder extends StatelessWidget {
-  const _MapPlaceholder();
+class _HotelStayCard extends StatelessWidget {
+  final List<HotelStay> recommendations;
+  final HotelStay? selectedHotel;
+  final ValueChanged<HotelStay> onSelected;
+  final VoidCallback onEdit;
+
+  const _HotelStayCard({
+    required this.recommendations,
+    required this.selectedHotel,
+    required this.onSelected,
+    required this.onEdit,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final selected = selectedHotel;
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.hotel_outlined),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Hotel and daily route anchor',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined),
+                label: Text(selected == null ? 'Enter my hotel' : 'Edit'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (recommendations.isNotEmpty)
+            DropdownButtonFormField<String>(
+              initialValue:
+                  recommendations.any((hotel) => hotel.id == selected?.id)
+                  ? selected?.id
+                  : null,
+              decoration: const InputDecoration(
+                labelText: 'Recommended Google hotels',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.recommend_outlined),
+              ),
+              items: recommendations
+                  .map(
+                    (hotel) => DropdownMenuItem(
+                      value: hotel.id,
+                      child: Text(
+                        '${hotel.name} • ${hotel.rating.toStringAsFixed(1)}★',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (id) {
+                if (id == null) return;
+                onSelected(
+                  recommendations.firstWhere((hotel) => hotel.id == id),
+                );
+              },
+            ),
+          if (recommendations.isNotEmpty) const SizedBox(height: 12),
+          if (selected == null)
+            const Text(
+              'Generate a destination plan for recommendations, or enter the hotel you already booked.',
+            )
+          else
+            Wrap(
+              spacing: 18,
+              runSpacing: 8,
+              children: [
+                Text(
+                  selected.name,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                Text('${selected.nights} nights'),
+                Text('${selected.rooms} rooms'),
+                Text(
+                  selected.nightlyRate > 0
+                      ? '\$${selected.nightlyRate.toStringAsFixed(0)} / room / night'
+                      : 'Nightly price not entered',
+                ),
+                Text(
+                  'Accommodation total: '
+                  '\$${selected.totalCost.toStringAsFixed(0)}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+          const SizedBox(height: 8),
+          Text(
+            'Each day starts and ends here. Hotel prices are user-entered estimates, not live booking rates.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HotelEditorDialog extends StatefulWidget {
+  final HotelStay? initial;
+  final int defaultNights;
+  final int defaultRooms;
+  final MapService? mapService;
+
+  const _HotelEditorDialog({
+    required this.initial,
+    required this.defaultNights,
+    required this.defaultRooms,
+    required this.mapService,
+  });
+
+  @override
+  State<_HotelEditorDialog> createState() => _HotelEditorDialogState();
+}
+
+class _HotelEditorDialogState extends State<_HotelEditorDialog> {
+  final formKey = GlobalKey<FormState>();
+  late final nameController = TextEditingController(
+    text: widget.initial?.name ?? '',
+  );
+  late final addressController = TextEditingController(
+    text: widget.initial?.address ?? '',
+  );
+  late final rateController = TextEditingController(
+    text: widget.initial == null || widget.initial!.nightlyRate <= 0
+        ? ''
+        : widget.initial!.nightlyRate.toStringAsFixed(0),
+  );
+  late final nightsController = TextEditingController(
+    text: '${widget.initial?.nights ?? widget.defaultNights}',
+  );
+  late final roomsController = TextEditingController(
+    text: '${widget.initial?.rooms ?? widget.defaultRooms}',
+  );
+  bool saving = false;
+  String? error;
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    addressController.dispose();
+    rateController.dispose();
+    nightsController.dispose();
+    roomsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!(formKey.currentState?.validate() ?? false)) return;
+    setState(() {
+      saving = true;
+      error = null;
+    });
+    try {
+      var latitude = widget.initial?.latitude ?? 0;
+      var longitude = widget.initial?.longitude ?? 0;
+      final addressChanged =
+          addressController.text.trim() != widget.initial?.address.trim();
+      if (addressChanged || (latitude == 0 && longitude == 0)) {
+        final service = widget.mapService;
+        if (service == null) {
+          throw Exception(
+            'A Google Maps key is required to locate this hotel.',
+          );
+        }
+        final coordinates = await service.geocodeAddress(
+          addressController.text.trim(),
+        );
+        latitude = coordinates.latitude;
+        longitude = coordinates.longitude;
+      }
+      if (!mounted) return;
+      Navigator.pop(
+        context,
+        HotelStay(
+          id:
+              widget.initial?.id ??
+              'custom-hotel-${DateTime.now().millisecondsSinceEpoch}',
+          name: nameController.text.trim(),
+          address: addressController.text.trim(),
+          latitude: latitude,
+          longitude: longitude,
+          rating: widget.initial?.rating ?? 0,
+          nightlyRate: double.parse(rateController.text.trim()),
+          nights: int.parse(nightsController.text.trim()),
+          rooms: int.parse(roomsController.text.trim()),
+          userProvided: true,
+        ),
+      );
+    } catch (exception) {
+      if (mounted) {
+        setState(() {
+          saving = false;
+          error = 'Could not locate the hotel. Check the address. $exception';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Hotel details'),
+      content: SizedBox(
+        width: 520,
+        child: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Hotel name'),
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? 'Enter the hotel name.'
+                      : null,
+                ),
+                TextFormField(
+                  controller: addressController,
+                  decoration: const InputDecoration(labelText: 'Full address'),
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? 'Enter an address so routes can start here.'
+                      : null,
+                ),
+                TextFormField(
+                  controller: rateController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Price per room per night',
+                    prefixText: '\$ ',
+                  ),
+                  validator: (value) {
+                    final amount = double.tryParse(value?.trim() ?? '');
+                    return amount == null || amount < 0
+                        ? 'Enter a valid nightly price.'
+                        : null;
+                  },
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: nightsController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Nights'),
+                        validator: _positiveInteger,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: roomsController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Rooms'),
+                        validator: _positiveInteger,
+                      ),
+                    ),
+                  ],
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: saving ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: saving ? null : _save,
+          child: Text(saving ? 'Locating...' : 'Save hotel'),
+        ),
+      ],
+    );
+  }
+
+  static String? _positiveInteger(String? value) {
+    final number = int.tryParse(value?.trim() ?? '');
+    return number == null || number <= 0 ? 'Enter 1 or more.' : null;
+  }
+}
+
+class _DestinationMap extends StatefulWidget {
+  final PlannerResult? result;
+
+  const _DestinationMap({required this.result});
+
+  @override
+  State<_DestinationMap> createState() => _DestinationMapState();
+}
+
+class _DestinationMapState extends State<_DestinationMap> {
+  final LayerHitNotifier<int> _routeHitNotifier = ValueNotifier(null);
+  final MapController _mapController = MapController();
+  final Map<int, List<LatLng>> _walkingRoutes = {};
+  bool _isLoadingRoutes = false;
+  bool _routeFallbackUsed = false;
+  String _loadedSignature = '';
+  int? _highlightedDay;
+  bool _hotelHighlighted = false;
+
+  static const _fallbackCenter = LatLng(35.6762, 139.6503);
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleRouteLoad();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DestinationMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleRouteLoad();
+  }
+
+  @override
+  void dispose() {
+    _routeHitNotifier.dispose();
+    _mapController.dispose();
+    super.dispose();
+  }
+
+  void _highlightDay(int? dayNumber) {
+    if ((_highlightedDay == dayNumber && !_hotelHighlighted) || !mounted) {
+      return;
+    }
+    setState(() {
+      _highlightedDay = dayNumber;
+      _hotelHighlighted = false;
+    });
+  }
+
+  void _highlightHotel(bool highlighted) {
+    if (_hotelHighlighted == highlighted || !mounted) return;
+    setState(() {
+      _hotelHighlighted = highlighted;
+      if (highlighted) _highlightedDay = null;
+    });
+  }
+
+  void _scheduleRouteLoad() {
+    final signature = _resultSignature();
+    if (signature == _loadedSignature) return;
+    _loadedSignature = signature;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadWalkingRoutes());
+  }
+
+  String _resultSignature() {
+    final hotelId = widget.result?.hotel?.id ?? 'no-hotel';
+    final places = (widget.result?.days ?? const <PlannerDay>[])
+        .expand((day) => day.places)
+        .map((item) => item.place.id)
+        .join('|');
+    return '$hotelId|$places';
+  }
+
+  Future<void> _loadWalkingRoutes() async {
+    final days = widget.result?.days ?? const <PlannerDay>[];
+    if (!AppConfig.hasGoogleMapsApiKey || days.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _walkingRoutes.clear();
+          _routeFallbackUsed = days.isNotEmpty;
+          _isLoadingRoutes = false;
+        });
+      }
+      return;
+    }
+
+    setState(() {
+      _isLoadingRoutes = true;
+      _routeFallbackUsed = false;
+      _walkingRoutes.clear();
+    });
+    final service = MapService(apiKey: AppConfig.googleMapsApiKey);
+    final hotel = widget.result?.hotel;
+    final loadedRoutes = <int, List<LatLng>>{};
+    var fallbackUsed = false;
+
+    await Future.wait(
+      days
+          .where(
+            (day) =>
+                hotel == null ? day.places.length > 1 : day.places.isNotEmpty,
+          )
+          .map((day) async {
+            try {
+              final stops = <Coordinates>[
+                if (hotel != null)
+                  Coordinates(
+                    latitude: hotel.latitude,
+                    longitude: hotel.longitude,
+                  ),
+                ...day.places.map(
+                  (item) => Coordinates(
+                    latitude: item.place.latitude,
+                    longitude: item.place.longitude,
+                  ),
+                ),
+                if (hotel != null)
+                  Coordinates(
+                    latitude: hotel.latitude,
+                    longitude: hotel.longitude,
+                  ),
+              ];
+              final route = await service.getWalkingRoute(stops);
+              loadedRoutes[day.dayNumber] = route
+                  .map((point) => LatLng(point.latitude, point.longitude))
+                  .toList();
+            } catch (_) {
+              fallbackUsed = true;
+            }
+          }),
+    );
+
+    if (!mounted || _resultSignature() != _loadedSignature) return;
+    setState(() {
+      _walkingRoutes.addAll(loadedRoutes);
+      _routeFallbackUsed = fallbackUsed;
+      _isLoadingRoutes = false;
+    });
+  }
+
+  Color _dayColor(BuildContext context, int dayNumber) {
+    final colors = [
+      Theme.of(context).colorScheme.primary,
+      Colors.deepOrange,
+      Colors.green,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+    ];
+    return colors[(dayNumber - 1) % colors.length];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final days = widget.result?.days ?? const <PlannerDay>[];
+    final hotel = widget.result?.hotel;
+    final points = <LatLng>[
+      if (hotel != null) LatLng(hotel.latitude, hotel.longitude),
+      ...days
+          .expand((day) => day.places)
+          .map((item) => LatLng(item.place.latitude, item.place.longitude)),
+    ];
+    final mapOptions = points.length > 1
+        ? MapOptions(
+            initialCameraFit: CameraFit.coordinates(
+              coordinates: points,
+              padding: const EdgeInsets.all(55),
+              maxZoom: 15,
+            ),
+          )
+        : MapOptions(
+            initialCenter: points.isEmpty ? _fallbackCenter : points.single,
+            initialZoom: points.isEmpty ? 10 : 14,
+          );
+    final routeDays = days
+        .where(
+          (day) =>
+              hotel == null ? day.places.length > 1 : day.places.isNotEmpty,
+        )
+        .toList();
+    routeDays.sort((a, b) {
+      if (a.dayNumber == _highlightedDay) return 1;
+      if (b.dayNumber == _highlightedDay) return -1;
+      return a.dayNumber.compareTo(b.dayNumber);
+    });
+    final markerDays = List<PlannerDay>.of(days)
+      ..sort((a, b) {
+        if (a.dayNumber == _highlightedDay) return 1;
+        if (b.dayNumber == _highlightedDay) return -1;
+        return a.dayNumber.compareTo(b.dayNumber);
+      });
+    final highlightedRoute = _highlightedDay == null
+        ? null
+        : routeDays
+              .where((day) => day.dayNumber == _highlightedDay)
+              .firstOrNull;
+
     return _Panel(
       padding: EdgeInsets.zero,
       child: SizedBox(
@@ -781,43 +1624,244 @@ class _MapPlaceholder extends StatelessWidget {
           child: Stack(
             children: [
               Positioned.fill(
-                child: Container(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.primary.withValues(alpha: 0.06),
-                  child: CustomPaint(painter: _MapGridPainter()),
-                ),
-              ),
-              const Positioned(
-                left: 110,
-                top: 135,
-                child: _MapPin(number: '1'),
-              ),
-              const Positioned(
-                left: 245,
-                top: 225,
-                child: _MapPin(number: '2'),
-              ),
-              const Positioned(
-                right: 145,
-                top: 115,
-                child: _MapPin(number: '3'),
-              ),
-              const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                child: FlutterMap(
+                  key: ValueKey(
+                    points
+                        .map((point) => '${point.latitude},${point.longitude}')
+                        .join('|'),
+                  ),
+                  mapController: _mapController,
+                  options: mapOptions,
                   children: [
-                    Icon(Icons.map_outlined, size: 52),
-                    SizedBox(height: 12),
-                    Text(
-                      'Google Map Preview',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.travelplanner.travel',
+                      maxNativeZoom: 19,
+                    ),
+                    TranslucentPointer(
+                      child: MouseRegion(
+                        hitTestBehavior: HitTestBehavior.deferToChild,
+                        cursor: SystemMouseCursors.click,
+                        onHover: (_) {
+                          final hit = _routeHitNotifier.value;
+                          if (hit != null && hit.hitValues.isNotEmpty) {
+                            _highlightDay(hit.hitValues.first);
+                          }
+                        },
+                        onExit: (_) => _highlightDay(null),
+                        child: PolylineLayer<int>(
+                          hitNotifier: _routeHitNotifier,
+                          minimumHitbox: 20,
+                          polylines: [
+                            for (final day in routeDays)
+                              Polyline<int>(
+                                points:
+                                    _walkingRoutes[day.dayNumber] ??
+                                    <LatLng>[
+                                      if (hotel != null)
+                                        LatLng(hotel.latitude, hotel.longitude),
+                                      ...day.places.map(
+                                        (item) => LatLng(
+                                          item.place.latitude,
+                                          item.place.longitude,
+                                        ),
+                                      ),
+                                      if (hotel != null)
+                                        LatLng(hotel.latitude, hotel.longitude),
+                                    ],
+                                color: _dayColor(context, day.dayNumber)
+                                    .withValues(
+                                      alpha:
+                                          _hotelHighlighted ||
+                                              _highlightedDay == null ||
+                                              _highlightedDay == day.dayNumber
+                                          ? 1
+                                          : 0.18,
+                                    ),
+                                strokeWidth: _hotelHighlighted
+                                    ? 7
+                                    : _highlightedDay == day.dayNumber
+                                    ? 8
+                                    : 4,
+                                borderColor: Colors.white,
+                                borderStrokeWidth:
+                                    _hotelHighlighted ||
+                                        _highlightedDay == day.dayNumber
+                                    ? 3
+                                    : 1,
+                                hitValue: day.dayNumber,
+                              ),
+                          ],
+                        ),
                       ),
                     ),
-                    SizedBox(height: 4),
-                    Text('Real Google Maps data will replace this placeholder'),
+                    if (highlightedRoute != null && !_hotelHighlighted)
+                      TranslucentPointer(
+                        child: PolylineLayer<int>(
+                          polylines: [
+                            Polyline<int>(
+                              points:
+                                  _walkingRoutes[highlightedRoute.dayNumber] ??
+                                  <LatLng>[
+                                    if (hotel != null)
+                                      LatLng(hotel.latitude, hotel.longitude),
+                                    ...highlightedRoute.places.map(
+                                      (item) => LatLng(
+                                        item.place.latitude,
+                                        item.place.longitude,
+                                      ),
+                                    ),
+                                    if (hotel != null)
+                                      LatLng(hotel.latitude, hotel.longitude),
+                                  ],
+                              color: _dayColor(
+                                context,
+                                highlightedRoute.dayNumber,
+                              ),
+                              strokeWidth: 9,
+                              borderColor: Colors.white,
+                              borderStrokeWidth: 4,
+                              hitValue: highlightedRoute.dayNumber,
+                            ),
+                          ],
+                        ),
+                      ),
+                    MarkerLayer(
+                      markers: [
+                        for (final day in markerDays)
+                          for (
+                            int stopIndex = 0;
+                            stopIndex < day.places.length;
+                            stopIndex++
+                          )
+                            Marker(
+                              point: LatLng(
+                                day.places[stopIndex].place.latitude,
+                                day.places[stopIndex].place.longitude,
+                              ),
+                              width: 54,
+                              height: 54,
+                              alignment: Alignment.topCenter,
+                              child: Tooltip(
+                                message:
+                                    'Day ${day.dayNumber}, stop ${stopIndex + 1}: '
+                                    '${day.places[stopIndex].place.name}',
+                                child: MouseRegion(
+                                  cursor: SystemMouseCursors.click,
+                                  onEnter: (_) => _highlightDay(day.dayNumber),
+                                  onExit: (_) {
+                                    if (_highlightedDay == day.dayNumber) {
+                                      _highlightDay(null);
+                                    }
+                                  },
+                                  child: AnimatedOpacity(
+                                    duration: const Duration(milliseconds: 140),
+                                    opacity:
+                                        _hotelHighlighted ||
+                                            _highlightedDay == null ||
+                                            _highlightedDay == day.dayNumber
+                                        ? 1
+                                        : 0.28,
+                                    child: AnimatedScale(
+                                      duration: const Duration(
+                                        milliseconds: 140,
+                                      ),
+                                      scale: _highlightedDay == day.dayNumber
+                                          ? 1.25
+                                          : 1,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: _dayColor(
+                                            context,
+                                            day.dayNumber,
+                                          ),
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: Colors.white,
+                                            width:
+                                                _highlightedDay == day.dayNumber
+                                                ? 4
+                                                : 3,
+                                          ),
+                                          boxShadow: const [
+                                            BoxShadow(
+                                              color: Colors.black26,
+                                              blurRadius: 5,
+                                            ),
+                                          ],
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: Text(
+                                          '${day.dayNumber}.${stopIndex + 1}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                      ],
+                    ),
+                    if (hotel != null)
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: LatLng(hotel.latitude, hotel.longitude),
+                            width: _hotelHighlighted ? 78 : 66,
+                            height: _hotelHighlighted ? 78 : 66,
+                            alignment: Alignment.topCenter,
+                            child: MouseRegion(
+                              cursor: SystemMouseCursors.click,
+                              onEnter: (_) => _highlightHotel(true),
+                              onExit: (_) => _highlightHotel(false),
+                              child: Tooltip(
+                                message:
+                                    'Hotel: ${hotel.name} • all daily routes',
+                                child: AnimatedScale(
+                                  duration: const Duration(milliseconds: 140),
+                                  scale: _hotelHighlighted ? 1.18 : 1,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.indigo.shade700,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: _hotelHighlighted ? 6 : 4,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(
+                                            alpha: _hotelHighlighted
+                                                ? 0.45
+                                                : 0.26,
+                                          ),
+                                          blurRadius: _hotelHighlighted
+                                              ? 14
+                                              : 6,
+                                          spreadRadius: _hotelHighlighted
+                                              ? 3
+                                              : 0,
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(
+                                      Icons.hotel_rounded,
+                                      color: Colors.white,
+                                      size: 30,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ),
@@ -826,29 +1870,137 @@ class _MapPlaceholder extends StatelessWidget {
                 left: 16,
                 child: Chip(
                   avatar: const Icon(Icons.location_searching, size: 18),
-                  label: const Text('Destination map'),
+                  label: Text(
+                    points.isEmpty
+                        ? 'Destination map'
+                        : '${points.length} itinerary stops',
+                  ),
                   backgroundColor: Theme.of(context).colorScheme.surface,
                 ),
               ),
+              if (_isLoadingRoutes)
+                const Positioned(
+                  top: 20,
+                  right: 20,
+                  child: Card(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 7,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 7),
+                          Text('Loading walking routes...'),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              else if (_hotelHighlighted)
+                const Positioned(
+                  top: 20,
+                  right: 20,
+                  child: Card(
+                    color: Colors.indigo,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 7,
+                      ),
+                      child: Text(
+                        'All hotel routes highlighted',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else if (_highlightedDay != null)
+                Positioned(
+                  top: 20,
+                  right: 20,
+                  child: Card(
+                    color: _dayColor(context, _highlightedDay!),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 7,
+                      ),
+                      child: Text(
+                        'Day $_highlightedDay highlighted',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else if (_routeFallbackUsed)
+                const Positioned(
+                  top: 20,
+                  right: 20,
+                  child: Card(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 7,
+                      ),
+                      child: Text('Route API unavailable • showing stop order'),
+                    ),
+                  ),
+                ),
+              Positioned(
+                right: 8,
+                bottom: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 3,
+                  ),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.surface.withValues(alpha: 0.88),
+                  child: const Text(
+                    '© OpenStreetMap contributors',
+                    style: TextStyle(fontSize: 10),
+                  ),
+                ),
+              ),
+              if (points.isNotEmpty)
+                Positioned(
+                  left: 14,
+                  bottom: 14,
+                  child: Tooltip(
+                    message: 'Return to the full itinerary route',
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        _mapController.fitCamera(
+                          CameraFit.coordinates(
+                            coordinates: points,
+                            padding: const EdgeInsets.all(55),
+                            maxZoom: 15,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.center_focus_strong_rounded),
+                      label: const Text('Back to route'),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-class _MapPin extends StatelessWidget {
-  final String number;
-  const _MapPin({required this.number});
-
-  @override
-  Widget build(BuildContext context) {
-    return CircleAvatar(
-      radius: 18,
-      backgroundColor: Theme.of(context).colorScheme.primary,
-      foregroundColor: Colors.white,
-      child: Text(number, style: const TextStyle(fontWeight: FontWeight.w800)),
     );
   }
 }
@@ -869,19 +2021,19 @@ class _PlanOptions extends StatelessWidget {
     final plans = [
       (
         'Relaxed',
-        '3 stops • 5 hr',
+        '3 activities + 3 meals',
         'Nearby favorites • more free time',
         Icons.spa_outlined,
       ),
       (
         'Balanced',
-        '4 stops • 7 hr',
+        '4 activities + 3 meals',
         'Balanced variety, value, and travel',
         Icons.balance_outlined,
       ),
       (
         'Explorer',
-        '6 stops • 9.5 hr',
+        '6 activities + 3 meals',
         'More variety • wider travel range',
         Icons.explore_outlined,
       ),
@@ -998,6 +2150,333 @@ class _PlanOptions extends StatelessWidget {
   }
 }
 
+class _ManualPlannerDialog extends StatefulWidget {
+  final PlannerResult result;
+
+  const _ManualPlannerDialog({required this.result});
+
+  @override
+  State<_ManualPlannerDialog> createState() => _ManualPlannerDialogState();
+}
+
+class _ManualPlannerDialogState extends State<_ManualPlannerDialog> {
+  final searchController = TextEditingController();
+  late final List<PlannerDay> days = widget.result.days
+      .map(
+        (day) => PlannerDay(
+          dayNumber: day.dayNumber,
+          places: List<ScoredPlace>.of(day.places),
+        ),
+      )
+      .toList();
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
+  }
+
+  Set<String> get _usedPlaceIds =>
+      days.expand((day) => day.places).map((item) => item.place.id).toSet();
+
+  List<ScoredPlace> get _availablePlaces {
+    final query = searchController.text.trim().toLowerCase();
+    final used = _usedPlaceIds;
+    return widget.result.rankedPlaces.where((item) {
+      if (used.contains(item.place.id)) return false;
+      if (query.isEmpty) return true;
+      return item.place.name.toLowerCase().contains(query) ||
+          item.place.category.toLowerCase().contains(query);
+    }).toList();
+  }
+
+  void _addPlace(ScoredPlace place, int dayIndex) {
+    setState(() => days[dayIndex].places.add(place));
+  }
+
+  void _removePlace(int dayIndex, int stopIndex) {
+    setState(() => days[dayIndex].places.removeAt(stopIndex));
+  }
+
+  void _movePlace(int dayIndex, int stopIndex, int offset) {
+    final nextIndex = stopIndex + offset;
+    if (nextIndex < 0 || nextIndex >= days[dayIndex].places.length) return;
+    setState(() {
+      final item = days[dayIndex].places.removeAt(stopIndex);
+      days[dayIndex].places.insert(nextIndex, item);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.all(20),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1180, maxHeight: 820),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.edit_calendar_outlined),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Create itinerary manually',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          'Add places to any day, then reorder them into the sequence you want.',
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 760;
+                    final available = _AvailableManualPlaces(
+                      searchController: searchController,
+                      places: _availablePlaces,
+                      dayCount: days.length,
+                      onSearchChanged: (_) => setState(() {}),
+                      onAdd: _addPlace,
+                    );
+                    final itinerary = _ManualDayEditor(
+                      days: days,
+                      onRemove: _removePlace,
+                      onMove: _movePlace,
+                    );
+                    if (compact) {
+                      return Column(
+                        children: [
+                          Expanded(child: available),
+                          const Divider(height: 24),
+                          Expanded(child: itinerary),
+                        ],
+                      );
+                    }
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(child: available),
+                        const VerticalDivider(width: 28),
+                        Expanded(child: itinerary),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.pop(context, days),
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Use manual plan'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AvailableManualPlaces extends StatelessWidget {
+  final TextEditingController searchController;
+  final List<ScoredPlace> places;
+  final int dayCount;
+  final ValueChanged<String> onSearchChanged;
+  final void Function(ScoredPlace place, int dayIndex) onAdd;
+
+  const _AvailableManualPlaces({
+    required this.searchController,
+    required this.places,
+    required this.dayCount,
+    required this.onSearchChanged,
+    required this.onAdd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Available places (${places.length})',
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: searchController,
+          onChanged: onSearchChanged,
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.search_rounded),
+            hintText: 'Search name or category',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: places.isEmpty
+              ? const Center(child: Text('No unused places match this search.'))
+              : ListView.separated(
+                  itemCount: places.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 6),
+                  itemBuilder: (context, index) {
+                    final item = places[index];
+                    return Card(
+                      margin: EdgeInsets.zero,
+                      child: ListTile(
+                        dense: true,
+                        title: Text(
+                          item.place.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${item.place.category} • '
+                          '${item.place.estimatedVisitMinutes} min • '
+                          '\$${item.place.estimatedCost.toStringAsFixed(0)}',
+                        ),
+                        trailing: PopupMenuButton<int>(
+                          tooltip: 'Add to day',
+                          icon: const Icon(Icons.add_circle_outline_rounded),
+                          onSelected: (dayIndex) => onAdd(item, dayIndex),
+                          itemBuilder: (context) => List.generate(
+                            dayCount,
+                            (dayIndex) => PopupMenuItem(
+                              value: dayIndex,
+                              child: Text('Add to Day ${dayIndex + 1}'),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ManualDayEditor extends StatelessWidget {
+  final List<PlannerDay> days;
+  final void Function(int dayIndex, int stopIndex) onRemove;
+  final void Function(int dayIndex, int stopIndex, int offset) onMove;
+
+  const _ManualDayEditor({
+    required this.days,
+    required this.onRemove,
+    required this.onMove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Your days', style: TextStyle(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 8),
+        Expanded(
+          child: ListView.builder(
+            itemCount: days.length,
+            itemBuilder: (context, dayIndex) {
+              final day = days[dayIndex];
+              return Card(
+                child: ExpansionTile(
+                  initiallyExpanded: dayIndex < 2,
+                  title: Text(
+                    'Day ${day.dayNumber} • ${day.places.length} stops',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  children: day.places.isEmpty
+                      ? const [
+                          Padding(
+                            padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text('No places added yet.'),
+                            ),
+                          ),
+                        ]
+                      : List.generate(day.places.length, (stopIndex) {
+                          final item = day.places[stopIndex];
+                          return ListTile(
+                            dense: true,
+                            leading: CircleAvatar(
+                              radius: 14,
+                              child: Text('${stopIndex + 1}'),
+                            ),
+                            title: Text(item.place.name),
+                            subtitle: Text(item.place.category),
+                            trailing: Wrap(
+                              spacing: 0,
+                              children: [
+                                IconButton(
+                                  tooltip: 'Move earlier',
+                                  onPressed: stopIndex == 0
+                                      ? null
+                                      : () => onMove(dayIndex, stopIndex, -1),
+                                  icon: const Icon(Icons.arrow_upward_rounded),
+                                ),
+                                IconButton(
+                                  tooltip: 'Move later',
+                                  onPressed: stopIndex == day.places.length - 1
+                                      ? null
+                                      : () => onMove(dayIndex, stopIndex, 1),
+                                  icon: const Icon(
+                                    Icons.arrow_downward_rounded,
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Remove',
+                                  onPressed: () =>
+                                      onRemove(dayIndex, stopIndex),
+                                  icon: const Icon(
+                                    Icons.delete_outline_rounded,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _PlanPreview extends StatelessWidget {
   final bool generated;
   final String selectedPlan;
@@ -1005,6 +2484,7 @@ class _PlanPreview extends StatelessWidget {
   final PlannerResult? result;
   final String placeDataSource;
   final VoidCallback onGenerate;
+  final VoidCallback onManual;
   final VoidCallback onReview;
 
   const _PlanPreview({
@@ -1014,6 +2494,7 @@ class _PlanPreview extends StatelessWidget {
     required this.result,
     required this.placeDataSource,
     required this.onGenerate,
+    required this.onManual,
     required this.onReview,
   });
 
@@ -1075,10 +2556,21 @@ class _PlanPreview extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: onGenerate,
-              icon: const Icon(Icons.auto_awesome_rounded),
-              label: const Text('Generate algorithm plan'),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                FilledButton.icon(
+                  onPressed: onGenerate,
+                  icon: const Icon(Icons.auto_awesome_rounded),
+                  label: const Text('Generate algorithm plan'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onManual,
+                  icon: const Icon(Icons.edit_calendar_outlined),
+                  label: const Text('Create manually'),
+                ),
+              ],
             ),
           ] else ...[
             _RankingSummary(result: result!),
@@ -1097,6 +2589,7 @@ class _PlanPreview extends StatelessWidget {
                   day: result!.days[i],
                   targetMinutes: result!.profile.targetMinutesPerDay,
                   restMinutes: result!.profile.restMinutesPerDay,
+                  hotel: result!.hotel,
                 ),
                 if (i != result!.days.length - 1) const Divider(height: 32),
               ],
@@ -1105,10 +2598,25 @@ class _PlanPreview extends StatelessWidget {
             const SizedBox(height: 18),
             Align(
               alignment: Alignment.centerRight,
-              child: FilledButton.icon(
-                onPressed: result!.validation.isValid ? onReview : null,
-                icon: const Icon(Icons.arrow_forward_rounded),
-                label: const Text('Review final plan'),
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: onManual,
+                    icon: const Icon(Icons.edit_calendar_outlined),
+                    label: Text(
+                      result!.days.every((day) => day.places.isEmpty)
+                          ? 'Create manually'
+                          : 'Edit manually',
+                    ),
+                  ),
+                  FilledButton.icon(
+                    onPressed: result!.validation.isValid ? onReview : null,
+                    icon: const Icon(Icons.arrow_forward_rounded),
+                    label: const Text('Review final plan'),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1348,7 +2856,9 @@ class _BudgetAllocationSummary extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Attractions use only the activities allocation '
+            'Meals use the food allocation '
+            '(\$${allocation.dailyFoodBudget(result.days.length).toStringAsFixed(0)} per day); '
+            'attractions use the activities allocation '
             '(\$${allocation.dailyActivitiesBudget(result.days.length).toStringAsFixed(0)} per day).',
             style: TextStyle(
               color: Theme.of(
@@ -1385,7 +2895,7 @@ class _TotalExpenseSummary extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Total estimated activity expense',
+              'Total estimated trip expense',
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onPrimaryContainer,
                 fontWeight: FontWeight.w800,
@@ -1393,7 +2903,7 @@ class _TotalExpenseSummary extends StatelessWidget {
             ),
           ),
           Text(
-            '\$${result.totalEstimatedCost.toStringAsFixed(0)}',
+            '\$${result.totalEstimatedTripCost.toStringAsFixed(0)}',
             style: TextStyle(
               color: Theme.of(context).colorScheme.onPrimaryContainer,
               fontSize: 20,
@@ -1446,17 +2956,20 @@ class _GeneratedDayPreview extends StatelessWidget {
   final PlannerDay day;
   final int targetMinutes;
   final int restMinutes;
+  final HotelStay? hotel;
 
   const _GeneratedDayPreview({
     required this.day,
     required this.targetMinutes,
     required this.restMinutes,
+    required this.hotel,
   });
 
   @override
   Widget build(BuildContext context) {
-    const roleClassifier = PlaceRoleClassifier();
-    var diningIndex = 0;
+    final scheduledStops = const DailyTimeScheduleService().schedule(
+      day.places,
+    );
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1480,7 +2993,12 @@ class _GeneratedDayPreview extends StatelessWidget {
             children: [
               if (day.places.isEmpty)
                 const Text('Free day / no place selected')
-              else
+              else ...[
+                if (hotel != null)
+                  _HotelRouteEndpoint(
+                    time: '7:30 AM',
+                    label: 'Start at ${hotel!.name}',
+                  ),
                 for (
                   int stopIndex = 0;
                   stopIndex < day.places.length;
@@ -1488,16 +3006,7 @@ class _GeneratedDayPreview extends StatelessWidget {
                 )
                   Builder(
                     builder: (context) {
-                      final role = roleClassifier.classify(
-                        day.places[stopIndex].place,
-                      );
-                      final roleLabel = role == PlaceRole.dining
-                          ? switch (diningIndex++) {
-                              0 => 'Lunch',
-                              1 => 'Dinner',
-                              final index => 'Extra food stop ${index + 1}',
-                            }
-                          : role.label;
+                      final scheduled = scheduledStops[stopIndex];
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Row(
@@ -1525,16 +3034,33 @@ class _GeneratedDayPreview extends StatelessWidget {
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  Text(
-                                    '$roleLabel • ${day.places[stopIndex].place.category} • '
-                                    '${day.places[stopIndex].place.estimatedVisitMinutes} min • '
-                                    'score ${day.places[stopIndex].totalScore.toStringAsFixed(1)}',
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurface
-                                          .withValues(alpha: 0.62),
-                                    ),
+                                  Wrap(
+                                    spacing: 7,
+                                    runSpacing: 6,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      _StopMetadataBadge(
+                                        icon: Icons.schedule_rounded,
+                                        text: scheduled.formattedStartTime,
+                                      ),
+                                      _StopMetadataBadge(
+                                        icon: Icons.category_outlined,
+                                        text: scheduled.roleLabel,
+                                      ),
+                                      Text(
+                                        '${day.places[stopIndex].place.category.replaceAll('_', ' ')} • '
+                                        '${day.places[stopIndex].place.estimatedVisitMinutes} min • '
+                                        'score ${day.places[stopIndex].totalScore.toStringAsFixed(1)}',
+                                        style: TextStyle(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withValues(alpha: 0.84),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
@@ -1551,6 +3077,12 @@ class _GeneratedDayPreview extends StatelessWidget {
                       );
                     },
                   ),
+                if (hotel != null)
+                  _HotelRouteEndpoint(
+                    time: 'End',
+                    label: 'Return to ${hotel!.name}',
+                  ),
+              ],
               if (day.places.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Row(
@@ -1567,14 +3099,15 @@ class _GeneratedDayPreview extends StatelessWidget {
               ],
               const SizedBox(height: 4),
               Text(
-                'Estimated activity cost: '
-                '\$${day.estimatedCost.toStringAsFixed(0)}',
+                'Estimated cost: '
+                '\$${day.estimatedFoodCost.toStringAsFixed(0)} meals + '
+                '\$${day.estimatedActivityCost.toStringAsFixed(0)} activities',
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 4),
               Text(
                 'Planned activity time: '
-                '${_formatMinutes(day.estimatedVisitMinutes)} / '
+                '${_formatMinutes(day.estimatedActivityMinutes)} / '
                 '${_formatMinutes(targetMinutes)} target',
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
@@ -1592,6 +3125,82 @@ class _GeneratedDayPreview extends StatelessWidget {
     if (hours == 0) return '$minutes min';
     if (minutes == 0) return '$hours hr';
     return '$hours hr $minutes min';
+  }
+}
+
+class _HotelRouteEndpoint extends StatelessWidget {
+  final String time;
+  final String label;
+
+  const _HotelRouteEndpoint({required this.time, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 11,
+            backgroundColor: Colors.indigo.shade700,
+            child: const Icon(
+              Icons.hotel_rounded,
+              size: 13,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 68,
+            child: Text(
+              time,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StopMetadataBadge extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _StopMetadataBadge({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.primary.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: colors.primary),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            style: TextStyle(
+              color: colors.onSurface,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1616,24 +3225,4 @@ class _Panel extends StatelessWidget {
       child: child,
     );
   }
-}
-
-class _MapGridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.grey.withValues(alpha: 0.13)
-      ..strokeWidth = 1;
-
-    const spacing = 44.0;
-    for (double x = 0; x < size.width; x += spacing) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (double y = 0; y < size.height; y += spacing) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

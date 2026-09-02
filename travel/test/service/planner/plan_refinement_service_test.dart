@@ -87,11 +87,12 @@ void main() {
     final lunch = _place('lunch', category: 'restaurant');
     final dinner = _place('dinner', category: 'sushi_restaurant');
     final extra = _place('extra', category: 'ramen_restaurant');
+    final breakfast = _place('breakfast', category: 'cafe');
     final plan = _plan(
       days: [
-        PlannerDay(dayNumber: 1, places: [museum, lunch, dinner]),
+        PlannerDay(dayNumber: 1, places: [museum, breakfast, lunch, dinner]),
       ],
-      ranked: [museum, lunch, dinner, extra],
+      ranked: [museum, breakfast, lunch, dinner, extra],
     );
 
     final result = service.refine(
@@ -100,7 +101,7 @@ void main() {
     );
 
     expect(result.changed, isTrue);
-    expect(result.plan.days.single.places, hasLength(4));
+    expect(result.plan.days.single.places, hasLength(5));
     expect(result.plan.validation.isValid, isTrue);
     expect(
       result.plan.validation.warnings.map((issue) => issue.code),
