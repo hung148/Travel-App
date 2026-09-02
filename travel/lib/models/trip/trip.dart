@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'trip_segment.dart';
 
 class Trip {
   // id dung de phan biet tung trip trong
@@ -16,6 +17,7 @@ class Trip {
   final int? rating;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final List<TripSegment> segments;
 
   // constructor
   Trip({
@@ -33,8 +35,29 @@ class Trip {
     this.rating,
     this.createdAt,
     this.updatedAt,
+    this.segments = const [],
   });
+bool get isMultiDestination {
+  return segments.length > 1;
+}
 
+int get destinationCount {
+  return segments.length;
+}
+
+double get allocatedSegmentBudget {
+  return segments.fold(
+    0,
+    (total, segment) => total + segment.allocatedBudget,
+  );
+}
+
+double get estimatedSegmentsCost {
+  return segments.fold(
+    0,
+    (total, segment) => total + segment.estimatedTotalCost,
+  );
+}
   // Convert Firestore data to Trip
   // Du lieu tren Firestore duoc luu duoi dang
   // Map<String, dynamic>
