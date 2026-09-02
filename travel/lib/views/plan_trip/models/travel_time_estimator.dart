@@ -1,5 +1,5 @@
 import '../../../service/map_service.dart';
-import 'travel_leg_draft.dart';
+import '../../../models/trip/travel_leg.dart';
 
 class TravelTimeEstimator {
   const TravelTimeEstimator();
@@ -24,12 +24,21 @@ class TravelTimeEstimator {
       endLng: points[1].longitude,
     );
     final mode = distance <= 650 ? TravelMode.driving : TravelMode.flight;
-    final hours = mode == TravelMode.driving
-        ? (distance / 70) * 1.15
-        : distance / assumedFlightCruiseSpeedKmh;
+    var routeDistance = distance;
+    final double hours;
+    if (mode == TravelMode.driving) {
+      final route = await mapService.getDrivingRouteEstimate(
+        origin: points[0],
+        destination: points[1],
+      );
+      routeDistance = route.distanceKm;
+      hours = route.durationHours;
+    } else {
+      hours = distance / assumedFlightCruiseSpeedKmh;
+    }
     return TravelEstimate(
       mode: mode,
-      distanceKm: distance,
+      distanceKm: routeDistance,
       durationHours: hours,
       originLatitude: points[0].latitude,
       originLongitude: points[0].longitude,

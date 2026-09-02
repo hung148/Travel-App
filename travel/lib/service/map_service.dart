@@ -272,6 +272,42 @@ class MapService {
     return _decodePolyline(encoded);
   }
 
+  Future<DrivingRouteEstimate> getDrivingRouteEstimate({
+    required Coordinates origin,
+    required Coordinates destination,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('https://routes.googleapis.com/directions/v2:computeRoutes'),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration',
+      },
+      body: jsonEncode({
+        'origin': _routeWaypoint(origin),
+        'destination': _routeWaypoint(destination),
+        'travelMode': 'DRIVE',
+        'routingPreference': 'TRAFFIC_UNAWARE',
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to calculate driving time.');
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final routes = data['routes'] as List<dynamic>? ?? const [];
+    if (routes.isEmpty) throw Exception('Google Routes returned no route.');
+    final route = routes.first as Map<String, dynamic>;
+    final durationText = route['duration'] as String? ?? '0s';
+    return DrivingRouteEstimate(
+      distanceKm: ((route['distanceMeters'] as num?)?.toDouble() ?? 0) / 1000,
+      durationHours: _durationSeconds(durationText) / 3600,
+    );
+  }
+
+  double _durationSeconds(String value) {
+    return double.tryParse(value.replaceFirst(RegExp(r's$'), '')) ?? 0;
+  }
+
   Map<String, dynamic> _routeWaypoint(Coordinates coordinates) {
     return {
       'location': {
@@ -509,4 +545,14 @@ class Coordinates {
   String toString() {
     return 'Coordinates(latitude: $latitude, longitude: $longitude)';
   }
+}
+
+class DrivingRouteEstimate {
+  const DrivingRouteEstimate({
+    required this.distanceKm,
+    required this.durationHours,
+  });
+
+  final double distanceKm;
+  final double durationHours;
 }

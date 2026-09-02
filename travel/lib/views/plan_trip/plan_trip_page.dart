@@ -29,11 +29,10 @@ import '../preferences/preference_page.dart';
 import '../summary/summary_page.dart';
 import 'models/destination_draft.dart';
 import 'models/destination_date_availability.dart';
-import 'models/travel_leg_draft.dart';
+import '../../models/trip/travel_leg.dart';
 import 'models/travel_time_estimator.dart';
 import 'widgets/add_destination_dialog.dart';
 import 'widgets/destination_selector.dart';
-import 'widgets/destination_autocomplete_field.dart';
 
 class PlanTripPage extends StatefulWidget {
   const PlanTripPage({super.key});
@@ -89,24 +88,28 @@ class _PlanTripPageState extends State<PlanTripPage> {
     _destinations = [initial];
     _selectedDestinationId = initial.id;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      _loadSegmentsFromViewModel();
+      await _loadSegmentsFromViewModel();
       await _loadPreference();
     });
   }
 
   TripViewModel get _tripViewModel => context.read<TripViewModel>();
 
-  void _loadSegmentsFromViewModel() {
+  Future<void> _loadSegmentsFromViewModel() async {
     final viewModel = _tripViewModel;
     if (viewModel.draftSegments.isEmpty) return;
     setState(() {
       _destinations
         ..clear()
         ..addAll(viewModel.draftSegments.map(_draftFromSegment));
+      _travelLegs
+        ..clear()
+        ..addAll(viewModel.draftTravelLegs);
       _selectedDestinationId =
           viewModel.selectedSegmentId ?? _destinations.first.id;
       _loadDestination(_selectedDestination);
     });
+    await _reorderDestinationsAndTravelLegs();
   }
 
   DestinationDraft _draftFromSegment(TripSegment segment) {
@@ -225,19 +228,19 @@ class _PlanTripPageState extends State<PlanTripPage> {
     final previous = _destinations.last;
     final value = await showDialog<AddDestinationValue>(
       context: context,
-      builder: (_) => AddDestinationDialog(
-        unavailableDateRanges: _unavailableDateRanges(),
-        previousDestinationEnd: previous.dates?.end,
-        estimateIncomingTravel: (destination) =>
-            _estimateIncomingTravel(previous.destination, destination),
-      ),
+      builder: (_) => const AddDestinationDialog(),
     );
     if (value == null || !mounted) return;
+    final estimate = await _estimateIncomingTravel(
+      previous.destination,
+      value.destination,
+    );
+    if (!mounted) return;
     final destination = DestinationDraft(
       id: 'destination-${DateTime.now().microsecondsSinceEpoch}',
       destination: value.destination,
-      dates: value.dates,
-      budget: value.budget,
+      dates: null,
+      budget: 0,
       selectedPlan: selectedPlan,
       placeDataSource: AppConfig.hasGoogleMapsApiKey
           ? 'Google Places ready'
@@ -245,12 +248,12 @@ class _PlanTripPageState extends State<PlanTripPage> {
     );
     setState(() {
       _destinations.add(destination);
-      if (value.incomingTravelEstimate != null) {
+      if (estimate != null) {
         _travelLegs.add(
           TravelLegDraft(
             fromDestinationId: previous.id,
             toDestinationId: destination.id,
-            estimate: value.incomingTravelEstimate!,
+            estimate: estimate,
           ),
         );
       }
@@ -258,6 +261,55 @@ class _PlanTripPageState extends State<PlanTripPage> {
       _loadDestination(destination);
       _syncDraftToViewModel(destination);
     });
+    await _reorderDestinationsAndTravelLegs();
+  }
+
+  Future<void> _removeDestination(String id) async {
+    if (_destinations.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('A trip needs at least one destination.')),
+      );
+      return;
+    }
+    final destination = _destinations.firstWhere((item) => item.id == id);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove destination?'),
+        content: Text(
+          'Remove ${destination.destination} and its hotel and schedule from this trip?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.delete_outline_rounded),
+            label: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    _persistSelectedDestination();
+    final removedIndex = _destinations.indexWhere((item) => item.id == id);
+    setState(() {
+      _destinations.removeAt(removedIndex);
+      _travelLegs.removeWhere(
+        (leg) => leg.fromDestinationId == id || leg.toDestinationId == id,
+      );
+      _tripViewModel.removeSegment(id);
+      if (_selectedDestinationId == id) {
+        final nextIndex = removedIndex.clamp(0, _destinations.length - 1);
+        _selectedDestinationId = _destinations[nextIndex].id;
+        _tripViewModel.selectSegment(_selectedDestinationId);
+        _loadDestination(_selectedDestination);
+      }
+    });
+    await _reorderDestinationsAndTravelLegs();
   }
 
   Future<TravelEstimate?> _estimateIncomingTravel(
@@ -274,6 +326,49 @@ class _PlanTripPageState extends State<PlanTripPage> {
     } catch (_) {
       return null;
     }
+  }
+
+  Future<void> _reorderDestinationsAndTravelLegs() async {
+    sortDestinationsByStartDate(_destinations);
+    final oldLegs = {
+      for (final leg in _travelLegs)
+        '${leg.fromDestinationId}:${leg.toDestinationId}': leg,
+    };
+    final rebuilt = <TravelLegDraft>[];
+    for (var index = 0; index < _destinations.length - 1; index++) {
+      final origin = _destinations[index];
+      final target = _destinations[index + 1];
+      final old = oldLegs['${origin.id}:${target.id}'];
+      final estimate = await _estimateIncomingTravel(
+        origin.destination,
+        target.destination,
+      );
+      if (estimate == null) {
+        if (old != null) rebuilt.add(old);
+        continue;
+      }
+      rebuilt.add(
+        TravelLegDraft(
+          fromDestinationId: origin.id,
+          toDestinationId: target.id,
+          estimate: estimate,
+          overrideMode: old?.overrideMode,
+          overrideDurationHours: old?.overrideDurationHours,
+        ),
+      );
+    }
+    if (!mounted) return;
+    setState(() {
+      _travelLegs
+        ..clear()
+        ..addAll(rebuilt);
+    });
+    _tripViewModel.clearDraftTrip();
+    for (final destination in _destinations) {
+      _syncDraftToViewModel(destination);
+    }
+    _tripViewModel.replaceTravelLegs(rebuilt);
+    _tripViewModel.selectSegment(_selectedDestinationId);
   }
 
   Future<void> _editTravelLeg(TravelLegDraft leg) async {
@@ -357,6 +452,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
         }
       }
     });
+    _tripViewModel.replaceTravelLegs(_travelLegs);
     if (datesCleared && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -435,18 +531,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
         _selectedDestination.scheduleSaved = false;
         _syncDraftToViewModel(_selectedDestination);
       });
+      await _reorderDestinationsAndTravelLegs();
     }
-  }
-
-  void _destinationChanged() {
-    if (!planGenerated && plannerResult == null) return;
-    setState(() {
-      planGenerated = false;
-      plannerResult = null;
-      hotelRecommendations = const [];
-      selectedHotel = null;
-      _persistSelectedDestination();
-    });
   }
 
   String _dateLabel() {
@@ -693,7 +779,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     final updated = hotel.copyWith(
       nightlyRate: selectedHotel?.id == hotel.id
           ? selectedHotel?.nightlyRate ?? 0
-          : 0,
+          : hotel.nightlyRate,
       nights: selectedHotel?.nights ?? hotel.nights,
       rooms: selectedHotel?.rooms ?? hotel.rooms,
     );
@@ -962,15 +1048,6 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       ],
                     ),
                     const SizedBox(height: 24),
-                    DestinationSelector(
-                      destinations: _destinations,
-                      selectedId: _selectedDestinationId,
-                      onSelected: _selectDestination,
-                      onAdd: _addDestination,
-                      travelLegs: _travelLegs,
-                      onEditTravelLeg: _editTravelLeg,
-                    ),
-                    const SizedBox(height: 20),
                     _PreferenceStatusCard(
                       preference: savedPreference,
                       isLoading: isLoadingPreference,
@@ -994,12 +1071,20 @@ class _PlanTripPageState extends State<PlanTripPage> {
                     ),
                     const SizedBox(height: 20),
                     _TripSetupCard(
-                      destinationController: destinationController,
+                      destinationSelector: DestinationSelector(
+                        destinations: _destinations,
+                        selectedId: _selectedDestinationId,
+                        onSelected: _selectDestination,
+                        onAdd: _addDestination,
+                        travelLegs: _travelLegs,
+                        onEditTravelLeg: _editTravelLeg,
+                        onRemove: _removeDestination,
+                        embedded: true,
+                      ),
                       budgetController: budgetController,
                       dateLabel: _dateLabel(),
                       travelers: travelers,
                       onPickDates: _pickDates,
-                      onDestinationChanged: _destinationChanged,
                       onTravelersChanged: (value) =>
                           setState(() => travelers = value),
                     ),
@@ -1243,21 +1328,19 @@ class _PreferenceStatusCard extends StatelessWidget {
 }
 
 class _TripSetupCard extends StatelessWidget {
-  final TextEditingController destinationController;
+  final Widget destinationSelector;
   final TextEditingController budgetController;
   final String dateLabel;
   final int travelers;
   final VoidCallback onPickDates;
-  final VoidCallback onDestinationChanged;
   final ValueChanged<int> onTravelersChanged;
 
   const _TripSetupCard({
-    required this.destinationController,
+    required this.destinationSelector,
     required this.budgetController,
     required this.dateLabel,
     required this.travelers,
     required this.onPickDates,
-    required this.onDestinationChanged,
     required this.onTravelersChanged,
   });
 
@@ -1267,14 +1350,11 @@ class _TripSetupCard extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= 900;
-          final fields = [
-            _LabeledField(
-              label: 'Destination',
-              child: DestinationAutocompleteField(
-                controller: destinationController,
-                onChanged: onDestinationChanged,
-              ),
-            ),
+          final destinationField = _LabeledField(
+            label: 'Destinations',
+            child: destinationSelector,
+          );
+          final detailFields = [
             _LabeledField(
               label: 'Travel dates',
               child: OutlinedButton.icon(
@@ -1338,7 +1418,7 @@ class _TripSetupCard extends StatelessWidget {
 
           if (!wide) {
             return Column(
-              children: fields
+              children: [destinationField, ...detailFields]
                   .map(
                     (field) => Padding(
                       padding: const EdgeInsets.only(bottom: 14),
@@ -1349,13 +1429,20 @@ class _TripSetupCard extends StatelessWidget {
             );
           }
 
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (int i = 0; i < fields.length; i++) ...[
-                Expanded(child: fields[i]),
-                if (i != fields.length - 1) const SizedBox(width: 14),
-              ],
+              destinationField,
+              const SizedBox(height: 20),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (int i = 0; i < detailFields.length; i++) ...[
+                    Expanded(child: detailFields[i]),
+                    if (i != detailFields.length - 1) const SizedBox(width: 14),
+                  ],
+                ],
+              ),
             ],
           );
         },
@@ -1470,7 +1557,8 @@ class _HotelStayCard extends StatelessWidget {
                 Text('${selected.rooms} rooms'),
                 Text(
                   selected.nightlyRate > 0
-                      ? '\$${selected.nightlyRate.toStringAsFixed(0)} / room / night'
+                      ? '${selected.nightlyRateEstimated ? 'Estimated ' : ''}'
+                            '\$${selected.nightlyRate.toStringAsFixed(0)} / room / night'
                       : 'Nightly price not entered',
                 ),
                 Text(
@@ -1583,6 +1671,7 @@ class _HotelEditorDialogState extends State<_HotelEditorDialog> {
           nights: int.parse(nightsController.text.trim()),
           rooms: int.parse(roomsController.text.trim()),
           userProvided: true,
+          nightlyRateEstimated: false,
         ),
       );
     } catch (exception) {

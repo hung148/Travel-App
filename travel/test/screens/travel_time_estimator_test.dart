@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travel/service/map_service.dart';
-import 'package:travel/views/plan_trip/models/travel_leg_draft.dart';
+import 'package:travel/models/trip/travel_leg.dart';
 import 'package:travel/views/plan_trip/models/travel_time_estimator.dart';
 
 class _FakeMapService extends MapService {
@@ -9,9 +9,30 @@ class _FakeMapService extends MapService {
 
   @override
   Future<Coordinates> geocodeAddress(String address) async => points[address]!;
+
+  @override
+  Future<DrivingRouteEstimate> getDrivingRouteEstimate({
+    required Coordinates origin,
+    required Coordinates destination,
+  }) async => const DrivingRouteEstimate(distanceKm: 94, durationHours: 2.5);
 }
 
 void main() {
+  test('nearby destinations use Google driving duration', () async {
+    final service = _FakeMapService({
+      'Hue': Coordinates(latitude: 16.46, longitude: 107.59),
+      'Da Nang': Coordinates(latitude: 16.05, longitude: 108.20),
+    });
+    final estimate = await const TravelTimeEstimator().estimate(
+      mapService: service,
+      origin: 'Hue',
+      destination: 'Da Nang',
+    );
+    expect(estimate.mode, TravelMode.driving);
+    expect(estimate.durationHours, 2.5);
+    expect(estimate.distanceKm, 94);
+  });
+
   test('long-distance destinations use an editable flight estimate', () async {
     final service = _FakeMapService({
       'Los Angeles': Coordinates(latitude: 34.0522, longitude: -118.2437),

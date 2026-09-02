@@ -25,6 +25,11 @@ void main() {
         result.hotels.map((hotel) => hotel.id),
         containsAll(['shared-place', 'hotel-place']),
       );
+      expect(result.hotels.every((hotel) => hotel.nightlyRate > 0), isTrue);
+      expect(
+        result.hotels.every((hotel) => hotel.nightlyRateEstimated),
+        isTrue,
+      );
     },
   );
 }

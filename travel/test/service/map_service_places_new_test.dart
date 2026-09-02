@@ -142,4 +142,30 @@ void main() {
     expect(route.first.latitude, closeTo(38.5, 0.00001));
     expect(route.last.longitude, closeTo(-126.453, 0.00001));
   });
+
+  test('driving estimate uses Google Routes distance and duration', () async {
+    final client = MockClient((request) async {
+      expect(
+        request.headers['X-Goog-FieldMask'],
+        'routes.distanceMeters,routes.duration',
+      );
+      expect(jsonDecode(request.body)['travelMode'], 'DRIVE');
+      return http.Response(
+        jsonEncode({
+          'routes': [
+            {'distanceMeters': 94000, 'duration': '9000s'},
+          ],
+        }),
+        200,
+      );
+    });
+    final service = MapService(apiKey: 'test-key', client: client);
+    final estimate = await service.getDrivingRouteEstimate(
+      origin: Coordinates(latitude: 16.46, longitude: 107.59),
+      destination: Coordinates(latitude: 16.05, longitude: 108.20),
+    );
+
+    expect(estimate.distanceKm, 94);
+    expect(estimate.durationHours, 2.5);
+  });
 }

@@ -10,6 +10,7 @@ import '../models/planner_result.dart';
 import '../models/preference/preferences.dart';
 import '../models/trip/trip.dart';
 import '../models/trip/trip_segment.dart';
+import '../models/trip/travel_leg.dart';
 import '../service/feedback_service.dart';
 import '../service/itinerary_service.dart';
 import '../service/preference_service.dart';
@@ -73,9 +74,19 @@ class TripViewModel extends ChangeNotifier {
   // ---------------------------------------------------------------------------
 
   final List<TripSegment> _draftSegments = [];
+  final List<TravelLegDraft> _draftTravelLegs = [];
   String? _selectedSegmentId;
 
   List<TripSegment> get draftSegments => List.unmodifiable(_draftSegments);
+  List<TravelLegDraft> get draftTravelLegs =>
+      List.unmodifiable(_draftTravelLegs);
+
+  void replaceTravelLegs(List<TravelLegDraft> legs) {
+    _draftTravelLegs
+      ..clear()
+      ..addAll(legs);
+    notifyListeners();
+  }
 
   String? get selectedSegmentId => _selectedSegmentId;
 
@@ -96,7 +107,6 @@ class TripViewModel extends ChangeNotifier {
     return null;
   }
 
-
   // ---------------------------------------------------------------------------
   // PART 3: COMBINED MULTI-DESTINATION TOTALS
   // ---------------------------------------------------------------------------
@@ -111,9 +121,9 @@ class TripViewModel extends ChangeNotifier {
       _draftSegments.fold(0, (total, segment) => total + segment.activityCost);
 
   double get estimatedTripCost => _draftSegments.fold(
-        0,
-        (total, segment) => total + segment.estimatedTotalCost,
-      );
+    0,
+    (total, segment) => total + segment.estimatedTotalCost,
+  );
 
   int get totalTripDays =>
       _draftSegments.fold(0, (total, segment) => total + segment.numberOfDays);
@@ -127,8 +137,9 @@ class TripViewModel extends ChangeNotifier {
       ..clear()
       ..addAll(trip.segments);
 
-    _selectedSegmentId =
-        _draftSegments.isEmpty ? null : _draftSegments.first.id;
+    _selectedSegmentId = _draftSegments.isEmpty
+        ? null
+        : _draftSegments.first.id;
 
     notifyListeners();
   }
@@ -177,9 +188,7 @@ class TripViewModel extends ChangeNotifier {
   }
 
   void selectSegment(String segmentId) {
-    final exists = _draftSegments.any(
-      (segment) => segment.id == segmentId,
-    );
+    final exists = _draftSegments.any((segment) => segment.id == segmentId);
 
     if (!exists || _selectedSegmentId == segmentId) {
       return;
@@ -255,6 +264,11 @@ class TripViewModel extends ChangeNotifier {
 
     final wasSelected = _selectedSegmentId == segmentId;
     _draftSegments.removeAt(index);
+    _draftTravelLegs.removeWhere(
+      (leg) =>
+          leg.fromDestinationId == segmentId ||
+          leg.toDestinationId == segmentId,
+    );
 
     if (wasSelected) {
       if (_draftSegments.isEmpty) {
@@ -272,6 +286,7 @@ class TripViewModel extends ChangeNotifier {
 
   void clearDraftTrip() {
     _draftSegments.clear();
+    _draftTravelLegs.clear();
     _selectedSegmentId = null;
     notifyListeners();
   }
@@ -352,8 +367,9 @@ class TripViewModel extends ChangeNotifier {
       _draftSegments
         ..clear()
         ..addAll(trip.segments);
-      _selectedSegmentId =
-          _draftSegments.isEmpty ? null : _draftSegments.first.id;
+      _selectedSegmentId = _draftSegments.isEmpty
+          ? null
+          : _draftSegments.first.id;
       _successMessage = 'Trip created successfully.';
     } else {
       _errorMessage = 'Unable to create your trip. Please try again.';
@@ -394,18 +410,20 @@ class TripViewModel extends ChangeNotifier {
     _startOperation();
     await _tripSubscription?.cancel();
 
-    _tripSubscription = _tripService.getTripsByUser(ownerId).listen(
-      (trips) {
-        _tripHistory = trips;
-        _isLoading = false;
-        notifyListeners();
-      },
-      onError: (e) {
-        _errorMessage = 'Unable to load your trips. Please try again.';
-        _isLoading = false;
-        notifyListeners();
-      },
-    );
+    _tripSubscription = _tripService
+        .getTripsByUser(ownerId)
+        .listen(
+          (trips) {
+            _tripHistory = trips;
+            _isLoading = false;
+            notifyListeners();
+          },
+          onError: (e) {
+            _errorMessage = 'Unable to load your trips. Please try again.';
+            _isLoading = false;
+            notifyListeners();
+          },
+        );
   }
 
   Future<void> loadTripById(String tripId) async {
@@ -421,8 +439,9 @@ class TripViewModel extends ChangeNotifier {
         if (_currentTrip != null) {
           _draftSegments.addAll(_currentTrip!.segments);
         }
-        _selectedSegmentId =
-            _draftSegments.isEmpty ? null : _draftSegments.first.id;
+        _selectedSegmentId = _draftSegments.isEmpty
+            ? null
+            : _draftSegments.first.id;
 
         _itinerary = await _itineraryService.getItinerary(tripId);
         notifyListeners();
@@ -467,7 +486,8 @@ class TripViewModel extends ChangeNotifier {
             id: '${trip.id}_day_$i',
             tripId: trip.id,
             dayNumber: i,
-            places: '${preference.experienceType} places in ${trip.destination}',
+            places:
+                '${preference.experienceType} places in ${trip.destination}',
             meals: '${preference.interests.join(", ")} meal plan',
             estimatedCost: trip.budget / trip.days,
           ),

@@ -9,6 +9,7 @@ class HotelStay {
   final int nights;
   final int rooms;
   final bool userProvided;
+  final bool nightlyRateEstimated;
 
   const HotelStay({
     required this.id,
@@ -21,6 +22,7 @@ class HotelStay {
     required this.nights,
     required this.rooms,
     this.userProvided = false,
+    this.nightlyRateEstimated = false,
   });
 
   double get totalCost => nightlyRate * nights * rooms;
@@ -35,6 +37,7 @@ class HotelStay {
     int? nights,
     int? rooms,
     bool? userProvided,
+    bool? nightlyRateEstimated,
   }) {
     return HotelStay(
       id: id,
@@ -47,6 +50,7 @@ class HotelStay {
       nights: nights ?? this.nights,
       rooms: rooms ?? this.rooms,
       userProvided: userProvided ?? this.userProvided,
+      nightlyRateEstimated: nightlyRateEstimated ?? this.nightlyRateEstimated,
     );
   }
 }

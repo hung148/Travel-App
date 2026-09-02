@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:travel/models/hotel_selections.dart';
 import 'package:travel/models/trip/trip_segment.dart';
+import 'package:travel/models/trip/travel_leg.dart';
 import 'package:travel/viewmodels/trip_viewmodel.dart';
 
 void main() {
@@ -116,12 +117,33 @@ void main() {
         (segment) => segment.id == 'da-nang',
       );
 
-      final hcm = vm.draftSegments.firstWhere(
-        (segment) => segment.id == 'hcm',
-      );
+      final hcm = vm.draftSegments.firstWhere((segment) => segment.id == 'hcm');
 
       expect(daNang.scheduleSaved, true);
       expect(hcm.scheduleSaved, false);
+    });
+
+    test('keeps travel legs and user overrides while the page is closed', () {
+      final vm = TripViewModel.forSegmentTesting();
+      final leg = TravelLegDraft(
+        fromDestinationId: 'hue',
+        toDestinationId: 'da-nang',
+        estimate: const TravelEstimate(
+          mode: TravelMode.driving,
+          distanceKm: 94,
+          durationHours: 2.5,
+          originLatitude: 16.46,
+          originLongitude: 107.59,
+          destinationLatitude: 16.05,
+          destinationLongitude: 108.20,
+        ),
+        overrideDurationHours: 3,
+      );
+
+      vm.replaceTravelLegs([leg]);
+
+      expect(vm.draftTravelLegs.single.durationHours, 3);
+      expect(vm.draftTravelLegs.single.isOverridden, isTrue);
     });
   });
 }

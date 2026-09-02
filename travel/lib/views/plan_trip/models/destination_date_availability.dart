@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'destination_draft.dart';
+
 DateTime _dateOnly(DateTime value) =>
     DateTime(value.year, value.month, value.day);
 
@@ -32,4 +34,14 @@ DateTimeRange? transitDateRange(DateTime previousEnd, int transitDays) {
     start: start,
     end: start.add(Duration(days: transitDays - 1)),
   );
+}
+
+void sortDestinationsByStartDate(List<DestinationDraft> destinations) {
+  destinations.sort((a, b) {
+    final first = a.dates?.start;
+    final second = b.dates?.start;
+    if (first == null) return second == null ? 0 : 1;
+    if (second == null) return -1;
+    return first.compareTo(second);
+  });
 }

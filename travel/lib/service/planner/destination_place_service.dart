@@ -96,13 +96,31 @@ class DestinationPlaceService {
                   latitude: hotel.latitude,
                   longitude: hotel.longitude,
                   rating: hotel.rating,
-                  nightlyRate: 0,
+                  nightlyRate: _estimatedHotelNightlyRate(hotel),
                   nights: 1,
                   rooms: 1,
+                  nightlyRateEstimated: true,
                 ),
               )
               .toList()
             ..sort((left, right) => right.rating.compareTo(left.rating)),
     );
+  }
+
+  double _estimatedHotelNightlyRate(NearbyPlace hotel) {
+    if (hotel.priceLevel != null) {
+      return switch (hotel.priceLevel!) {
+        <= 1 => 60,
+        2 => 120,
+        3 => 220,
+        _ => 400,
+      };
+    }
+    return switch (hotel.rating) {
+      < 3.5 => 70,
+      < 4.0 => 100,
+      < 4.5 => 150,
+      _ => 210,
+    };
   }
 }
