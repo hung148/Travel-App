@@ -39,4 +39,37 @@ class TravelPlace {
           type == 'meal_delivery',
     );
   }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'category': category,
+      'tags': tags,
+      'rating': rating,
+      'reviewCount': reviewCount,
+      'estimatedCost': estimatedCost,
+      'latitude': latitude,
+      'longitude': longitude,
+      'estimatedVisitMinutes': estimatedVisitMinutes,
+    };
+  }
+
+  factory TravelPlace.fromMap(Map<String, dynamic> data) {
+    return TravelPlace(
+      id: data['id'] as String? ?? '',
+      name: data['name'] as String? ?? '',
+      category: data['category'] as String? ?? '',
+      tags: (data['tags'] as List<dynamic>? ?? const [])
+          .map((item) => item.toString())
+          .toList(),
+      rating: (data['rating'] as num?)?.toDouble() ?? 0,
+      reviewCount: (data['reviewCount'] as num?)?.toInt() ?? 0,
+      estimatedCost: (data['estimatedCost'] as num?)?.toDouble() ?? 0,
+      latitude: (data['latitude'] as num?)?.toDouble() ?? 0,
+      longitude: (data['longitude'] as num?)?.toDouble() ?? 0,
+      estimatedVisitMinutes:
+          (data['estimatedVisitMinutes'] as num?)?.toInt() ?? 0,
+    );
+  }
 }

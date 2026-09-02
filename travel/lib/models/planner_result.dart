@@ -36,6 +36,29 @@ class PlannerDay {
   int get diningCount => places.where((item) => item.place.isDining).length;
 
   int get activityCount => places.where((item) => !item.place.isDining).length;
+
+  Map<String, dynamic> toMap() {
+    return {
+      'dayNumber': dayNumber,
+      'places': places.map((item) => item.toMap()).toList(),
+    };
+  }
+
+  factory PlannerDay.fromMap(Map<String, dynamic> data) {
+    final placeList = data['places'] as List<dynamic>? ?? const [];
+
+    return PlannerDay(
+      dayNumber: (data['dayNumber'] as num?)?.toInt() ?? 0,
+      places: placeList
+          .whereType<Map>()
+          .map(
+            (item) => ScoredPlace.fromMap(
+              Map<String, dynamic>.from(item),
+            ),
+          )
+          .toList(),
+    );
+  }
 }
 
 class PlannerResult {

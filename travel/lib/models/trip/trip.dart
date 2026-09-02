@@ -1,13 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'trip_segment.dart';
 
 class Trip {
-  // id dung de phan biet tung trip trong
-  // database. final co nghia la id can phai
-  // duoc assign khi tao object. Va no khong
-  // the thay doi sau do.
   final String id;
   final String ownerId;
+
+  // Old single-destination fields are kept for compatibility.
   final String destination;
   final double budget;
   final int days;
@@ -17,13 +16,11 @@ class Trip {
   final int? rating;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  // New multi-destination data.
   final List<TripSegment> segments;
 
-  // constructor
   Trip({
-    // required co nghia la bat buoc phai nhap
-    // cai nay khi tao object.
-    // this co nghia la object nay.
     required this.id,
     required this.ownerId,
     required this.destination,
@@ -37,43 +34,66 @@ class Trip {
     this.updatedAt,
     this.segments = const [],
   });
-bool get isMultiDestination {
-  return segments.length > 1;
-}
 
-int get destinationCount {
-  return segments.length;
-}
+  bool get isMultiDestination => segments.length > 1;
 
-double get allocatedSegmentBudget {
-  return segments.fold(
-    0,
-    (total, segment) => total + segment.allocatedBudget,
-  );
-}
+  int get destinationCount => segments.length;
 
-double get estimatedSegmentsCost {
-  return segments.fold(
-    0,
-    (total, segment) => total + segment.estimatedTotalCost,
-  );
-}
-  // Convert Firestore data to Trip
-  // Du lieu tren Firestore duoc luu duoi dang
-  // Map<String, dynamic>
-  // vi du nhu:
-  /*
-    {
-      "title": "Japan Trip",
-      "startDate": Timestamp(...),
-      "location": "Tokyo"
-    }
-  */
-  // Nhung minh muon Trip object khong phai la map
-  // nen method nay convert Map to Trip object
-  // cai nay la factory constructor.
-  // no cho phep minh tao object tu mot thu gi do khong phai tu class nay
+  int get totalSegmentDays =>
+      segments.fold(0, (total, segment) => total + segment.numberOfDays);
+
+  double get allocatedSegmentBudget => segments.fold(
+        0,
+        (total, segment) => total + segment.allocatedBudget,
+      );
+
+  double get totalHotelCost =>
+      segments.fold(0, (total, segment) => total + segment.hotelCost);
+
+  double get totalFoodCost =>
+      segments.fold(0, (total, segment) => total + segment.foodCost);
+
+  double get totalActivityCost =>
+      segments.fold(0, (total, segment) => total + segment.activityCost);
+
+  double get estimatedSegmentsCost =>
+      segments.fold(0, (total, segment) => total + segment.estimatedTotalCost);
+
+  double get remainingBudget => budget - estimatedSegmentsCost;
+
+  Trip copyWith({
+    String? id,
+    String? ownerId,
+    String? destination,
+    double? budget,
+    int? days,
+    String? status,
+    DateTime? startDate,
+    DateTime? endDate,
+    int? rating,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    List<TripSegment>? segments,
+  }) {
+    return Trip(
+      id: id ?? this.id,
+      ownerId: ownerId ?? this.ownerId,
+      destination: destination ?? this.destination,
+      budget: budget ?? this.budget,
+      days: days ?? this.days,
+      status: status ?? this.status,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      rating: rating ?? this.rating,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      segments: segments ?? this.segments,
+    );
+  }
+
   factory Trip.fromMap(Map<String, dynamic> data, String id) {
+    final segmentList = data['segments'] as List<dynamic>? ?? const [];
+
     return Trip(
       id: id,
       ownerId: data['ownerId'] as String? ?? '',
@@ -86,16 +106,24 @@ double get estimatedSegmentsCost {
       rating: (data['rating'] as num?)?.toInt(),
       createdAt: _dateFromFirestore(data['createdAt']),
       updatedAt: _dateFromFirestore(data['updatedAt']),
+      segments: segmentList
+          .whereType<Map>()
+          .map(
+            (segment) => TripSegment.fromMap(
+              Map<String, dynamic>.from(segment),
+            ),
+          )
+          .toList(),
     );
   }
 
   static DateTime? _dateFromFirestore(Object? value) {
     if (value is Timestamp) return value.toDate();
     if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
     return null;
   }
 
-  // Convert Trip to FireStore Map
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -109,6 +137,7 @@ double get estimatedSegmentsCost {
       'rating': rating,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
+      'segments': segments.map((segment) => segment.toMap()).toList(),
     };
   }
 }

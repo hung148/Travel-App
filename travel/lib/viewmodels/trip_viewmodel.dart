@@ -3,30 +3,50 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:travel/models/preference/preference_result.dart';
 
-import '../models/trip/trip.dart';
-import '../models/itinerary.dart';
 import '../models/feedback.dart' as model;
+import '../models/hotel_selections.dart';
+import '../models/itinerary.dart';
+import '../models/planner_result.dart';
 import '../models/preference/preferences.dart';
-import '../service/trip_service.dart';
+import '../models/trip/trip.dart';
+import '../models/trip/trip_segment.dart';
+import '../service/feedback_service.dart';
 import '../service/itinerary_service.dart';
 import '../service/preference_service.dart';
-import '../service/feedback_service.dart';
+import '../service/trip_service.dart';
 
 class TripViewModel extends ChangeNotifier {
-  final TripService _tripService;
-  final ItineraryService _itineraryService;
-  final PreferenceService _preferencesService;
-  final FeedbackService _feedbackService;
+  late final TripService _tripService;
+  late final ItineraryService _itineraryService;
+  late final PreferenceService _preferencesService;
+  late final FeedbackService _feedbackService;
 
   TripViewModel({
     required TripService tripService,
     required ItineraryService itineraryService,
     required PreferenceService preferencesService,
     required FeedbackService feedbackService,
-  }) : _tripService = tripService,
-       _itineraryService = itineraryService,
-       _preferencesService = preferencesService,
-       _feedbackService = feedbackService;
+  }) {
+    _tripService = tripService;
+    _itineraryService = itineraryService;
+    _preferencesService = preferencesService;
+    _feedbackService = feedbackService;
+  }
+
+  /// Test-only constructor for Part 2 segment state tests.
+  ///
+  /// The segment methods do not use TripService, ItineraryService,
+  /// PreferenceService, or FeedbackService, so tests can construct the
+  /// ViewModel without Firebase/service dependencies.
+  ///
+  /// Do not call service-backed methods such as createTrip(), loadTripById(),
+  /// generatePlan(), saveItinerary(), saveFeedback(), or deleteTrip() on an
+  /// instance created with this constructor.
+  TripViewModel.forSegmentTesting();
+
+  // ---------------------------------------------------------------------------
+  // EXISTING TRIP STATE
+  // ---------------------------------------------------------------------------
 
   List<Trip> _tripHistory = [];
   List<Trip> get tripHistory => _tripHistory;
@@ -34,7 +54,6 @@ class TripViewModel extends ChangeNotifier {
   Trip? _currentTrip;
   Trip? get currentTrip => _currentTrip;
 
-  // A SstreamSubscription is simply the object that represents your connection to a Stream
   StreamSubscription<List<Trip>>? _tripSubscription;
 
   List<Itinerary> _itinerary = [];
@@ -49,11 +68,248 @@ class TripViewModel extends ChangeNotifier {
   String? _successMessage;
   String? get successMessage => _successMessage;
 
+  // ---------------------------------------------------------------------------
+  // PART 2: MULTI-DESTINATION DRAFT STATE
+  // ---------------------------------------------------------------------------
+
+  final List<TripSegment> _draftSegments = [];
+  String? _selectedSegmentId;
+
+  List<TripSegment> get draftSegments => List.unmodifiable(_draftSegments);
+
+  String? get selectedSegmentId => _selectedSegmentId;
+
+  TripSegment? get selectedSegment {
+    if (_selectedSegmentId == null) {
+      return null;
+    }
+
+    return _findSegment(_selectedSegmentId!);
+  }
+
+  TripSegment? _findSegment(String segmentId) {
+    for (final segment in _draftSegments) {
+      if (segment.id == segmentId) {
+        return segment;
+      }
+    }
+    return null;
+  }
+
+
+  // ---------------------------------------------------------------------------
+  // PART 3: COMBINED MULTI-DESTINATION TOTALS
+  // ---------------------------------------------------------------------------
+
+  double get totalHotelCost =>
+      _draftSegments.fold(0, (total, segment) => total + segment.hotelCost);
+
+  double get totalFoodCost =>
+      _draftSegments.fold(0, (total, segment) => total + segment.foodCost);
+
+  double get totalActivityCost =>
+      _draftSegments.fold(0, (total, segment) => total + segment.activityCost);
+
+  double get estimatedTripCost => _draftSegments.fold(
+        0,
+        (total, segment) => total + segment.estimatedTotalCost,
+      );
+
+  int get totalTripDays =>
+      _draftSegments.fold(0, (total, segment) => total + segment.numberOfDays);
+
+  double segmentTotal(String segmentId) {
+    return _findSegment(segmentId)?.estimatedTotalCost ?? 0;
+  }
+
+  void loadSegmentsFromTrip(Trip trip) {
+    _draftSegments
+      ..clear()
+      ..addAll(trip.segments);
+
+    _selectedSegmentId =
+        _draftSegments.isEmpty ? null : _draftSegments.first.id;
+
+    notifyListeners();
+  }
+
+  Future<void> saveDraftSegmentsToCurrentTrip() async {
+    final trip = _currentTrip;
+
+    if (trip == null) {
+      throw StateError(
+        'No current trip is loaded. Create or load a trip before saving segments.',
+      );
+    }
+
+    final updatedTrip = trip.copyWith(
+      segments: List<TripSegment>.unmodifiable(_draftSegments),
+    );
+
+    await editTrip(updatedTrip);
+  }
+
+  void _replaceSegment(String segmentId, TripSegment updatedSegment) {
+    final index = _draftSegments.indexWhere(
+      (segment) => segment.id == segmentId,
+    );
+
+    if (index == -1) {
+      return;
+    }
+
+    _draftSegments[index] = updatedSegment;
+    notifyListeners();
+  }
+
+  void addSegment(TripSegment segment) {
+    final alreadyExists = _draftSegments.any(
+      (existing) => existing.id == segment.id,
+    );
+
+    if (alreadyExists) {
+      return;
+    }
+
+    _draftSegments.add(segment);
+    _selectedSegmentId = segment.id;
+    notifyListeners();
+  }
+
+  void selectSegment(String segmentId) {
+    final exists = _draftSegments.any(
+      (segment) => segment.id == segmentId,
+    );
+
+    if (!exists || _selectedSegmentId == segmentId) {
+      return;
+    }
+
+    _selectedSegmentId = segmentId;
+    notifyListeners();
+  }
+
+  void updateSegment(String segmentId, TripSegment updatedSegment) {
+    if (segmentId != updatedSegment.id) {
+      throw ArgumentError('Segment ID must match updated segment ID.');
+    }
+
+    _replaceSegment(segmentId, updatedSegment);
+  }
+
+  void updateSegmentHotel(String segmentId, HotelSelection? hotel) {
+    final segment = _findSegment(segmentId);
+
+    if (segment == null) {
+      return;
+    }
+
+    // NOTE:
+    // If your TripSegment.copyWith uses "hotel: hotel ?? this.hotel",
+    // passing null will NOT remove an existing hotel. That is okay for Part 2.
+    final updated = segment.copyWith(hotel: hotel);
+    _replaceSegment(segmentId, updated);
+  }
+
+  void updateSegmentPlan(String segmentId, List<PlannerDay> days) {
+    final segment = _findSegment(segmentId);
+
+    if (segment == null) {
+      return;
+    }
+
+    final updated = segment.copyWith(
+      days: List<PlannerDay>.unmodifiable(days),
+      scheduleSaved: false,
+    );
+
+    _replaceSegment(segmentId, updated);
+  }
+
+  void applyPlannerResultToSegment(
+    String segmentId,
+    PlannerResult plannerResult,
+  ) {
+    updateSegmentPlan(segmentId, plannerResult.days);
+  }
+
+  void markSegmentSaved(String segmentId) {
+    final segment = _findSegment(segmentId);
+
+    if (segment == null) {
+      return;
+    }
+
+    final updated = segment.copyWith(scheduleSaved: true);
+    _replaceSegment(segmentId, updated);
+  }
+
+  void removeSegment(String segmentId) {
+    final index = _draftSegments.indexWhere(
+      (segment) => segment.id == segmentId,
+    );
+
+    if (index == -1) {
+      return;
+    }
+
+    final wasSelected = _selectedSegmentId == segmentId;
+    _draftSegments.removeAt(index);
+
+    if (wasSelected) {
+      if (_draftSegments.isEmpty) {
+        _selectedSegmentId = null;
+      } else {
+        final nextIndex = index < _draftSegments.length
+            ? index
+            : _draftSegments.length - 1;
+        _selectedSegmentId = _draftSegments[nextIndex].id;
+      }
+    }
+
+    notifyListeners();
+  }
+
+  void clearDraftTrip() {
+    _draftSegments.clear();
+    _selectedSegmentId = null;
+    notifyListeners();
+  }
+
+  /// Creates the temporary single-destination Trip that your EXISTING
+  /// TravelPlannerService already expects.
+  ///
+  /// This means TravelPlannerService does NOT need to understand the entire
+  /// multi-destination trip yet. Generate one segment, then call
+  /// applyPlannerResultToSegment(segment.id, result).
+  Trip buildPlannerTripForSegment({
+    required String segmentId,
+    required String ownerId,
+  }) {
+    final segment = _findSegment(segmentId);
+
+    if (segment == null) {
+      throw StateError('Trip segment $segmentId was not found.');
+    }
+
+    return Trip(
+      id: 'segment_${segment.id}',
+      ownerId: ownerId,
+      destination: segment.destination,
+      budget: segment.allocatedBudget,
+      days: segment.numberOfDays,
+      status: 'draft',
+      startDate: segment.startDate,
+      endDate: segment.endDate,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // EXISTING VIEWMODEL METHODS
+  // ---------------------------------------------------------------------------
+
   @override
   void dispose() {
-    // if you don't cancel the subscription, the Stream keeps sending updates.
-    // Even after the screen is closed
-    // This might lead to memory leaks
     _tripSubscription?.cancel();
     super.dispose();
   }
@@ -93,6 +349,11 @@ class TripViewModel extends ChangeNotifier {
 
     if (result.success) {
       _currentTrip = trip;
+      _draftSegments
+        ..clear()
+        ..addAll(trip.segments);
+      _selectedSegmentId =
+          _draftSegments.isEmpty ? null : _draftSegments.first.id;
       _successMessage = 'Trip created successfully.';
     } else {
       _errorMessage = 'Unable to create your trip. Please try again.';
@@ -129,26 +390,22 @@ class TripViewModel extends ChangeNotifier {
     }
   }
 
-  // Change loadTripHistory to listenToTripHistory because
-  // getTripByUser return a stream which is automatically update
   Future<void> listenToTripHistory(String ownerId) async {
     _startOperation();
     await _tripSubscription?.cancel();
 
-    _tripSubscription = _tripService
-        .getTripsByUser(ownerId)
-        .listen(
-          (trips) {
-            _tripHistory = trips;
-            _isLoading = false;
-            notifyListeners();
-          },
-          onError: (e) {
-            _errorMessage = 'Unable to load your trips. Please try again.';
-            _isLoading = false;
-            notifyListeners();
-          },
-        );
+    _tripSubscription = _tripService.getTripsByUser(ownerId).listen(
+      (trips) {
+        _tripHistory = trips;
+        _isLoading = false;
+        notifyListeners();
+      },
+      onError: (e) {
+        _errorMessage = 'Unable to load your trips. Please try again.';
+        _isLoading = false;
+        notifyListeners();
+      },
+    );
   }
 
   Future<void> loadTripById(String tripId) async {
@@ -159,6 +416,14 @@ class TripViewModel extends ChangeNotifier {
       final result = await _tripService.getTripById(tripId);
       if (result.success) {
         _currentTrip = result.data;
+
+        _draftSegments.clear();
+        if (_currentTrip != null) {
+          _draftSegments.addAll(_currentTrip!.segments);
+        }
+        _selectedSegmentId =
+            _draftSegments.isEmpty ? null : _draftSegments.first.id;
+
         _itinerary = await _itineraryService.getItinerary(tripId);
         notifyListeners();
       } else {
@@ -186,15 +451,14 @@ class TripViewModel extends ChangeNotifier {
 
       if (!result.success || result.data == null) {
         _setError(
-          (result.error ?? "").isEmpty
-              ? "Failed to load preference"
+          (result.error ?? '').isEmpty
+              ? 'Failed to load preference'
               : result.error,
         );
         return;
       }
 
       final Preference preference = result.data!;
-
       final List<Itinerary> generated = [];
 
       for (int i = 1; i <= trip.days; i++) {
@@ -203,8 +467,7 @@ class TripViewModel extends ChangeNotifier {
             id: '${trip.id}_day_$i',
             tripId: trip.id,
             dayNumber: i,
-            places:
-                '${preference.experienceType} places in ${trip.destination}',
+            places: '${preference.experienceType} places in ${trip.destination}',
             meals: '${preference.interests.join(", ")} meal plan',
             estimatedCost: trip.budget / trip.days,
           ),
@@ -212,7 +475,6 @@ class TripViewModel extends ChangeNotifier {
       }
 
       _itinerary = generated;
-
       _setSuccess('Plan generated successfully.');
       notifyListeners();
     } catch (e) {
