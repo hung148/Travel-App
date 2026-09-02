@@ -312,6 +312,34 @@ class _PlanTripPageState extends State<PlanTripPage> {
     await _reorderDestinationsAndTravelLegs();
   }
 
+  Future<void> _editDestination(String id) async {
+    _persistSelectedDestination();
+    final destination = _destinations.firstWhere((item) => item.id == id);
+    final value = await showDialog<AddDestinationValue>(
+      context: context,
+      builder: (_) => AddDestinationDialog(
+        initialDestination: destination.destination,
+        editing: true,
+      ),
+    );
+    if (value == null || !mounted) return;
+    final nextName = value.destination.trim();
+    if (nextName == destination.destination) return;
+    setState(() {
+      destination.destination = nextName;
+      destination.plannerResult = null;
+      destination.savedDays = const [];
+      destination.selectedHotel = null;
+      destination.hotelRecommendations = const [];
+      destination.scheduleSaved = false;
+      if (destination.id == _selectedDestinationId) {
+        _loadDestination(destination);
+      }
+      _syncDraftToViewModel(destination);
+    });
+    await _reorderDestinationsAndTravelLegs();
+  }
+
   Future<TravelEstimate?> _estimateIncomingTravel(
     String origin,
     String destination,
@@ -1079,6 +1107,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                         travelLegs: _travelLegs,
                         onEditTravelLeg: _editTravelLeg,
                         onRemove: _removeDestination,
+                        onEdit: _editDestination,
                         embedded: true,
                       ),
                       budgetController: budgetController,

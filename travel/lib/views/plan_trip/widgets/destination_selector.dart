@@ -13,6 +13,7 @@ class DestinationSelector extends StatelessWidget {
     this.travelLegs = const [],
     required this.onEditTravelLeg,
     required this.onRemove,
+    required this.onEdit,
     this.embedded = false,
   });
 
@@ -23,6 +24,7 @@ class DestinationSelector extends StatelessWidget {
   final List<TravelLegDraft> travelLegs;
   final ValueChanged<TravelLegDraft> onEditTravelLeg;
   final ValueChanged<String> onRemove;
+  final ValueChanged<String> onEdit;
   final bool embedded;
 
   TravelLegDraft? _legAfter(String destinationId) {
@@ -41,13 +43,56 @@ class DestinationSelector extends StatelessWidget {
           for (var index = 0; index < destinations.length; index++) ...[
             InputChip(
               selected: destinations[index].id == selectedId,
-              onSelected: (_) => onSelected(destinations[index].id),
+              showCheckmark: false,
+              selectedColor: Theme.of(context).colorScheme.primaryContainer,
+              backgroundColor: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+              side: BorderSide(
+                color: destinations[index].id == selectedId
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.outlineVariant,
+                width: destinations[index].id == selectedId ? 2 : 1,
+              ),
+              elevation: destinations[index].id == selectedId ? 4 : 0,
+              pressElevation: 2,
+              shadowColor: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.35),
+              labelStyle: TextStyle(
+                color: destinations[index].id == selectedId
+                    ? Theme.of(context).colorScheme.onPrimaryContainer
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: destinations[index].id == selectedId
+                    ? FontWeight.w900
+                    : FontWeight.w600,
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+              onSelected: (_) {
+                final id = destinations[index].id;
+                if (id == selectedId) {
+                  onEdit(id);
+                } else {
+                  onSelected(id);
+                }
+              },
               onDeleted: destinations.length > 1
                   ? () => onRemove(destinations[index].id)
                   : null,
               deleteIcon: const Icon(Icons.close_rounded, size: 17),
               deleteButtonTooltipMessage: 'Remove destination',
-              avatar: CircleAvatar(child: Text('${index + 1}')),
+              avatar: CircleAvatar(
+                backgroundColor: destinations[index].id == selectedId
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.surfaceContainerHighest,
+                foregroundColor: destinations[index].id == selectedId
+                    ? Theme.of(context).colorScheme.onPrimary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
               label: Text(destinations[index].destination),
             ),
             if (_legAfter(destinations[index].id) case final leg?) ...[

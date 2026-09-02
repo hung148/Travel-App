@@ -9,7 +9,14 @@ class AddDestinationValue {
 }
 
 class AddDestinationDialog extends StatefulWidget {
-  const AddDestinationDialog({super.key});
+  const AddDestinationDialog({
+    super.key,
+    this.initialDestination = '',
+    this.editing = false,
+  });
+
+  final String initialDestination;
+  final bool editing;
 
   @override
   State<AddDestinationDialog> createState() => _AddDestinationDialogState();
@@ -17,7 +24,15 @@ class AddDestinationDialog extends StatefulWidget {
 
 class _AddDestinationDialogState extends State<AddDestinationDialog> {
   final _formKey = GlobalKey<FormState>();
-  final _destinationController = TextEditingController();
+  late final TextEditingController _destinationController;
+
+  @override
+  void initState() {
+    super.initState();
+    _destinationController = TextEditingController(
+      text: widget.initialDestination,
+    );
+  }
 
   @override
   void dispose() {
@@ -36,7 +51,7 @@ class _AddDestinationDialogState extends State<AddDestinationDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Add destination'),
+      title: Text(widget.editing ? 'Edit destination' : 'Add destination'),
       content: SizedBox(
         width: 430,
         child: Form(
@@ -56,7 +71,10 @@ class _AddDestinationDialogState extends State<AddDestinationDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-        FilledButton(onPressed: _submit, child: const Text('Add destination')),
+        FilledButton(
+          onPressed: _submit,
+          child: Text(widget.editing ? 'Save changes' : 'Add destination'),
+        ),
       ],
     );
   }

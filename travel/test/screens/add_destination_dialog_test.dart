@@ -15,4 +15,23 @@ void main() {
     expect(find.text('Choose dates'), findsNothing);
     expect(find.byIcon(Icons.date_range_outlined), findsNothing);
   });
+
+  testWidgets('edit dialog starts with the current destination', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: AddDestinationDialog(
+            initialDestination: 'Hue, Vietnam',
+            editing: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Edit destination'), findsOneWidget);
+    expect(find.text('Hue, Vietnam'), findsOneWidget);
+    expect(find.text('Save changes'), findsOneWidget);
+  });
 }
