@@ -4,6 +4,30 @@ import 'package:travel/views/plan_trip/models/destination_draft.dart';
 import 'package:travel/views/plan_trip/widgets/destination_selector.dart';
 
 void main() {
+  testWidgets('empty selector only offers adding a destination', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DestinationSelector(
+            destinations: const [],
+            selectedId: '',
+            onSelected: (_) {},
+            onAdd: () {},
+            onEditTravelLeg: (_) {},
+            onRemove: (_) {},
+            onEdit: (_) {},
+            embedded: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(InputChip), findsNothing);
+    expect(find.text('Add destination'), findsOneWidget);
+  });
+
   testWidgets('removes a destination through its chip action', (tester) async {
     String? removedId;
     String? editedId;

@@ -42,7 +42,7 @@ class PlanTripPage extends StatefulWidget {
 }
 
 class _PlanTripPageState extends State<PlanTripPage> {
-  final destinationController = TextEditingController(text: 'Tokyo, Japan');
+  final destinationController = TextEditingController();
   final budgetController = TextEditingController(text: '2000');
 
   final TravelPlannerService _planner = TravelPlannerService(
@@ -72,21 +72,14 @@ class _PlanTripPageState extends State<PlanTripPage> {
   List<HotelStay> hotelRecommendations = const [];
   HotelStay? selectedHotel;
   late final List<DestinationDraft> _destinations;
-  late String _selectedDestinationId;
+  String _selectedDestinationId = '';
   final List<TravelLegDraft> _travelLegs = [];
   final TravelTimeEstimator _travelTimeEstimator = const TravelTimeEstimator();
 
   @override
   void initState() {
     super.initState();
-    final initial = DestinationDraft(
-      id: 'destination-${DateTime.now().microsecondsSinceEpoch}',
-      destination: destinationController.text,
-      budget: double.parse(budgetController.text),
-      placeDataSource: placeDataSource,
-    );
-    _destinations = [initial];
-    _selectedDestinationId = initial.id;
+    _destinations = [];
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadSegmentsFromViewModel();
       await _loadPreference();
@@ -224,23 +217,27 @@ class _PlanTripPageState extends State<PlanTripPage> {
   }
 
   Future<void> _addDestination() async {
-    _persistSelectedDestination();
-    final previous = _destinations.last;
+    final previous = _destinations.lastOrNull;
+    if (previous != null) _persistSelectedDestination();
     final value = await showDialog<AddDestinationValue>(
       context: context,
       builder: (_) => const AddDestinationDialog(),
     );
     if (value == null || !mounted) return;
-    final estimate = await _estimateIncomingTravel(
-      previous.destination,
-      value.destination,
-    );
+    final estimate = previous == null
+        ? null
+        : await _estimateIncomingTravel(
+            previous.destination,
+            value.destination,
+          );
     if (!mounted) return;
     final destination = DestinationDraft(
       id: 'destination-${DateTime.now().microsecondsSinceEpoch}',
       destination: value.destination,
       dates: null,
-      budget: 0,
+      budget: previous == null
+          ? double.tryParse(budgetController.text.trim()) ?? 0
+          : 0,
       selectedPlan: selectedPlan,
       placeDataSource: AppConfig.hasGoogleMapsApiKey
           ? 'Google Places ready'
@@ -251,7 +248,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       if (estimate != null) {
         _travelLegs.add(
           TravelLegDraft(
-            fromDestinationId: previous.id,
+            fromDestinationId: previous!.id,
             toDestinationId: destination.id,
             estimate: estimate,
           ),
@@ -995,7 +992,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
         ),
         actions: [
           TextButton.icon(
-            onPressed: _saveTripDraft,
+            onPressed: _destinations.isEmpty ? null : _saveTripDraft,
             icon: const Icon(Icons.save_outlined),
             label: const Text('Save draft'),
           ),
@@ -1047,7 +1044,10 @@ class _PlanTripPageState extends State<PlanTripPage> {
                         ),
                         if (desktop)
                           FilledButton.icon(
-                            onPressed: isGenerating || savedPreference == null
+                            onPressed:
+                                isGenerating ||
+                                    savedPreference == null ||
+                                    _destinations.isEmpty
                                 ? null
                                 : _generatePlan,
                             icon: isGenerating
@@ -1099,6 +1099,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                     ),
                     const SizedBox(height: 20),
                     _TripSetupCard(
+                      hasDestination: _destinations.isNotEmpty,
                       destinationSelector: DestinationSelector(
                         destinations: _destinations,
                         selectedId: _selectedDestinationId,
@@ -1117,126 +1118,139 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       onTravelersChanged: (value) =>
                           setState(() => travelers = value),
                     ),
-                    const SizedBox(height: 20),
-                    _HotelStayCard(
-                      recommendations: hotelRecommendations,
-                      selectedHotel: selectedHotel,
-                      onSelected: _selectRecommendedHotel,
-                      onEdit: _editHotel,
-                    ),
-                    if (!desktop) ...[
-                      const SizedBox(height: 14),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: isGenerating || savedPreference == null
-                              ? null
-                              : _generatePlan,
-                          icon: isGenerating
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.auto_awesome_rounded),
-                          label: Text(
-                            isGenerating
-                                ? 'Generating...'
-                                : planGenerated
-                                ? 'Regenerate schedule'
-                                : 'Generate schedule',
+                    if (_destinations.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      _HotelStayCard(
+                        recommendations: hotelRecommendations,
+                        selectedHotel: selectedHotel,
+                        onSelected: _selectRecommendedHotel,
+                        onEdit: _editHotel,
+                      ),
+                      if (!desktop) ...[
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed:
+                                isGenerating ||
+                                    savedPreference == null ||
+                                    _destinations.isEmpty
+                                ? null
+                                : _generatePlan,
+                            icon: isGenerating
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.auto_awesome_rounded),
+                            label: Text(
+                              isGenerating
+                                  ? 'Generating...'
+                                  : planGenerated
+                                  ? 'Regenerate schedule'
+                                  : 'Generate schedule',
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                    const SizedBox(height: 20),
-                    if (desktop)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: _DestinationMap(result: plannerResult),
-                          ),
-                          const SizedBox(width: 20),
-                          Expanded(
-                            flex: 2,
-                            child: SizedBox(
-                              height: 430,
-                              child: AiChatWidget(onRefinePlan: _refinePlan),
-                            ),
-                          ),
-                        ],
-                      )
-                    else ...[
-                      _DestinationMap(result: plannerResult),
+                      ],
                       const SizedBox(height: 20),
-                      SizedBox(
-                        height: 430,
-                        child: AiChatWidget(onRefinePlan: _refinePlan),
+                      if (desktop)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: _DestinationMap(
+                                destinationId: _selectedDestinationId,
+                                result: plannerResult,
+                              ),
+                            ),
+                            const SizedBox(width: 20),
+                            Expanded(
+                              flex: 2,
+                              child: SizedBox(
+                                height: 430,
+                                child: AiChatWidget(onRefinePlan: _refinePlan),
+                              ),
+                            ),
+                          ],
+                        )
+                      else ...[
+                        _DestinationMap(
+                          destinationId: _selectedDestinationId,
+                          result: plannerResult,
+                        ),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          height: 430,
+                          child: AiChatWidget(onRefinePlan: _refinePlan),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      _PlanOptions(
+                        selectedPlan: selectedPlan,
+                        enabled: planGenerated,
+                        onSelected: _selectPlan,
                       ),
-                    ],
-                    const SizedBox(height: 20),
-                    _PlanOptions(
-                      selectedPlan: selectedPlan,
-                      enabled: planGenerated,
-                      onSelected: _selectPlan,
-                    ),
-                    const SizedBox(height: 20),
-                    _PlanPreview(
-                      generated: planGenerated,
-                      selectedPlan: selectedPlan,
-                      destination: destinationController.text.trim().isEmpty
-                          ? 'your destination'
-                          : destinationController.text.trim(),
-                      result: plannerResult,
-                      placeDataSource: placeDataSource,
-                      onGenerate: _generatePlan,
-                      onManual: _openManualPlanner,
-                      onReview: () {
-                        _persistSelectedDestination();
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => SummaryPage(
-                              destinations: List.unmodifiable(_destinations),
-                              travelers: travelers,
+                      const SizedBox(height: 20),
+                      _PlanPreview(
+                        generated: planGenerated,
+                        selectedPlan: selectedPlan,
+                        destination: destinationController.text.trim().isEmpty
+                            ? 'your destination'
+                            : destinationController.text.trim(),
+                        result: plannerResult,
+                        placeDataSource: placeDataSource,
+                        onGenerate: _generatePlan,
+                        onManual: _openManualPlanner,
+                        onReview: () {
+                          _persistSelectedDestination();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => SummaryPage(
+                                destinations: List.unmodifiable(_destinations),
+                                travelers: travelers,
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                    if (plannerResult != null) ...[
-                      const SizedBox(height: 14),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          FilledButton.icon(
-                            onPressed: _saveDestinationSchedule,
-                            icon: Icon(
-                              _selectedDestination.scheduleSaved
-                                  ? Icons.check_circle_rounded
-                                  : Icons.save_outlined,
-                            ),
-                            label: Text(
-                              _selectedDestination.scheduleSaved
-                                  ? '${_selectedDestination.destination} schedule saved'
-                                  : 'Save ${_selectedDestination.destination} Schedule',
-                            ),
-                          ),
-                          if (_selectedDestination.scheduleSaved)
-                            OutlinedButton.icon(
-                              onPressed: _addDestination,
-                              icon: const Icon(Icons.add_location_alt_outlined),
-                              label: const Text('Add Another Destination'),
-                            ),
-                        ],
+                          );
+                        },
                       ),
+                      if (plannerResult != null) ...[
+                        const SizedBox(height: 14),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [
+                            FilledButton.icon(
+                              onPressed: _saveDestinationSchedule,
+                              icon: Icon(
+                                _selectedDestination.scheduleSaved
+                                    ? Icons.check_circle_rounded
+                                    : Icons.save_outlined,
+                              ),
+                              label: Text(
+                                _selectedDestination.scheduleSaved
+                                    ? '${_selectedDestination.destination} schedule saved'
+                                    : 'Save ${_selectedDestination.destination} Schedule',
+                              ),
+                            ),
+                            if (_selectedDestination.scheduleSaved)
+                              OutlinedButton.icon(
+                                onPressed: _addDestination,
+                                icon: const Icon(
+                                  Icons.add_location_alt_outlined,
+                                ),
+                                label: const Text('Add Another Destination'),
+                              ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 30),
                     ],
-                    const SizedBox(height: 30),
                   ],
                 ),
               ),
@@ -1357,6 +1371,7 @@ class _PreferenceStatusCard extends StatelessWidget {
 }
 
 class _TripSetupCard extends StatelessWidget {
+  final bool hasDestination;
   final Widget destinationSelector;
   final TextEditingController budgetController;
   final String dateLabel;
@@ -1365,6 +1380,7 @@ class _TripSetupCard extends StatelessWidget {
   final ValueChanged<int> onTravelersChanged;
 
   const _TripSetupCard({
+    required this.hasDestination,
     required this.destinationSelector,
     required this.budgetController,
     required this.dateLabel,
@@ -1444,6 +1460,8 @@ class _TripSetupCard extends StatelessWidget {
               ),
             ),
           ];
+
+          if (!hasDestination) return destinationField;
 
           if (!wide) {
             return Column(
@@ -1810,9 +1828,10 @@ class _HotelEditorDialogState extends State<_HotelEditorDialog> {
 }
 
 class _DestinationMap extends StatefulWidget {
+  final String destinationId;
   final PlannerResult? result;
 
-  const _DestinationMap({required this.result});
+  const _DestinationMap({required this.destinationId, required this.result});
 
   @override
   State<_DestinationMap> createState() => _DestinationMapState();
@@ -1839,6 +1858,16 @@ class _DestinationMapState extends State<_DestinationMap> {
   @override
   void didUpdateWidget(covariant _DestinationMap oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final routeChanged =
+        _resultSignatureFor(oldWidget.destinationId, oldWidget.result) !=
+        _resultSignature();
+    if (routeChanged) {
+      _highlightedDay = null;
+      _hotelHighlighted = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _fitFullRoute();
+      });
+    }
     _scheduleRouteLoad();
   }
 
@@ -1875,12 +1904,42 @@ class _DestinationMapState extends State<_DestinationMap> {
   }
 
   String _resultSignature() {
-    final hotelId = widget.result?.hotel?.id ?? 'no-hotel';
-    final places = (widget.result?.days ?? const <PlannerDay>[])
+    return _resultSignatureFor(widget.destinationId, widget.result);
+  }
+
+  String _resultSignatureFor(String destinationId, PlannerResult? result) {
+    final hotelId = result?.hotel?.id ?? 'no-hotel';
+    final places = (result?.days ?? const <PlannerDay>[])
         .expand((day) => day.places)
-        .map((item) => item.place.id)
+        .map(
+          (item) =>
+              '${item.place.id}:${item.place.latitude}:${item.place.longitude}',
+        )
         .join('|');
-    return '$hotelId|$places';
+    return '$destinationId|$hotelId|$places';
+  }
+
+  List<LatLng> _resultPoints() {
+    final result = widget.result;
+    final hotel = result?.hotel;
+    return [
+      if (hotel != null) LatLng(hotel.latitude, hotel.longitude),
+      ...(result?.days ?? const <PlannerDay>[])
+          .expand((day) => day.places)
+          .map((item) => LatLng(item.place.latitude, item.place.longitude)),
+    ];
+  }
+
+  void _fitFullRoute() {
+    final points = _resultPoints();
+    if (points.isEmpty) return;
+    _mapController.fitCamera(
+      CameraFit.coordinates(
+        coordinates: points,
+        padding: const EdgeInsets.all(55),
+        maxZoom: 15,
+      ),
+    );
   }
 
   Future<void> _loadWalkingRoutes() async {
@@ -1966,12 +2025,7 @@ class _DestinationMapState extends State<_DestinationMap> {
   Widget build(BuildContext context) {
     final days = widget.result?.days ?? const <PlannerDay>[];
     final hotel = widget.result?.hotel;
-    final points = <LatLng>[
-      if (hotel != null) LatLng(hotel.latitude, hotel.longitude),
-      ...days
-          .expand((day) => day.places)
-          .map((item) => LatLng(item.place.latitude, item.place.longitude)),
-    ];
+    final points = _resultPoints();
     final mapOptions = points.length > 1
         ? MapOptions(
             initialCameraFit: CameraFit.coordinates(
@@ -2375,15 +2429,7 @@ class _DestinationMapState extends State<_DestinationMap> {
                   child: Tooltip(
                     message: 'Return to the full itinerary route',
                     child: FilledButton.icon(
-                      onPressed: () {
-                        _mapController.fitCamera(
-                          CameraFit.coordinates(
-                            coordinates: points,
-                            padding: const EdgeInsets.all(55),
-                            maxZoom: 15,
-                          ),
-                        );
-                      },
+                      onPressed: _fitFullRoute,
                       icon: const Icon(Icons.center_focus_strong_rounded),
                       label: const Text('Back to route'),
                     ),
