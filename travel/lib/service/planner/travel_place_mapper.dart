@@ -65,7 +65,7 @@ class TravelPlaceMapper {
       'place_of_worship' => 60,
       'museum' || 'art_gallery' => 120,
       'park' || 'beach' || 'tourist_attraction' => 90,
-      'shopping_mall' || 'store' => 120,
+      'shopping_mall' => 120,
       'zoo' || 'amusement_park' || 'aquarium' => 180,
       _ => 90,
     };

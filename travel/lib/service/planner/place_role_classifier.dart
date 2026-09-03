@@ -41,7 +41,7 @@ class PlaceRoleClassifier {
         'nightlife',
         'amusement_park',
       },
-      PlaceRole.shopping => const {'shopping', 'shopping_mall', 'store'},
+      PlaceRole.shopping => const {'shopping', 'shopping_mall', 'mall'},
       PlaceRole.other => const {},
     };
   }
@@ -81,9 +81,6 @@ class PlaceRoleClassifier {
   };
   static const _shoppingTypes = {
     'shopping_mall',
-    'department_store',
-    'market',
-    'store',
   };
   static const _sightseeingTypes = {
     'tourist_attraction',

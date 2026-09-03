@@ -93,27 +93,15 @@ void main() {
       days: [
         PlannerDay(
           dayNumber: 1,
-          places: [
-            _scoredPlace(
-              'meal-1',
+          places: List.generate(
+            11,
+            (index) => _scoredPlace(
+              'meal-${index + 1}',
               cost: 10,
-              minutes: 60,
+              minutes: 20,
               category: 'restaurant',
             ),
-            _scoredPlace('meal-2', cost: 10, minutes: 60, category: 'cafe'),
-            _scoredPlace(
-              'meal-3',
-              cost: 10,
-              minutes: 60,
-              category: 'sushi_restaurant',
-            ),
-            _scoredPlace(
-              'meal-4',
-              cost: 10,
-              minutes: 60,
-              category: 'ramen_restaurant',
-            ),
-          ],
+          ),
         ),
       ],
       rankedPlaces: const [],
@@ -132,27 +120,15 @@ void main() {
       days: [
         PlannerDay(
           dayNumber: 1,
-          places: [
-            _scoredPlace(
-              'meal-1',
+          places: List.generate(
+            11,
+            (index) => _scoredPlace(
+              'meal-${index + 1}',
               cost: 10,
-              minutes: 180,
+              minutes: 60,
               category: 'restaurant',
             ),
-            _scoredPlace('meal-2', cost: 10, minutes: 180, category: 'cafe'),
-            _scoredPlace(
-              'meal-3',
-              cost: 10,
-              minutes: 180,
-              category: 'sushi_restaurant',
-            ),
-            _scoredPlace(
-              'meal-4',
-              cost: 10,
-              minutes: 180,
-              category: 'ramen_restaurant',
-            ),
-          ],
+          ),
         ),
       ],
       rankedPlaces: const [],

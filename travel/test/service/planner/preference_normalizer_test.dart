@@ -27,8 +27,9 @@ void main() {
       expect(normalizer.expand('Beach'), contains('nature'));
       expect(
         normalizer.expand('Shopping'),
-        containsAll(['shopping_mall', 'store']),
+        containsAll(['shopping_mall', 'mall']),
       );
+      expect(normalizer.expand('Shopping'), isNot(contains('store')));
       expect(
         normalizer.expand('History'),
         containsAll(['museum', 'shrine', 'temple', 'historic']),

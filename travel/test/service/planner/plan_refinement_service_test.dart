@@ -117,7 +117,7 @@ void main() {
     );
   });
 
-  test('explicit more-food request can override the normal dining cap', () {
+  test('explicit more-food request stays below the expanded dining cap', () {
     final museum = _place('museum', category: 'museum');
     final lunch = _place('lunch', category: 'restaurant');
     final dinner = _place('dinner', category: 'sushi_restaurant');
@@ -140,7 +140,7 @@ void main() {
     expect(result.plan.validation.isValid, isTrue);
     expect(
       result.plan.validation.warnings.map((issue) => issue.code),
-      contains(PlannerValidationCode.dailyDiningLimitExceeded),
+      isNot(contains(PlannerValidationCode.dailyDiningLimitExceeded)),
     );
   });
 

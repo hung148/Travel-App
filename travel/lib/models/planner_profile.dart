@@ -47,7 +47,7 @@ class PlannerProfile {
     maxPlacesPerDay: 3,
     targetMinutesPerDay: 300,
     distanceToleranceKm: 4,
-    maxDiningPlacesPerDay: 3,
+    maxDiningPlacesPerDay: 10,
     minDiningPlacesPerDay: 3,
     restMinutesPerDay: 60,
     scoringWeights: PlannerScoringWeights(
@@ -65,7 +65,7 @@ class PlannerProfile {
     maxPlacesPerDay: 4,
     targetMinutesPerDay: 420,
     distanceToleranceKm: 8,
-    maxDiningPlacesPerDay: 3,
+    maxDiningPlacesPerDay: 10,
     minDiningPlacesPerDay: 3,
     restMinutesPerDay: 45,
     scoringWeights: PlannerScoringWeights(
@@ -83,7 +83,7 @@ class PlannerProfile {
     maxPlacesPerDay: 6,
     targetMinutesPerDay: 570,
     distanceToleranceKm: 15,
-    maxDiningPlacesPerDay: 3,
+    maxDiningPlacesPerDay: 10,
     minDiningPlacesPerDay: 3,
     restMinutesPerDay: 30,
     scoringWeights: PlannerScoringWeights(

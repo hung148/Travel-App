@@ -22,6 +22,35 @@ void main() {
     expect(classifier.classify(_place('park', 'park')), PlaceRole.nature);
   });
 
+  test('classifies only actual shopping malls as shopping', () {
+    expect(
+      classifier.classify(_place('vincom', 'shopping_mall')),
+      PlaceRole.shopping,
+    );
+    expect(classifier.classify(_place('shoes', 'shoe_store')), PlaceRole.other);
+    expect(
+      classifier.classify(_place('electronics', 'electronics_store')),
+      PlaceRole.other,
+    );
+    expect(
+      classifier.classify(_place('department', 'department_store')),
+      PlaceRole.other,
+    );
+  });
+
+  test('allows up to ten dining places in a food-focused day', () {
+    const service = DailyCompositionService();
+    final arranged = service.arrange(
+      routeOrderedPlaces: List.generate(
+        11,
+        (index) => _scored('food-$index', 'restaurant'),
+      ),
+      profile: PlannerProfile.explorer,
+    );
+
+    expect(arranged, hasLength(10));
+  });
+
   test('places breakfast, lunch, and dinner around activities', () {
     const service = DailyCompositionService();
     final arranged = service.arrange(
