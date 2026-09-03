@@ -13,6 +13,9 @@ class TripSegment {
   final List<PlannerDay> days;
   final bool scheduleSaved;
   final Map<String, int> startTimeOverrides;
+  final List<PlannerDay> undoDays;
+  final double? undoBudget;
+  final String? undoStyle;
 
   const TripSegment({
     required this.id,
@@ -24,6 +27,9 @@ class TripSegment {
     this.days = const [],
     this.scheduleSaved = false,
     this.startTimeOverrides = const {},
+    this.undoDays = const [],
+    this.undoBudget,
+    this.undoStyle,
   });
 
   int get numberOfDays {
@@ -60,6 +66,9 @@ class TripSegment {
     List<PlannerDay>? days,
     bool? scheduleSaved,
     Map<String, int>? startTimeOverrides,
+    List<PlannerDay>? undoDays,
+    double? undoBudget,
+    String? undoStyle,
   }) {
     return TripSegment(
       id: id ?? this.id,
@@ -71,6 +80,9 @@ class TripSegment {
       days: days ?? this.days,
       scheduleSaved: scheduleSaved ?? this.scheduleSaved,
       startTimeOverrides: startTimeOverrides ?? this.startTimeOverrides,
+      undoDays: undoDays ?? this.undoDays,
+      undoBudget: undoBudget ?? this.undoBudget,
+      undoStyle: undoStyle ?? this.undoStyle,
     );
   }
 
@@ -85,12 +97,16 @@ class TripSegment {
       'days': days.map((day) => day.toMap()).toList(),
       'scheduleSaved': scheduleSaved,
       'startTimeOverrides': startTimeOverrides,
+      'undoDays': undoDays.map((day) => day.toMap()).toList(),
+      'undoBudget': undoBudget,
+      'undoStyle': undoStyle,
     };
   }
 
   factory TripSegment.fromMap(Map<String, dynamic> data) {
     final hotelData = data['hotel'];
     final dayList = data['days'] as List<dynamic>? ?? const [];
+    final undoDayList = data['undoDays'] as List<dynamic>? ?? const [];
 
     return TripSegment(
       id: data['id'] as String? ?? '',
@@ -112,6 +128,12 @@ class TripSegment {
                 (key, value) =>
                     MapEntry(key.toString(), (value as num).toInt()),
               ),
+      undoDays: undoDayList
+          .whereType<Map>()
+          .map((day) => PlannerDay.fromMap(Map<String, dynamic>.from(day)))
+          .toList(),
+      undoBudget: (data['undoBudget'] as num?)?.toDouble(),
+      undoStyle: data['undoStyle'] as String?,
     );
   }
 

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:travel/models/trip/trip.dart';
 import 'package:travel/models/trip/trip_result.dart';
 
@@ -71,9 +72,12 @@ class TripService {
             return Trip.fromMap(doc.data() as Map<String, dynamic>, doc.id);
           }).toList(); // turns the mapped items into real List<Trip>
           trips.sort((a, b) {
-            final aDate = a.createdAt ?? a.startDate ?? DateTime(1970);
-            final bDate = b.createdAt ?? b.startDate ?? DateTime(1970);
-            return bDate.compareTo(aDate);
+            final aDate = a.startDate ?? a.createdAt;
+            final bDate = b.startDate ?? b.createdAt;
+            if (aDate == null && bDate == null) return 0;
+            if (aDate == null) return 1;
+            if (bDate == null) return -1;
+            return aDate.compareTo(bDate);
           });
           return trips;
         });
@@ -108,6 +112,10 @@ class TripService {
       final feedback = await database
           .collection('feedbacks')
           .where('tripId', isEqualTo: id)
+          .where(
+            'userId',
+            isEqualTo: FirebaseAuth.instance.currentUser?.uid,
+          )
           .get();
       for (final document in [...itinerary.docs, ...feedback.docs]) {
         batch.delete(document.reference);

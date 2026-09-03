@@ -271,4 +271,42 @@ void main() {
       expect(timed.command.targetDayNumber, 2);
     },
   );
+
+  test('local fallback swaps numbered activities across days', () async {
+    final service = TripAiService(endpoint: '');
+    final proposal = await service.propose(
+      instruction: 'swap activity 3 in day 1 with activity 7 in day 2',
+      context: {'destinationId': 'hue', 'days': <Object>[]},
+    );
+
+    expect(proposal.command.type, TripAiCommandType.swapStops);
+    expect(proposal.command.sourceStop?.dayNumber, 1);
+    expect(proposal.command.sourceStop?.activityNumber, 3);
+    expect(proposal.command.targetStop?.dayNumber, 2);
+    expect(proposal.command.targetStop?.activityNumber, 7);
+  });
+
+  test('local fallback swaps named stops and supports numbered exact-time moves', () async {
+    final service = TripAiService(endpoint: '');
+    final context = {'destinationId': 'hue', 'days': <Object>[]};
+
+    final swap = await service.propose(
+      instruction: 'swap Museum in day 1 with Walking Street in day 3',
+      context: context,
+    );
+    final timed = await service.propose(
+      instruction: 'move activity 4 to 3 PM on day 2',
+      context: context,
+    );
+
+    expect(swap.command.type, TripAiCommandType.swapStops);
+    expect(swap.command.sourceStop?.activityName, 'museum');
+    expect(swap.command.sourceStop?.dayNumber, 1);
+    expect(swap.command.targetStop?.activityName, 'walking street');
+    expect(swap.command.targetStop?.dayNumber, 3);
+    expect(timed.command.type, TripAiCommandType.moveStopTime);
+    expect(timed.command.sourceStop?.activityNumber, 4);
+    expect(timed.command.targetDayNumber, 2);
+    expect(timed.command.startMinutes, 15 * 60);
+  });
 }

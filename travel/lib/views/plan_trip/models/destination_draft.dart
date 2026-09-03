@@ -20,6 +20,9 @@ class DestinationDraft {
     this.placeDataSource = '',
     this.savedDays = const [],
     this.startTimeOverrides = const {},
+    this.undoDays = const [],
+    this.undoBudget,
+    this.undoStyle,
   });
 
   final String id;
@@ -34,6 +37,9 @@ class DestinationDraft {
   String placeDataSource;
   List<PlannerDay> savedDays;
   Map<String, int> startTimeOverrides;
+  List<PlannerDay> undoDays;
+  double? undoBudget;
+  String? undoStyle;
 
   List<PlannerDay> get days => plannerResult?.days ?? savedDays;
 

@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 
 import '../../config/app_config.dart';
 import '../../models/planner_result.dart';
+import '../../models/budget_allocation.dart';
+import '../../models/planner_profile.dart';
 import '../../models/plan_refinement_result.dart';
 import '../../models/ai/trip_ai_command.dart';
 import '../../models/hotel_stay.dart';
@@ -142,6 +144,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
       savedDays: segment.days,
       placeDataSource: 'Saved trip',
       startTimeOverrides: segment.startTimeOverrides,
+      undoDays: segment.undoDays,
+      undoBudget: segment.undoBudget,
+      undoStyle: segment.undoStyle,
     );
   }
 
@@ -177,6 +182,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
       scheduleSaved: draft.scheduleSaved,
       startTimeOverrides:
           draft.plannerResult?.startTimeOverrides ?? draft.startTimeOverrides,
+      undoDays: draft.undoDays,
+      undoBudget: draft.undoBudget,
+      undoStyle: draft.undoStyle,
     );
     final exists = _tripViewModel.draftSegments.any(
       (item) => item.id == draft.id,
@@ -215,11 +223,56 @@ class _PlanTripPageState extends State<PlanTripPage> {
     );
     dates = selected.dates;
     selectedPlan = selected.selectedPlan;
-    plannerResult = selected.plannerResult;
+    plannerResult = selected.plannerResult ??
+        (selected.savedDays.isEmpty ? null : _resultFromSavedDestination(selected));
     hotelRecommendations = selected.hotelRecommendations;
     selectedHotel = selected.selectedHotel;
     placeDataSource = selected.placeDataSource;
-    planGenerated = selected.plannerResult != null;
+    planGenerated = plannerResult != null;
+    if (selected.undoDays.isNotEmpty && selected.plannerResult != null) {
+      _aiUndoSnapshot = _AiUndoSnapshot(
+        destinationId: selected.id,
+        result: selected.plannerResult!.copyWith(days: selected.undoDays),
+        budgetText: selected.undoBudget?.toStringAsFixed(0) ?? budgetController.text,
+        selectedPlan: selected.undoStyle ?? selectedPlan,
+        hotelRecommendations: List<HotelStay>.of(hotelRecommendations),
+        selectedHotel: selectedHotel,
+        placeDataSource: placeDataSource,
+        scheduleSaved: selected.scheduleSaved,
+        planGenerated: true,
+      );
+    } else {
+      _aiUndoSnapshot = null;
+    }
+  }
+
+  PlannerResult _resultFromSavedDestination(DestinationDraft selected) {
+    final days = selected.savedDays
+        .map(
+          (day) => PlannerDay(
+            dayNumber: day.dayNumber,
+            places: List<ScoredPlace>.of(day.places),
+          ),
+        )
+        .toList();
+    return PlannerResult(
+      budgetAllocation: BudgetAllocation(
+        total: selected.budget,
+        accommodation: 0,
+        food: days.fold(0, (total, day) => total + day.estimatedFoodCost),
+        transportation: 0,
+        activities: days.fold(
+          0,
+          (total, day) => total + day.estimatedActivityCost,
+        ),
+        buffer: 0,
+      ),
+      validation: const PlannerValidationResult(issues: []),
+      profile: PlannerProfile.balanced,
+      rankedPlaces: days.expand((day) => day.places).toList(),
+      days: days,
+      startTimeOverrides: selected.startTimeOverrides,
+    );
   }
 
   void _selectDestination(String id) {
@@ -647,6 +700,14 @@ class _PlanTripPageState extends State<PlanTripPage> {
   }
 
   Future<void> _generatePlan() async {
+    if (dates == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Choose travel dates before generating a plan.'),
+        ),
+      );
+      return;
+    }
     final preference = _preferenceForSelectedPlan();
     if (preference == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1187,7 +1248,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
             '\$${requestedBudget.toStringAsFixed(0)}. The lowest generated total was '
             '\$${attemptedTotal.toStringAsFixed(0)}, so nothing was changed.';
       }
-      _aiUndoSnapshot = snapshot;
+      _rememberAiUndo(snapshot);
       return 'Regenerated the itinerary with a total budget of '
           '\$${requestedBudget.toStringAsFixed(0)}. Validation passed.';
     }
@@ -1205,7 +1266,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
         _restoreAiSnapshot(snapshot);
         return 'I could not regenerate this destination using that style.';
       }
-      _aiUndoSnapshot = snapshot;
+      _rememberAiUndo(snapshot);
       return 'Regenerated this destination using the $style style.';
     }
     final instruction = switch (command.type) {
@@ -1292,8 +1353,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     if (refinement.changed && refinement.plan.validation.isValid && mounted) {
       setState(() => plannerResult = refinement.plan);
       _selectedDestination.scheduleSaved = false;
-      _persistSelectedDestination();
-      _aiUndoSnapshot = snapshot;
+      _rememberAiUndo(snapshot);
     }
     return refinement.message;
   }
@@ -1452,6 +1512,18 @@ class _PlanTripPageState extends State<PlanTripPage> {
     );
   }
 
+  void _rememberAiUndo(_AiUndoSnapshot snapshot) {
+    _aiUndoSnapshot = snapshot;
+    final previous = snapshot.result;
+    if (previous != null) {
+      final selected = _selectedDestination;
+      selected.undoDays = List<PlannerDay>.of(previous.days);
+      selected.undoBudget = double.tryParse(snapshot.budgetText);
+      selected.undoStyle = snapshot.selectedPlan;
+    }
+    _persistSelectedDestination();
+  }
+
   void _restoreAiSnapshot(_AiUndoSnapshot snapshot) {
     if (!mounted || snapshot.destinationId != _selectedDestinationId) return;
     setState(() {
@@ -1475,6 +1547,11 @@ class _PlanTripPageState extends State<PlanTripPage> {
     }
     _restoreAiSnapshot(snapshot);
     _aiUndoSnapshot = null;
+    final selected = _selectedDestination;
+    selected.undoDays = const [];
+    selected.undoBudget = null;
+    selected.undoStyle = null;
+    _persistSelectedDestination();
     return 'Restored the plan from before the last AI change.';
   }
 

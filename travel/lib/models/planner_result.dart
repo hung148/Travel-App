@@ -76,6 +76,24 @@ class PlannerResult {
     this.startTimeOverrides = const {},
   });
 
+  PlannerResult copyWith({
+    BudgetAllocation? budgetAllocation,
+    PlannerValidationResult? validation,
+    PlannerProfile? profile,
+    List<ScoredPlace>? rankedPlaces,
+    List<PlannerDay>? days,
+    HotelStay? hotel,
+    Map<String, int>? startTimeOverrides,
+  }) => PlannerResult(
+    budgetAllocation: budgetAllocation ?? this.budgetAllocation,
+    validation: validation ?? this.validation,
+    profile: profile ?? this.profile,
+    rankedPlaces: rankedPlaces ?? this.rankedPlaces,
+    days: days ?? this.days,
+    hotel: hotel ?? this.hotel,
+    startTimeOverrides: startTimeOverrides ?? this.startTimeOverrides,
+  );
+
   double get totalEstimatedCost {
     return days.fold(0, (total, day) => total + day.estimatedCost);
   }

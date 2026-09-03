@@ -4,6 +4,7 @@ import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/preference_viewmodel.dart';
 import '../../viewmodels/trip_viewmodel.dart';
 import '../preferences/preference_page.dart';
+import '../plan_trip/plan_trip_page.dart';
 import '../../models/preference/preferences.dart';
 import '../../models/trip/trip.dart';
 import '../../models/user.dart';
@@ -72,7 +73,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                   children: [
                                     _TravelStyleCard(preference: preference),
                                     const SizedBox(height: 16),
-                                    _UpcomingCard(trips: trips),
+                                    _UpcomingCard(trips: trips, onOpen: _openSavedTrip),
                                   ],
                                 );
                               }
@@ -85,7 +86,12 @@ class _ProfilePageState extends State<ProfilePage> {
                                     ),
                                   ),
                                   const SizedBox(width: 16),
-                                  Expanded(child: _UpcomingCard(trips: trips)),
+                                  Expanded(
+                                    child: _UpcomingCard(
+                                      trips: trips,
+                                      onOpen: _openSavedTrip,
+                                    ),
+                                  ),
                                 ],
                               );
                             },
@@ -106,8 +112,8 @@ class _ProfilePageState extends State<ProfilePage> {
                           const SizedBox(height: 16),
                           TripHistoryWidget(
                             trips: trips,
-                            onTripTap: (_) =>
-                                Navigator.pushNamed(context, '/summary'),
+                            onTripTap: _openSavedTrip,
+                            onTripDelete: _deleteTrip,
                           ),
                           const SizedBox(height: 32),
                         ],
@@ -118,6 +124,63 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSavedTrip(Trip trip) async {
+    final tripViewModel = context.read<TripViewModel>();
+    await tripViewModel.loadTripById(trip.id);
+    if (!mounted) return;
+    if (tripViewModel.currentTrip == null ||
+        tripViewModel.draftSegments.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            tripViewModel.errorMessage ?? 'This saved trip has no planner data yet.',
+          ),
+        ),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PlanTripPage()),
+    );
+  }
+
+  Future<void> _deleteTrip(Trip trip) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete trip?'),
+        content: Text(
+          'Delete the ${trip.destination} trip from ${trip.startDate == null ? 'your dashboard' : MaterialLocalizations.of(context).formatMediumDate(trip.startDate!)}? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.delete_forever_outlined),
+            label: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final viewModel = context.read<TripViewModel>();
+    await viewModel.deleteTrip(trip.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          viewModel.errorMessage == null
+              ? 'Trip deleted.'
+              : 'Could not delete trip: ${viewModel.errorMessage}',
         ),
       ),
     );
@@ -281,7 +344,8 @@ class _TravelStyleCard extends StatelessWidget {
 
 class _UpcomingCard extends StatelessWidget {
   final List<Trip> trips;
-  const _UpcomingCard({required this.trips});
+  final ValueChanged<Trip> onOpen;
+  const _UpcomingCard({required this.trips, required this.onOpen});
 
   @override
   Widget build(BuildContext context) {
@@ -300,7 +364,7 @@ class _UpcomingCard extends StatelessWidget {
       trailing: upcoming == null
           ? null
           : TextButton(
-              onPressed: () => Navigator.pushNamed(context, '/summary'),
+              onPressed: () => onOpen(upcoming!),
               child: const Text('Open'),
             ),
       child: upcoming == null

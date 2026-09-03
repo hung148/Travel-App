@@ -132,6 +132,12 @@ class TripAiService {
     final swapNumberMeal = RegExp(
       r'^swap\s+activit(?:y|ies)\s+(\d+)\s+(?:on|from)\s+day\s+(\d+)\s+with\s+(breakfast|lunch|dinner)\s+(?:on|from)\s+day\s+(\d+)\s*[.!?]*$',
     ).firstMatch(text);
+    final swapNumberActivity = RegExp(
+      r'^swap\s+activit(?:y|ies)\s+(\d+)\s+(?:in|on|from)\s+day\s+(\d+)\s+with\s+activit(?:y|ies)\s+(\d+)\s+(?:in|on|from)\s+day\s+(\d+)\s*[.!?]*$',
+    ).firstMatch(text);
+    final swapAnyStop = RegExp(
+      r'^swap\s+(?:activity\s+)?(.+?)\s+(?:in|on|from)\s+day\s+(\d+)\s+with\s+(?:activity\s+)?(.+?)\s+(?:in|on|from)\s+day\s+(\d+)\s*[.!?]*$',
+    ).firstMatch(text);
     final scheduledReplacement = RegExp(
       r'^replace\s+activit(?:y|ies)\s+(\d+)\s+(?:on|from)\s+day\s+(\d+)\s+with\s+(.+?)\s+from\s+day\s+(\d+)\s*[.!?]*$',
     ).firstMatch(text);
@@ -201,6 +207,44 @@ class TripAiService {
         style: style,
         explanation: 'Use the $style planning style.',
       );
+    } else if (swapAnyStop != null) {
+      final source = _localStopReference(
+        swapAnyStop.group(1)!,
+        int.parse(swapAnyStop.group(2)!),
+      );
+      final target = _localStopReference(
+        swapAnyStop.group(3)!,
+        int.parse(swapAnyStop.group(4)!),
+      );
+      if (source != null && target != null) {
+        command = TripAiCommand(
+          type: TripAiCommandType.swapStops,
+          destinationId: destinationId,
+          sourceStop: source,
+          targetStop: target,
+          explanation: 'Swap the two requested stops between their days.',
+        );
+      } else {
+        command = TripAiCommand(
+          type: TripAiCommandType.unsupported,
+          destinationId: destinationId,
+          explanation: 'I could not identify both stops to swap.',
+        );
+      }
+    } else if (swapNumberActivity != null) {
+      command = TripAiCommand(
+        type: TripAiCommandType.swapStops,
+        destinationId: destinationId,
+        sourceStop: TripAiStopReference(
+          dayNumber: int.parse(swapNumberActivity.group(2)!),
+          activityNumber: int.parse(swapNumberActivity.group(1)!),
+        ),
+        targetStop: TripAiStopReference(
+          dayNumber: int.parse(swapNumberActivity.group(4)!),
+          activityNumber: int.parse(swapNumberActivity.group(3)!),
+        ),
+        explanation: 'Swap the two requested activities between their days.',
+      );
     } else if (swapNumberMeal != null) {
       command = TripAiCommand(
         type: TripAiCommandType.swapStops,
@@ -247,9 +291,7 @@ class TripAiService {
       command = TripAiCommand(
         type: TripAiCommandType.moveStopTime,
         destinationId: destinationId,
-        sourceStop: TripAiStopReference(
-          activityName: timedMove.group(1)!.trim(),
-        ),
+        sourceStop: _localStopReference(timedMove.group(1)!, null),
         targetDayNumber: int.parse(timedMove.group(3)!),
         startMinutes: _parseTimeMinutes(timedMove.group(2)!)!,
         explanation: 'Move the requested stop to the requested day and time.',
@@ -417,5 +459,31 @@ class TripAiService {
     if (suffix == 'am' && hour == 12) hour = 0;
     if (hour > 23) return null;
     return hour * 60 + minute;
+  }
+
+  TripAiStopReference? _localStopReference(String raw, int? dayNumber) {
+    final value = raw.trim();
+    if (value.isEmpty) return null;
+    final activity = RegExp(r'^activity\s+(\d+)$', caseSensitive: false)
+        .firstMatch(value);
+    if (activity != null) {
+      return TripAiStopReference(
+        dayNumber: dayNumber,
+        activityNumber: int.parse(activity.group(1)!),
+      );
+    }
+    if (RegExp(r'^\d+$').hasMatch(value)) {
+      return TripAiStopReference(
+        dayNumber: dayNumber,
+        activityNumber: int.parse(value),
+      );
+    }
+    final meal = const ['breakfast', 'lunch', 'dinner']
+        .where((item) => item == value.toLowerCase())
+        .firstOrNull;
+    if (meal != null) {
+      return TripAiStopReference(dayNumber: dayNumber, mealType: meal);
+    }
+    return TripAiStopReference(dayNumber: dayNumber, activityName: value);
   }
 }
