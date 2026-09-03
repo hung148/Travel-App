@@ -26,19 +26,23 @@ class _PreferencePageState extends State<PreferencePage> {
   Set<String> _experienceType = {};
   String? _activityLevel;
   String? _spendingStyle;
-  Set<String> _interests = {};
 
-  static const _totalQuestions = 4;
+  static const _totalQuestions = 3;
 
   final _experienceOptions = const [
     _Option('Nature', Icons.landscape_outlined),
     _Option('History', Icons.account_balance_outlined),
-    _Option('Food', Icons.restaurant_outlined),
+    _Option('Local food', Icons.ramen_dining_outlined),
     _Option('Culture', Icons.museum_outlined),
     _Option('Adventure', Icons.hiking_outlined),
     _Option('Nightlife', Icons.nightlife_outlined),
     _Option('Shopping', Icons.shopping_bag_outlined),
     _Option('Beach', Icons.beach_access_outlined),
+    _Option('Coffee', Icons.coffee_outlined),
+    _Option('Museums', Icons.account_balance_outlined),
+    _Option('Photography', Icons.camera_alt_outlined),
+    _Option('Attractions', Icons.attractions_outlined),
+    _Option('Hidden gems', Icons.explore_outlined),
   ];
 
   final _activityOptions = const [
@@ -73,17 +77,6 @@ class _PreferencePageState extends State<PreferencePage> {
     ),
   ];
 
-  final _interestOptions = const [
-    _Option('Coffee', Icons.coffee_outlined),
-    _Option('Local food', Icons.ramen_dining_outlined),
-    _Option('Museums', Icons.museum_outlined),
-    _Option('Photography', Icons.camera_alt_outlined),
-    _Option('Shopping', Icons.shopping_bag_outlined),
-    _Option('Attractions', Icons.attractions_outlined),
-    _Option('Nightlife', Icons.local_bar_outlined),
-    _Option('Hidden gems', Icons.explore_outlined),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -104,14 +97,16 @@ class _PreferencePageState extends State<PreferencePage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() {
-        _experienceType = preference.experienceType.toSet();
+        _experienceType = {
+          ...preference.experienceType,
+          ...preference.interests,
+        };
         _activityLevel = preference.activityLevel.isEmpty
             ? null
             : preference.activityLevel;
         _spendingStyle = preference.spendingStyle.isEmpty
             ? null
             : preference.spendingStyle;
-        _interests = preference.interests.toSet();
         _hasInitialized = true;
       });
     });
@@ -125,8 +120,6 @@ class _PreferencePageState extends State<PreferencePage> {
         return _activityLevel?.isNotEmpty == true;
       case 2:
         return _spendingStyle?.isNotEmpty == true;
-      case 3:
-        return _interests.isNotEmpty;
       default:
         return false;
     }
@@ -149,7 +142,9 @@ class _PreferencePageState extends State<PreferencePage> {
       experienceType: _experienceType.toList(),
       activityLevel: _activityLevel!,
       spendingStyle: _spendingStyle!,
-      interests: _interests.toList(),
+      // Keep both persisted fields in sync for compatibility with the existing
+      // recommendation engine while presenting one clear preference question.
+      interests: _experienceType.toList(),
     );
 
     await vm.savePreferences(preference);
@@ -231,11 +226,11 @@ class _PreferencePageState extends State<PreferencePage> {
                                             ),
                                             children: [
                                               _QuestionPage(
-                                                eyebrow: 'TRAVEL STYLE',
+                                                eyebrow: 'YOUR INTERESTS',
                                                 title:
-                                                    'What kind of experiences do you want?',
+                                                    'What do you enjoy when you travel?',
                                                 subtitle:
-                                                    'Choose as many as you like. We’ll use these to rank places later.',
+                                                    'Choose as many as you like. We’ll use them to personalize and rank places.',
                                                 child: _OptionGrid(
                                                   options: _experienceOptions,
                                                   selected: _experienceType,
@@ -281,28 +276,6 @@ class _PreferencePageState extends State<PreferencePage> {
                                                     () =>
                                                         _spendingStyle = value,
                                                   ),
-                                                ),
-                                              ),
-                                              _QuestionPage(
-                                                eyebrow: 'INTERESTS',
-                                                title:
-                                                    'What do you enjoy most when you travel?',
-                                                subtitle:
-                                                    'Pick a few favorites so recommendations feel more personal.',
-                                                child: _OptionGrid(
-                                                  options: _interestOptions,
-                                                  selected: _interests,
-                                                  onTap: (value) {
-                                                    setState(() {
-                                                      _interests.contains(value)
-                                                          ? _interests.remove(
-                                                              value,
-                                                            )
-                                                          : _interests.add(
-                                                              value,
-                                                            );
-                                                    });
-                                                  },
                                                 ),
                                               ),
                                             ],
