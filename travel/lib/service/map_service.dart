@@ -158,7 +158,7 @@ class MapService {
         'X-Goog-FieldMask':
             'places.id,places.displayName,places.formattedAddress,'
             'places.location,places.rating,places.userRatingCount,'
-            'places.types,places.priceLevel',
+            'places.types,places.priceLevel,places.photos',
       },
       body: jsonEncode({
         'includedTypes': [type],
@@ -191,6 +191,7 @@ class MapService {
         userRatingsTotal: item['userRatingCount'] ?? 0,
         types: List<String>.from(item['types'] ?? []),
         priceLevel: _priceLevelFromGoogle(item['priceLevel']),
+        photoUrl: _photoUrl(item['photos']),
       );
     }).toList();
   }
@@ -455,6 +456,19 @@ class MapService {
       _ => null,
     };
   }
+
+  String? _photoUrl(Object? value) {
+    final photos = value as List<dynamic>? ?? const [];
+    if (photos.isEmpty) return null;
+    final photo = photos.first as Map<String, dynamic>?;
+    final name = photo?['name'] as String?;
+    if (name == null || name.isEmpty) return null;
+    return Uri.https('places.googleapis.com', '/v1/$name/media', {
+      'maxWidthPx': '1200',
+      'maxHeightPx': '900',
+      'key': apiKey,
+    }).toString();
+  }
 }
 
 /// ==============================
@@ -513,6 +527,7 @@ class NearbyPlace {
   final int userRatingsTotal;
   final List<String> types;
   final int? priceLevel;
+  final String? photoUrl;
 
   NearbyPlace({
     required this.placeId,
@@ -524,6 +539,7 @@ class NearbyPlace {
     required this.userRatingsTotal,
     required this.types,
     this.priceLevel,
+    this.photoUrl,
   });
 
   @override

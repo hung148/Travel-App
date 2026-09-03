@@ -31,6 +31,7 @@ class TravelPlaceMapper {
       latitude: nearbyPlace.latitude,
       longitude: nearbyPlace.longitude,
       estimatedVisitMinutes: _estimatedVisitMinutes(category),
+      photoUrl: nearbyPlace.photoUrl,
     );
   }
 

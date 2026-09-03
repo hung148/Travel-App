@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../plan_trip/models/destination_draft.dart';
+import '../../widgets/place_photo.dart';
 import 'review_widget.dart';
 
 class MultiDestinationReview extends StatelessWidget {
@@ -127,6 +128,14 @@ class MultiDestinationReview extends StatelessWidget {
                         children: [
                           const Icon(Icons.place_outlined, size: 17),
                           const SizedBox(width: 8),
+                          PlacePhoto(
+                            placeName: place.place.name,
+                            photoUrl: place.place.photoUrl,
+                            width: 52,
+                            height: 52,
+                            borderRadius: 12,
+                          ),
+                          const SizedBox(width: 10),
                           Expanded(child: Text(place.place.name)),
                           Text(
                             '\$${place.place.estimatedCost.toStringAsFixed(0)}',

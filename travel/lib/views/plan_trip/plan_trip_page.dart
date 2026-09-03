@@ -31,6 +31,7 @@ import '../../service/planner/travel_planner_service.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/preference_viewmodel.dart';
 import '../../viewmodels/trip_viewmodel.dart';
+import '../../widgets/place_photo.dart';
 import 'ai_chat_widget.dart';
 import '../preferences/preference_page.dart';
 import '../summary/summary_page.dart';
@@ -4203,6 +4204,14 @@ class _GeneratedDayPreview extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 8),
+                            PlacePhoto(
+                              placeName: day.places[stopIndex].place.name,
+                              photoUrl: day.places[stopIndex].place.photoUrl,
+                              width: 72,
+                              height: 72,
+                              borderRadius: 14,
+                            ),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,

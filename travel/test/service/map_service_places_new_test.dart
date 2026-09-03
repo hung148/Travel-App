@@ -34,6 +34,9 @@ void main() {
                 'userRatingCount': 500,
                 'types': ['museum', 'point_of_interest'],
                 'priceLevel': 'PRICE_LEVEL_MODERATE',
+                'photos': [
+                  {'name': 'places/place-id/photos/photo-id'},
+                ],
               },
             ],
           }),
@@ -53,6 +56,10 @@ void main() {
       expect(result.single.name, 'Test Museum');
       expect(result.single.userRatingsTotal, 500);
       expect(result.single.priceLevel, 2);
+      expect(
+        result.single.photoUrl,
+        'https://places.googleapis.com/v1/places/place-id/photos/photo-id/media?maxWidthPx=1200&maxHeightPx=900&key=test-key',
+      );
     },
   );
 

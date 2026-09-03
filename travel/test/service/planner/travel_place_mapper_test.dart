@@ -17,6 +17,7 @@ void main() {
         userRatingsTotal: 1234,
         types: const ['museum', 'point_of_interest', 'establishment'],
         priceLevel: 2,
+        photoUrl: 'https://example.com/place.jpg',
       ),
     );
 
@@ -27,6 +28,7 @@ void main() {
     expect(result.rating, 4.7);
     expect(result.reviewCount, 1234);
     expect(result.estimatedCost, 25);
+    expect(result.photoUrl, 'https://example.com/place.jpg');
     expect(result.estimatedVisitMinutes, 120);
     expect(result.latitude, 35.1);
     expect(result.longitude, 139.1);

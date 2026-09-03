@@ -13,6 +13,7 @@ class TravelPlace {
   final double longitude;
 
   final int estimatedVisitMinutes;
+  final String? photoUrl;
 
   const TravelPlace({
     required this.id,
@@ -25,6 +26,7 @@ class TravelPlace {
     required this.latitude,
     required this.longitude,
     required this.estimatedVisitMinutes,
+    this.photoUrl,
   });
 
   bool get isDining {
@@ -52,6 +54,7 @@ class TravelPlace {
       'latitude': latitude,
       'longitude': longitude,
       'estimatedVisitMinutes': estimatedVisitMinutes,
+      'photoUrl': photoUrl,
     };
   }
 
@@ -70,6 +73,7 @@ class TravelPlace {
       longitude: (data['longitude'] as num?)?.toDouble() ?? 0,
       estimatedVisitMinutes:
           (data['estimatedVisitMinutes'] as num?)?.toInt() ?? 0,
+      photoUrl: data['photoUrl'] as String?,
     );
   }
 }

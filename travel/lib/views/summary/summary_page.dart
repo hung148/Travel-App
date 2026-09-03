@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/planner_result.dart';
 import '../../models/hotel_stay.dart';
 import '../../service/planner/daily_time_schedule_service.dart';
+import '../../widgets/place_photo.dart';
 import 'review_widget.dart';
 import '../plan_trip/models/destination_draft.dart';
 import 'multi_destination_review.dart';
@@ -469,6 +470,7 @@ class _DayReview extends StatelessWidget {
                         category: item.place.category,
                         minutes: item.place.estimatedVisitMinutes,
                         cost: item.place.estimatedCost,
+                        photoUrl: item.place.photoUrl,
                       );
                     },
                   ),
@@ -537,6 +539,7 @@ class _StopRow extends StatelessWidget {
   final String category;
   final int minutes;
   final double cost;
+  final String? photoUrl;
 
   const _StopRow({
     required this.number,
@@ -546,6 +549,7 @@ class _StopRow extends StatelessWidget {
     required this.category,
     required this.minutes,
     required this.cost,
+    required this.photoUrl,
   });
 
   @override
@@ -574,6 +578,14 @@ class _StopRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
+        PlacePhoto(
+          placeName: title,
+          photoUrl: photoUrl,
+          width: 68,
+          height: 68,
+          borderRadius: 14,
+        ),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
