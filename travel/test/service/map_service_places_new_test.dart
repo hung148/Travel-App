@@ -94,20 +94,41 @@ void main() {
   });
 
   test(
-    'Trip destination autocomplete only requests city, state, and country types',
+    'Trip destination autocomplete filters all geographic prediction types locally',
     () async {
       final client = MockClient((request) async {
         final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body['includedPrimaryTypes'], [
-          'locality',
-          'administrative_area_level_1',
-          'country',
-        ]);
-        return http.Response(jsonEncode({'suggestions': <Object>[]}), 200);
+        expect(body.containsKey('includedPrimaryTypes'), isFalse);
+        return http.Response(
+          jsonEncode({
+            'suggestions': [
+              {
+                'placePrediction': {
+                  'placeId': 'da-lat',
+                  'text': {'text': 'Đà Lạt, Lâm Đồng, Việt Nam'},
+                  'types': ['administrative_area_level_2', 'political'],
+                },
+              },
+              {
+                'placePrediction': {
+                  'placeId': 'shoe-shop',
+                  'text': {'text': 'Da Lat Shoe Shop'},
+                  'types': ['shoe_store', 'store'],
+                },
+              },
+            ],
+          }),
+          200,
+        );
       });
       final service = MapService(apiKey: 'test-key', client: client);
 
-      await service.getPlaceSuggestions('Cal', tripDestinationsOnly: true);
+      final result = await service.getPlaceSuggestions(
+        'Da Lat',
+        tripDestinationsOnly: true,
+      );
+
+      expect(result.map((item) => item.placeId), ['da-lat']);
     },
   );
 

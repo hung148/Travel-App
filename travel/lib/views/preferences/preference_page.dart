@@ -519,7 +519,7 @@ class _QuestionPage extends StatelessWidget {
               style: TextStyle(
                 color: Theme.of(context).colorScheme.primary,
                 fontWeight: FontWeight.w800,
-                fontSize: 12,
+                fontSize: 13,
                 letterSpacing: 1.2,
               ),
             ),
@@ -650,7 +650,9 @@ class _ChoiceCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+          duration: MediaQuery.maybeOf(context)?.disableAnimations == true
+              ? Duration.zero
+              : const Duration(milliseconds: 180),
           padding: EdgeInsets.all(compact ? 16 : 18),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
@@ -690,7 +692,7 @@ class _ChoiceCard extends StatelessWidget {
                       Text(
                         option.description!,
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 14,
                           height: 1.35,
                           color: Theme.of(
                             context,

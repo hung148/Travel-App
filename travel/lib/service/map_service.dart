@@ -53,16 +53,20 @@ class MapService {
     );
     final response = await _client.post(
       uri,
-      headers: {'Content-Type': 'application/json', 'X-Goog-Api-Key': apiKey},
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask':
+            'suggestions.placePrediction.placeId,'
+            'suggestions.placePrediction.text,'
+            'suggestions.placePrediction.types',
+      },
       body: jsonEncode({
         'input': input.trim(),
-        if (tripDestinationsOnly)
-          'includedPrimaryTypes': [
-            'locality',
-            'administrative_area_level_1',
-            'country',
-          ]
-        else if (destinationCitiesOnly)
+        // Trip destinations are filtered locally using every type attached to
+        // a prediction. Google's includedPrimaryTypes checks only one primary
+        // type, which can hide valid cities such as Da Lat.
+        if (!tripDestinationsOnly && destinationCitiesOnly)
           'includedPrimaryTypes': ['(cities)'],
       }),
     );
@@ -75,13 +79,16 @@ class MapService {
 
     final suggestions = data['suggestions'] as List<dynamic>? ?? const [];
 
-    return suggestions.map((item) {
+    final parsed = suggestions.map((item) {
       final prediction = item['placePrediction'] as Map<String, dynamic>? ?? {};
       return PlaceSuggestion(
         placeId: prediction['placeId'] ?? '',
         description: prediction['text']?['text'] ?? '',
+        types: List<String>.from(prediction['types'] ?? const []),
       );
     }).toList();
+    if (!tripDestinationsOnly) return parsed;
+    return parsed.where((suggestion) => suggestion.isGeographicArea).toList();
   }
 
   /// ==============================
@@ -477,8 +484,35 @@ class MapService {
 class PlaceSuggestion {
   final String placeId;
   final String description;
+  final List<String> types;
 
-  PlaceSuggestion({required this.placeId, required this.description});
+  PlaceSuggestion({
+    required this.placeId,
+    required this.description,
+    this.types = const [],
+  });
+
+  bool get isGeographicArea => types.any(_geographicTypes.contains);
+
+  static const _geographicTypes = {
+    'locality',
+    'country',
+    'political',
+    'colloquial_area',
+    'sublocality',
+    'sublocality_level_1',
+    'sublocality_level_2',
+    'sublocality_level_3',
+    'sublocality_level_4',
+    'sublocality_level_5',
+    'administrative_area_level_1',
+    'administrative_area_level_2',
+    'administrative_area_level_3',
+    'administrative_area_level_4',
+    'administrative_area_level_5',
+    'administrative_area_level_6',
+    'administrative_area_level_7',
+  };
 
   @override
   String toString() {

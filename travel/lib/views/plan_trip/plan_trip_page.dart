@@ -1672,21 +1672,31 @@ class _PlanTripPageState extends State<PlanTripPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Expanded(
-                          child: Column(
+                    LayoutBuilder(
+                      builder: (context, headerConstraints) {
+                        final stackHeader = headerConstraints.maxWidth < 760;
+                        final intro = Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              Text(
+                                'PERSONAL TRIP STUDIO',
+                                style: Theme.of(context).textTheme.labelLarge
+                                    ?.copyWith(
+                                      color: Theme.of(context).colorScheme.primary,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1.8,
+                                    ),
+                              ),
+                              const SizedBox(height: 10),
                               Text(
                                 'Build your next trip',
                                 style: Theme.of(context)
                                     .textTheme
                                     .headlineMedium
                                     ?.copyWith(
-                                      fontSize: 34,
-                                      fontWeight: FontWeight.w800,
+                                      fontSize: stackHeader ? 36 : 44,
+                                      height: 1.05,
+                                      fontWeight: FontWeight.w700,
                                     ),
                               ),
                               const SizedBox(height: 8),
@@ -1701,10 +1711,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
                                     ),
                               ),
                             ],
-                          ),
-                        ),
-                        if (desktop)
-                          FilledButton.icon(
+                        );
+                        final action = FilledButton.icon(
                             onPressed:
                                 isGenerating ||
                                     savedPreference == null ||
@@ -1733,8 +1741,18 @@ class _PlanTripPageState extends State<PlanTripPage> {
                                 vertical: 18,
                               ),
                             ),
-                          ),
-                      ],
+                          );
+
+                        if (stackHeader || !desktop) return intro;
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(child: intro),
+                            const SizedBox(width: 32),
+                            action,
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 24),
                     _PreferenceStatusCard(
@@ -2242,7 +2260,7 @@ class _LabeledField extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
         ),
         const SizedBox(height: 8),
         child,
@@ -2352,7 +2370,7 @@ class _HotelStayCard extends StatelessWidget {
             'Each day starts and ends here. Hotel prices are user-entered estimates, not live booking rates.',
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontSize: 12,
+              fontSize: 14,
             ),
           ),
         ],
@@ -2974,7 +2992,7 @@ class _DestinationMapState extends State<_DestinationMap> {
                                           '${day.dayNumber}.${stopIndex + 1}',
                                           style: const TextStyle(
                                             color: Colors.white,
-                                            fontSize: 12,
+                                            fontSize: 13,
                                             fontWeight: FontWeight.w900,
                                           ),
                                         ),
@@ -4198,7 +4216,7 @@ class _GeneratedDayPreview extends StatelessWidget {
                               child: Text(
                                 '${stopIndex + 1}',
                                 style: const TextStyle(
-                                  fontSize: 11,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w900,
                                 ),
                               ),
@@ -4392,7 +4410,7 @@ class _StopMetadataBadge extends StatelessWidget {
             style: TextStyle(
               color: colors.onSurface,
               fontWeight: FontWeight.w800,
-              fontSize: 12,
+              fontSize: 14,
             ),
           ),
         ],

@@ -138,7 +138,7 @@ class _DestinationAutocompleteFieldState
                   alignment: Alignment.centerRight,
                   child: Text(
                     'Powered by Google',
-                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ),
               ),

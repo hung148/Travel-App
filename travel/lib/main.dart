@@ -64,16 +64,6 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Travel App',
-        builder: (context, child) {
-          final mediaQuery = MediaQuery.of(context);
-          final currentScale = mediaQuery.textScaler.scale(1);
-          return MediaQuery(
-            data: mediaQuery.copyWith(
-              textScaler: TextScaler.linear(currentScale * 1.08),
-            ),
-            child: child!,
-          );
-        },
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         themeMode: ThemeMode.light,
