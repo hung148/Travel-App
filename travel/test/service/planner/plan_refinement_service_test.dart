@@ -311,6 +311,83 @@ void main() {
     expect(ratedResult.plan.days.single.places.single.place.id, 'high-rating');
   });
 
+  test('closer replacement uses live route duration when available', () async {
+    final anchor = _place('hotel-anchor', latitude: 1);
+    final old = _place('old-breakfast', category: 'restaurant', latitude: 2);
+    final scoreFavorite = _place(
+      'score-favorite',
+      category: 'restaurant',
+      score: 95,
+      latitude: 10,
+    );
+    final routeFavorite = _place(
+      'route-favorite',
+      category: 'restaurant',
+      score: 60,
+      latitude: 3,
+    );
+    final result = await service.replaceStopRouteAware(
+      _plan(
+        days: [
+          PlannerDay(dayNumber: 1, places: [anchor, old]),
+        ],
+        ranked: [anchor, old, scoreFavorite, routeFavorite],
+      ),
+      'old-breakfast',
+      routeDurationHours: (_, _, destinationLatitude, _) async =>
+          destinationLatitude == 3 ? 0.1 : 0.8,
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.plan.days.single.places.last.place.id, 'route-favorite');
+    expect(result.message, contains('Google driving time'));
+    expect(result.message, contains('6 min'));
+  });
+
+  test('closer replacement falls back when live routes fail', () async {
+    final anchor = _place('anchor', latitude: 1);
+    final old = _place('old', latitude: 2);
+    final fallback = _place('fallback', score: 90, latitude: 3);
+    final result = await service.replaceStopRouteAware(
+      _plan(
+        days: [
+          PlannerDay(dayNumber: 1, places: [anchor, old]),
+        ],
+        ranked: [anchor, old, fallback],
+      ),
+      'old',
+      routeDurationHours: (_, _, _, _) async => throw Exception('offline'),
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.plan.days.single.places.last.place.id, 'fallback');
+    expect(result.message, contains('distance score'));
+  });
+
+  test(
+    'closer replacement keeps the current stop when it is nearest',
+    () async {
+      final anchor = _place('anchor', latitude: 1);
+      final old = _place('old', latitude: 2);
+      final alternative = _place('alternative', latitude: 3);
+      final result = await service.replaceStopRouteAware(
+        _plan(
+          days: [
+            PlannerDay(dayNumber: 1, places: [anchor, old]),
+          ],
+          ranked: [anchor, old, alternative],
+        ),
+        'old',
+        routeDurationHours: (_, _, destinationLatitude, _) async =>
+            destinationLatitude == 2 ? 0.1 : 0.2,
+      );
+
+      expect(result.changed, isFalse);
+      expect(result.plan.days.single.places.last.place.id, 'old');
+      expect(result.message, contains('already the closest'));
+    },
+  );
+
   test('swaps scheduled stops across different days', () {
     final first = _place('first');
     final second = _place('second');
@@ -502,6 +579,8 @@ ScoredPlace _place(
   double score = 80,
   double rating = 4.5,
   double cost = 10,
+  double latitude = 0,
+  double longitude = 0,
 }) {
   return ScoredPlace(
     place: TravelPlace(
@@ -512,8 +591,8 @@ ScoredPlace _place(
       rating: rating,
       reviewCount: 1000,
       estimatedCost: cost,
-      latitude: 0,
-      longitude: 0,
+      latitude: latitude,
+      longitude: longitude,
       estimatedVisitMinutes: 90,
     ),
     totalScore: score,

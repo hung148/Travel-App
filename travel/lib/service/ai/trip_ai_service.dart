@@ -95,13 +95,16 @@ class TripAiService {
             .map(int.parse)
             .toList() ??
         const <int>[];
+    final closerReplacementRequested = RegExp(
+      r'\b(?:find|give|show|get)(?:\s+me)?\s+(?:a\s+)?(?:nearer|closer)\b',
+    ).hasMatch(text);
     final replacementRequested =
         text.contains('replace') ||
         text.contains('swap') ||
         text.contains('change') ||
-        text.contains('find a closer') ||
-        text.contains('find closer');
-    final replacementCriterion = text.contains('closer')
+        closerReplacementRequested;
+    final replacementCriterion =
+        text.contains('closer') || text.contains('nearer')
         ? 'closer'
         : text.contains('cheaper')
         ? 'cheaper'

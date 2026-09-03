@@ -55,11 +55,12 @@ class _PlanTripPageState extends State<PlanTripPage> {
   );
   final PlanRefinementService _refinementService =
       const PlanRefinementService();
+  late final MapService? _mapService = AppConfig.hasGoogleMapsApiKey
+      ? MapService(apiKey: AppConfig.googleMapsApiKey)
+      : null;
   late final DestinationPlaceService? _destinationPlaceService =
-      AppConfig.hasGoogleMapsApiKey
-      ? DestinationPlaceService(
-          mapService: MapService(apiKey: AppConfig.googleMapsApiKey),
-        )
+      _mapService != null
+      ? DestinationPlaceService(mapService: _mapService)
       : null;
 
   DateTimeRange? dates;
@@ -1248,12 +1249,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
           command.targetDayNumber!,
         ),
       TripAiCommandType.replaceStop when command.activityName != null =>
-        _refinementService.replaceStop(
-          current,
-          command.activityName!,
-          replacementPreference: command.replacementPreference,
-          replacementCriterion: command.replacementCriterion,
-        ),
+        await _replaceStop(current, command),
       TripAiCommandType.addFood => _refinementService.addFood(
         current,
         dayNumber: command.dayNumber,
@@ -1300,6 +1296,36 @@ class _PlanTripPageState extends State<PlanTripPage> {
       _aiUndoSnapshot = snapshot;
     }
     return refinement.message;
+  }
+
+  Future<PlanRefinementResult> _replaceStop(
+    PlannerResult current,
+    TripAiCommand command,
+  ) async {
+    if (command.replacementCriterion != 'closer' || _mapService == null) {
+      return _refinementService.replaceStop(
+        current,
+        command.activityName!,
+        replacementPreference: command.replacementPreference,
+        replacementCriterion: command.replacementCriterion,
+      );
+    }
+    return _refinementService.replaceStopRouteAware(
+      current,
+      command.activityName!,
+      replacementPreference: command.replacementPreference,
+      routeDurationHours:
+          (originLat, originLng, destinationLat, destinationLng) async {
+            final estimate = await _mapService.getDrivingRouteEstimate(
+              origin: Coordinates(latitude: originLat, longitude: originLng),
+              destination: Coordinates(
+                latitude: destinationLat,
+                longitude: destinationLng,
+              ),
+            );
+            return estimate.durationHours;
+          },
+    );
   }
 
   PlanRefinementResult _structuredScheduleRefinement(

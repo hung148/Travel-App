@@ -602,6 +602,8 @@ class PlanRefinementService {
     String activityName, {
     String? replacementPreference,
     String? replacementCriterion,
+    String? preferredReplacementId,
+    String? routeDescription,
   }) {
     final match = _findScheduledPlace(plan, activityName);
     if (match == null) return _placeNotFound(plan, activityName);
@@ -629,15 +631,19 @@ class PlanRefinementService {
             : 'No unused $replacementPreference replacement is available for ${match.place.place.name}.',
       );
     }
-    candidates.sort(
-      (a, b) => switch (replacementCriterion) {
+    candidates.sort((a, b) {
+      if (preferredReplacementId != null) {
+        if (a.place.id == preferredReplacementId) return -1;
+        if (b.place.id == preferredReplacementId) return 1;
+      }
+      return switch (replacementCriterion) {
         'closer' => b.distanceScore.compareTo(a.distanceScore),
         'cheaper' => a.place.estimatedCost.compareTo(b.place.estimatedCost),
         'higher_rated' => b.place.rating.compareTo(a.place.rating),
         'more_popular' => b.place.reviewCount.compareTo(a.place.reviewCount),
         _ => b.totalScore.compareTo(a.totalScore),
-      },
-    );
+      };
+    });
     final replacement = candidates.first;
     final days = _copyDays(plan.days);
     days[match.dayIndex].places[match.stopIndex] = replacement;
@@ -646,7 +652,132 @@ class PlanRefinementService {
       days: days,
       changed: true,
       message:
-          'Replaced ${match.place.place.name} with ${replacement.place.name} on day ${days[match.dayIndex].dayNumber} using ${_replacementReason(replacementCriterion, replacementPreference)}.',
+          'Replaced ${match.place.place.name} with ${replacement.place.name} on day ${days[match.dayIndex].dayNumber} using ${routeDescription ?? _replacementReason(replacementCriterion, replacementPreference)}.',
+    );
+  }
+
+  Future<PlanRefinementResult> replaceStopRouteAware(
+    PlannerResult plan,
+    String activityName, {
+    String? replacementPreference,
+    required Future<double?> Function(
+      double originLatitude,
+      double originLongitude,
+      double destinationLatitude,
+      double destinationLongitude,
+    )
+    routeDurationHours,
+  }) async {
+    final match = _findScheduledPlace(plan, activityName);
+    if (match == null) return _placeNotFound(plan, activityName);
+    final scheduledIds = plan.days
+        .expand((day) => day.places)
+        .map((item) => item.place.id)
+        .toSet();
+    final preference = replacementPreference?.toLowerCase().trim();
+    final candidates = plan.rankedPlaces.where((candidate) {
+      if (scheduledIds.contains(candidate.place.id)) return false;
+      if (candidate.place.isDining != match.place.place.isDining) return false;
+      if (preference == null || preference.isEmpty) return true;
+      return <String>[
+        candidate.place.name,
+        candidate.place.category,
+        ...candidate.place.tags,
+      ].any((value) => value.toLowerCase().contains(preference));
+    }).toList()..sort((a, b) => b.distanceScore.compareTo(a.distanceScore));
+    if (candidates.isEmpty) {
+      return replaceStop(
+        plan,
+        activityName,
+        replacementPreference: replacementPreference,
+        replacementCriterion: 'closer',
+      );
+    }
+
+    final day = plan.days[match.dayIndex];
+    final anchor = match.stopIndex > 0
+        ? day.places[match.stopIndex - 1].place
+        : null;
+    final hotel = plan.hotel;
+    final originLatitude = anchor?.latitude ?? hotel?.latitude;
+    final originLongitude = anchor?.longitude ?? hotel?.longitude;
+    if (originLatitude == null || originLongitude == null) {
+      return replaceStop(
+        plan,
+        activityName,
+        replacementPreference: replacementPreference,
+        replacementCriterion: 'closer',
+      );
+    }
+
+    double? currentHours;
+    try {
+      currentHours = await routeDurationHours(
+        originLatitude,
+        originLongitude,
+        match.place.place.latitude,
+        match.place.place.longitude,
+      );
+    } on Exception {
+      // Without a live baseline, use the deterministic fallback instead of
+      // claiming that an alternative is closer.
+    }
+    if (currentHours == null || currentHours < 0) {
+      return replaceStop(
+        plan,
+        activityName,
+        replacementPreference: replacementPreference,
+        replacementCriterion: 'closer',
+      );
+    }
+
+    ScoredPlace? best;
+    double? bestHours;
+    for (final candidate in candidates.take(6)) {
+      try {
+        final hours = await routeDurationHours(
+          originLatitude,
+          originLongitude,
+          candidate.place.latitude,
+          candidate.place.longitude,
+        );
+        if (hours != null &&
+            hours >= 0 &&
+            (bestHours == null || hours < bestHours)) {
+          best = candidate;
+          bestHours = hours;
+        }
+      } on Exception {
+        // One unavailable route must not prevent the remaining candidates or
+        // the deterministic distance-score fallback from being considered.
+      }
+    }
+    if (best == null || bestHours == null) {
+      return replaceStop(
+        plan,
+        activityName,
+        replacementPreference: replacementPreference,
+        replacementCriterion: 'closer',
+      );
+    }
+    final originLabel = anchor == null ? 'the hotel' : anchor.name;
+    if (bestHours >= currentHours) {
+      return PlanRefinementResult(
+        plan: plan,
+        changed: false,
+        message:
+            '${match.place.place.name} is already the closest available matching stop by Google driving time from $originLabel.',
+      );
+    }
+    final minutes = (bestHours * 60).round();
+    return replaceStop(
+      plan,
+      activityName,
+      replacementPreference: replacementPreference,
+      replacementCriterion: 'closer',
+      preferredReplacementId: best.place.id,
+      routeDescription:
+          'the shortest Google driving time from $originLabel ($minutes min)',
     );
   }
 

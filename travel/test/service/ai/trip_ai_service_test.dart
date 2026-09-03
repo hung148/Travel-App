@@ -225,6 +225,20 @@ void main() {
     expect(style.command.style, 'Explorer');
   });
 
+  test('local fallback accepts natural closer-breakfast wording', () async {
+    final service = TripAiService(endpoint: '');
+
+    final proposal = await service.propose(
+      instruction: 'find me closer breakfast place for day 1',
+      context: {'destinationId': 'danang', 'days': <Object>[]},
+    );
+
+    expect(proposal.command.type, TripAiCommandType.replaceStop);
+    expect(proposal.command.mealType, 'breakfast');
+    expect(proposal.command.dayNumber, 1);
+    expect(proposal.command.replacementCriterion, 'closer');
+  });
+
   test(
     'local fallback handles swap, scheduled replacement, and positioning',
     () async {
