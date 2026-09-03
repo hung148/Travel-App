@@ -165,7 +165,7 @@ class _AiChatWidgetState extends State<AiChatWidget> {
                           ? 'Live AI • preview and validation enabled'
                           : 'Safe local commands • AI gateway not connected',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 14,
                         color: widget.liveAiEnabled
                             ? colors.primary
                             : colors.onSurfaceVariant,

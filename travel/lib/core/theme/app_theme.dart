@@ -36,7 +36,7 @@ class AppTheme {
     final isDark = brightness == Brightness.dark;
     final borderColor = isDark
         ? const Color(0xFF6C5A50)
-        : const Color(0xFFB99D8B);
+        : const Color(0xFF8B6B59);
     final scheme = ColorScheme.fromSeed(
       seedColor: primary,
       brightness: brightness,
@@ -45,7 +45,9 @@ class AppTheme {
       surface: surface,
     ).copyWith(
       outline: borderColor,
-      outlineVariant: borderColor.withValues(alpha: 0.72),
+      outlineVariant: isDark
+          ? borderColor.withValues(alpha: 0.72)
+          : const Color(0xFFBAA397),
     );
 
     return ThemeData(
@@ -55,6 +57,10 @@ class AppTheme {
       scaffoldBackgroundColor: background,
       canvasColor: background,
       dividerColor: borderColor,
+      focusColor: primary.withValues(alpha: 0.16),
+      hoverColor: primary.withValues(alpha: 0.06),
+      materialTapTargetSize: MaterialTapTargetSize.padded,
+      visualDensity: VisualDensity.standard,
       appBarTheme: AppBarTheme(
         backgroundColor: background,
         foregroundColor: onSurface,
@@ -91,8 +97,13 @@ class AppTheme {
         filled: true,
         fillColor: isDark ? const Color(0xFF302D2B) : const Color(0xFFF7F2EE),
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 17,
+          horizontal: 18,
+          vertical: 19,
+        ),
+        floatingLabelBehavior: FloatingLabelBehavior.always,
+        floatingLabelStyle: const TextStyle(
+          color: primary,
+          fontWeight: FontWeight.w800,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
@@ -107,7 +118,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: primary, width: 1.5),
+          borderSide: const BorderSide(color: primary, width: 2.2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
@@ -119,7 +130,8 @@ class AppTheme {
           backgroundColor: const Color(0xFF241C18),
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 17),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          minimumSize: const Size(48, 48),
+          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
           shape: const StadiumBorder(),
           elevation: 0,
         ),
@@ -132,13 +144,27 @@ class AppTheme {
             width: 1.2,
           ),
           backgroundColor: surface,
+          minimumSize: const Size(48, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 15),
           shape: const StadiumBorder(),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: onSurface,
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          minimumSize: const Size(48, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          foregroundColor: onSurface,
+          backgroundColor: isDark
+              ? const Color(0xFF302D2B)
+              : const Color(0xFFF4EDE8),
+          shape: const CircleBorder(),
         ),
       ),
       chipTheme: ChipThemeData(
@@ -146,6 +172,12 @@ class AppTheme {
         selectedColor: primary,
         checkmarkColor: Colors.white,
         side: BorderSide.none,
+        labelStyle: TextStyle(
+          color: onSurface,
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         shape: const StadiumBorder(),
       ),
       snackBarTheme: SnackBarThemeData(
@@ -155,6 +187,38 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(color: onSurface),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: onSurface,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        textStyle: TextStyle(color: surface, fontSize: 14),
+        waitDuration: const Duration(milliseconds: 450),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: surface,
+        surfaceTintColor: Colors.transparent,
+        showDragHandle: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+      ),
+      listTileTheme: ListTileThemeData(
+        minTileHeight: 56,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        iconColor: primary,
+      ),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: _CalmPageTransitionsBuilder(),
+          TargetPlatform.iOS: _CalmPageTransitionsBuilder(),
+          TargetPlatform.macOS: _CalmPageTransitionsBuilder(),
+          TargetPlatform.windows: _CalmPageTransitionsBuilder(),
+          TargetPlatform.linux: _CalmPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: _CalmPageTransitionsBuilder(),
+        },
+      ),
       textTheme: TextTheme(
         displayLarge: TextStyle(
           fontFamily: 'Georgia',
@@ -223,6 +287,32 @@ class AppTheme {
           color: onSurface,
         ),
       ),
+    );
+  }
+}
+
+class _CalmPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _CalmPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (route.settings.name == Navigator.defaultRouteName ||
+        MediaQuery.maybeOf(context)?.disableAnimations == true) {
+      return child;
+    }
+    return FadeTransition(
+      opacity: CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      ),
+      child: child,
     );
   }
 }

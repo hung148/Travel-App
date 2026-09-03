@@ -259,7 +259,7 @@ class _Metrics extends StatelessWidget {
                             Text(
                               item.$1,
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 14,
                                 color: Theme.of(
                                   context,
                                 ).colorScheme.onSurfaceVariant,
