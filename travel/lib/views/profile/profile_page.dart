@@ -114,6 +114,7 @@ class _ProfilePageState extends State<ProfilePage> {
                             trips: trips,
                             onTripTap: _openSavedTrip,
                             onTripDelete: _deleteTrip,
+                            onTripDuplicate: _duplicateTrip,
                           ),
                           const SizedBox(height: 32),
                         ],
@@ -183,6 +184,22 @@ class _ProfilePageState extends State<ProfilePage> {
               : 'Could not delete trip: ${viewModel.errorMessage}',
         ),
       ),
+    );
+  }
+
+  Future<void> _duplicateTrip(Trip trip) async {
+    final copy = trip.copyWith(
+      id: 'trip-${DateTime.now().millisecondsSinceEpoch}',
+      title: '${trip.title ?? trip.destination} (Copy)',
+      status: 'draft',
+      createdAt: null,
+      updatedAt: null,
+    );
+    final viewModel = context.read<TripViewModel>();
+    await viewModel.createTrip(copy);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Duplicated ${trip.title ?? trip.destination}.')),
     );
   }
 }
@@ -360,7 +377,7 @@ class _UpcomingCard extends StatelessWidget {
       title: 'Upcoming trip',
       subtitle: upcoming == null
           ? 'Nothing planned yet.'
-          : '${upcoming.destination} • ${upcoming.days} days',
+          : '${upcoming.title ?? upcoming.destination} • ${upcoming.days} days',
       trailing: upcoming == null
           ? null
           : TextButton(

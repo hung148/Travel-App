@@ -144,7 +144,7 @@ class TripViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> saveDraftSegmentsToCurrentTrip() async {
+  Future<void> saveDraftSegmentsToCurrentTrip({String? title}) async {
     final trip = _currentTrip;
 
     if (trip == null) {
@@ -154,6 +154,7 @@ class TripViewModel extends ChangeNotifier {
     }
 
     final updatedTrip = trip.copyWith(
+      title: title,
       segments: List<TripSegment>.unmodifiable(_draftSegments),
     );
 

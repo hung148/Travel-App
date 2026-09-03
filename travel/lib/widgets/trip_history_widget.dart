@@ -5,12 +5,14 @@ class TripHistoryWidget extends StatelessWidget {
   final List<Trip> trips;
   final Function(Trip) onTripTap;
   final Future<void> Function(Trip)? onTripDelete;
+  final Future<void> Function(Trip)? onTripDuplicate;
 
   const TripHistoryWidget({
     super.key,
     required this.trips,
     required this.onTripTap,
     this.onTripDelete,
+    this.onTripDuplicate,
   });
 
   @override
@@ -42,7 +44,9 @@ class TripHistoryWidget extends StatelessWidget {
         return Card(
           margin: const EdgeInsets.symmetric(vertical: 4),
           child: ListTile(
-            title: Text(trip.destination),
+            title: Text(trip.title?.trim().isNotEmpty == true
+                ? trip.title!
+                : trip.destination),
             subtitle: Text(
               '$dateLabel • ${trip.days} days • \$${trip.budget.toStringAsFixed(0)}',
             ),
@@ -55,6 +59,12 @@ class TripHistoryWidget extends StatelessWidget {
                     tooltip: 'Delete trip',
                     icon: const Icon(Icons.delete_outline_rounded),
                     onPressed: () => onTripDelete!(trip),
+                  ),
+                if (onTripDuplicate != null)
+                  IconButton(
+                    tooltip: 'Duplicate trip',
+                    icon: const Icon(Icons.content_copy_outlined),
+                    onPressed: () => onTripDuplicate!(trip),
                   ),
               ],
             ),

@@ -50,6 +50,7 @@ class PlanTripPage extends StatefulWidget {
 
 class _PlanTripPageState extends State<PlanTripPage> {
   final destinationController = TextEditingController();
+  final tripTitleController = TextEditingController();
   final budgetController = TextEditingController(text: '2000');
 
   final TravelPlannerService _planner = TravelPlannerService(
@@ -115,6 +116,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       _selectedDestinationId =
           viewModel.selectedSegmentId ?? _destinations.first.id;
       _loadDestination(_selectedDestination);
+      tripTitleController.text = viewModel.currentTrip?.title ?? '';
     });
     await _reorderDestinationsAndTravelLegs();
   }
@@ -592,6 +594,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
   @override
   void dispose() {
     destinationController.dispose();
+    tripTitleController.dispose();
     budgetController.dispose();
     super.dispose();
   }
@@ -1571,6 +1574,28 @@ class _PlanTripPageState extends State<PlanTripPage> {
       );
       return;
     }
+    if (viewModel.currentTrip != null) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Update saved trip?'),
+          content: Text(
+            'Save these changes to ${viewModel.currentTrip!.title ?? viewModel.currentTrip!.destination}?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Update trip'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
     if (viewModel.currentTrip == null) {
       final first = segments.first;
       final last = segments.last;
@@ -1578,6 +1603,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
         Trip(
           id: 'trip-${DateTime.now().millisecondsSinceEpoch}',
           ownerId: ownerId,
+          title: tripTitleController.text.trim().isEmpty
+              ? null
+              : tripTitleController.text.trim(),
           destination: segments.map((item) => item.destination).join(' → '),
           budget: segments.fold(
             0,
@@ -1591,7 +1619,11 @@ class _PlanTripPageState extends State<PlanTripPage> {
         ),
       );
     } else {
-      await viewModel.saveDraftSegmentsToCurrentTrip();
+      await viewModel.saveDraftSegmentsToCurrentTrip(
+        title: tripTitleController.text.trim().isEmpty
+            ? null
+            : tripTitleController.text.trim(),
+      );
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1740,6 +1772,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                         embedded: true,
                       ),
                       budgetController: budgetController,
+                      titleController: tripTitleController,
                       dateLabel: _dateLabel(),
                       travelers: travelers,
                       onPickDates: _pickDates,
@@ -2053,6 +2086,7 @@ class _TripSetupCard extends StatelessWidget {
   final bool hasDestination;
   final Widget destinationSelector;
   final TextEditingController budgetController;
+  final TextEditingController titleController;
   final String dateLabel;
   final int travelers;
   final VoidCallback onPickDates;
@@ -2062,6 +2096,7 @@ class _TripSetupCard extends StatelessWidget {
     required this.hasDestination,
     required this.destinationSelector,
     required this.budgetController,
+    required this.titleController,
     required this.dateLabel,
     required this.travelers,
     required this.onPickDates,
@@ -2077,6 +2112,17 @@ class _TripSetupCard extends StatelessWidget {
           final destinationField = _LabeledField(
             label: 'Destinations',
             child: destinationSelector,
+          );
+          final titleField = _LabeledField(
+            label: 'Trip name (optional)',
+            child: TextField(
+              controller: titleController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                hintText: 'e.g. Da Nang weekend',
+                prefixIcon: Icon(Icons.bookmark_outline_rounded),
+              ),
+            ),
           );
           final detailFields = [
             _LabeledField(
@@ -2140,7 +2186,11 @@ class _TripSetupCard extends StatelessWidget {
             ),
           ];
 
-          if (!hasDestination) return destinationField;
+          if (!hasDestination) {
+            return Column(
+              children: [titleField, const SizedBox(height: 14), destinationField],
+            );
+          }
 
           if (!wide) {
             return Column(
@@ -2158,6 +2208,8 @@ class _TripSetupCard extends StatelessWidget {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              titleField,
+              const SizedBox(height: 14),
               destinationField,
               const SizedBox(height: 20),
               Row(

@@ -5,6 +5,7 @@ import 'trip_segment.dart';
 class Trip {
   final String id;
   final String ownerId;
+  final String? title;
 
   // Old single-destination fields are kept for compatibility.
   final String destination;
@@ -23,6 +24,7 @@ class Trip {
   Trip({
     required this.id,
     required this.ownerId,
+    this.title,
     required this.destination,
     required this.budget,
     required this.days,
@@ -62,6 +64,7 @@ class Trip {
   Trip copyWith({
     String? id,
     String? ownerId,
+    String? title,
     String? destination,
     double? budget,
     int? days,
@@ -76,6 +79,7 @@ class Trip {
     return Trip(
       id: id ?? this.id,
       ownerId: ownerId ?? this.ownerId,
+      title: title ?? this.title,
       destination: destination ?? this.destination,
       budget: budget ?? this.budget,
       days: days ?? this.days,
@@ -95,6 +99,7 @@ class Trip {
     return Trip(
       id: id,
       ownerId: data['ownerId'] as String? ?? '',
+      title: data['title'] as String?,
       destination: data['destination'] as String? ?? '',
       budget: (data['budget'] as num?)?.toDouble() ?? 0,
       days: (data['days'] as num?)?.toInt() ?? 0,
@@ -125,6 +130,7 @@ class Trip {
     return {
       'id': id,
       'ownerId': ownerId,
+      'title': title,
       'destination': destination,
       'budget': budget,
       'days': days,
