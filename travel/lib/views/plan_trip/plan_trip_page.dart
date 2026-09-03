@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/app_config.dart';
 import '../../models/planner_result.dart';
+import '../../models/plan_refinement_result.dart';
+import '../../models/ai/trip_ai_command.dart';
 import '../../models/hotel_stay.dart';
 import '../../models/hotel_selections.dart';
 import '../../models/preference/preferences.dart';
@@ -14,6 +17,8 @@ import '../../models/travel_place.dart';
 import '../../models/trip/trip.dart';
 import '../../models/trip/trip_segment.dart';
 import '../../service/map_service.dart';
+import '../../service/ai/trip_ai_service.dart';
+import '../../service/ai/stop_name_matcher.dart';
 import '../../service/planner/destination_place_service.dart';
 import '../../service/planner/mock_places.dart';
 import '../../service/planner/daily_time_schedule_service.dart';
@@ -75,6 +80,12 @@ class _PlanTripPageState extends State<PlanTripPage> {
   String _selectedDestinationId = '';
   final List<TravelLegDraft> _travelLegs = [];
   final TravelTimeEstimator _travelTimeEstimator = const TravelTimeEstimator();
+  late final TripAiService _tripAiService = TripAiService(
+    endpoint: AppConfig.aiAssistantUrl,
+  );
+  _AiUndoSnapshot? _aiUndoSnapshot;
+  _PendingAiChoice? _pendingAiChoice;
+  final StopNameMatcher _stopNameMatcher = const StopNameMatcher();
 
   @override
   void initState() {
@@ -129,6 +140,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       scheduleSaved: segment.scheduleSaved,
       savedDays: segment.days,
       placeDataSource: 'Saved trip',
+      startTimeOverrides: segment.startTimeOverrides,
     );
   }
 
@@ -162,6 +174,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
                     ?.days ??
                 const [],
       scheduleSaved: draft.scheduleSaved,
+      startTimeOverrides:
+          draft.plannerResult?.startTimeOverrides ?? draft.startTimeOverrides,
     );
     final exists = _tripViewModel.draftSegments.any(
       (item) => item.id == draft.id,
@@ -186,6 +200,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     selected.dates = dates;
     selected.selectedPlan = selectedPlan;
     selected.plannerResult = plannerResult;
+    selected.startTimeOverrides = plannerResult?.startTimeOverrides ?? const {};
     selected.hotelRecommendations = hotelRecommendations;
     selected.selectedHotel = selectedHotel;
     selected.placeDataSource = placeDataSource;
@@ -797,6 +812,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       rankedPlaces: result.rankedPlaces,
       days: result.days,
       hotel: hotel,
+      startTimeOverrides: result.startTimeOverrides,
     );
   }
 
@@ -880,6 +896,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
         rankedPlaces: current.rankedPlaces,
         days: editedDays,
         hotel: current.hotel,
+        startTimeOverrides: current.startTimeOverrides,
       );
       planGenerated = true;
       _persistSelectedDestination();
@@ -894,20 +911,264 @@ class _PlanTripPageState extends State<PlanTripPage> {
     }
   }
 
-  Future<String> _refinePlan(String instruction) async {
+  Future<TripAiProposal> _proposeAiChange(String instruction) async {
+    if (_destinations.isEmpty || plannerResult == null) {
+      return const TripAiProposal(
+        command: TripAiCommand(
+          type: TripAiCommandType.unsupported,
+          explanation:
+              'Generate a destination schedule before asking AI to change it.',
+        ),
+        summary:
+            'Generate a destination schedule before asking AI to change it.',
+      );
+    }
+    final pending = _pendingAiChoice;
+    final numericReply = int.tryParse(instruction.trim());
+    if (pending != null && numericReply != null) {
+      final resolved = _resolvePendingAiChoice(pending, numericReply);
+      if (resolved != null) return resolved;
+    }
+    _pendingAiChoice = null;
+    final selected = _selectedDestination;
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    final proposal = await _tripAiService.propose(
+      instruction: instruction,
+      idToken: token,
+      context: {
+        'destinationId': selected.id,
+        'destination': selected.destination,
+        'budget': selected.budget,
+        'startDate': selected.dates?.start.toIso8601String(),
+        'endDate': selected.dates?.end.toIso8601String(),
+        'plannerStyle': selectedPlan,
+        'hotel': selectedHotel?.name,
+        'days': plannerResult!.days
+            .map(
+              (day) => {
+                'dayNumber': day.dayNumber,
+                'places': day.places.map((item) => item.place.name).toList(),
+                'stops': const DailyTimeScheduleService()
+                    .schedule(
+                      day.places,
+                      startTimeOverrides: plannerResult!.startTimeOverrides,
+                    )
+                    .asMap()
+                    .entries
+                    .map(
+                      (entry) => {
+                        'number': entry.key + 1,
+                        'name': entry.value.scoredPlace.place.name,
+                        'role': entry.value.roleLabel,
+                        'startMinutes': entry.value.startMinutes,
+                        'category': entry.value.scoredPlace.place.category,
+                      },
+                    )
+                    .toList(),
+              },
+            )
+            .toList(),
+      },
+    );
+    if (proposal.command.type == TripAiCommandType.setDayStartTime &&
+        proposal.command.dayNumber == null) {
+      _pendingAiChoice = _PendingAiChoice(
+        command: proposal.command,
+        awaitingScheduleDay: true,
+      );
+      return _questionProposal(
+        'Which day should start at the requested time? Reply with the day number.',
+      );
+    }
+    return _resolveStopProposal(proposal);
+  }
+
+  TripAiProposal _resolveStopProposal(TripAiProposal proposal) {
+    final command = proposal.command;
+    if (!const {
+      TripAiCommandType.removeStop,
+      TripAiCommandType.moveStop,
+      TripAiCommandType.replaceStop,
+    }.contains(command.type)) {
+      return proposal;
+    }
+    if (command.type == TripAiCommandType.removeStop &&
+        command.activityNumbers.isNotEmpty &&
+        command.dayNumber != null) {
+      return proposal;
+    }
+    if (command.type == TripAiCommandType.replaceStop &&
+        command.activityNumbers.length == 1 &&
+        command.dayNumber != null) {
+      final day = plannerResult!.days
+          .where((item) => item.dayNumber == command.dayNumber)
+          .firstOrNull;
+      final number = command.activityNumbers.single;
+      if (day == null || number < 1 || number > day.places.length) {
+        return _questionProposal(
+          'Activity $number does not exist on day ${command.dayNumber}. Use a number shown on that day.',
+        );
+      }
+      final name = day.places[number - 1].place.name;
+      return TripAiProposal(
+        command: command.copyWith(activityName: name),
+        summary: _resolvedCommandSummary(command, name),
+      );
+    }
+    final requestedRole = (command.mealType ?? command.activityName ?? '')
+        .toLowerCase()
+        .trim();
+    if (const {'breakfast', 'lunch', 'dinner'}.contains(requestedRole)) {
+      if (command.dayNumber == null) {
+        _pendingAiChoice = _PendingAiChoice(
+          command: command,
+          awaitingDay: true,
+        );
+        return _questionProposal(
+          'Which day should I ${command.type == TripAiCommandType.replaceStop ? 'replace' : 'remove'} $requestedRole on? Reply with the day number.',
+        );
+      }
+      return _resolveMealRole(command, command.dayNumber!, requestedRole);
+    }
+    final requestedName = command.activityName?.trim();
+    if (requestedName == null || requestedName.isEmpty) return proposal;
+    final candidates = _stopNameMatcher.rank(
+      requestedName,
+      plannerResult!.days
+          .expand((day) => day.places)
+          .map((item) => item.place.name),
+    );
+    if (candidates.isEmpty) return proposal;
+    final best = candidates.first;
+    final margin = candidates.length == 1
+        ? 1.0
+        : best.score - candidates[1].score;
+    if (best.score >= 0.88 || (best.score >= 0.72 && margin >= 0.1)) {
+      return TripAiProposal(
+        command: command.copyWith(activityName: best.name),
+        summary: _resolvedCommandSummary(command, best.name),
+      );
+    }
+    final minimumChoiceScore = (best.score - 0.25).clamp(0.35, 1.0);
+    final choices = candidates
+        .where((item) => item.score >= minimumChoiceScore)
+        .take(5)
+        .map((item) => item.name)
+        .toList();
+    _pendingAiChoice = _PendingAiChoice(command: command, choices: choices);
+    return _questionProposal(
+      'I could not confidently match “$requestedName”. Which stop did you mean?\n${_numberedChoices(choices)}\nReply with its number.',
+    );
+  }
+
+  TripAiProposal? _resolvePendingAiChoice(_PendingAiChoice pending, int reply) {
+    if (pending.awaitingDay) {
+      final role =
+          (pending.command.mealType ?? pending.command.activityName ?? '')
+              .toLowerCase();
+      if (!plannerResult!.days.any((day) => day.dayNumber == reply)) {
+        return _questionProposal(
+          'Day $reply does not exist. Reply with a day number from this itinerary.',
+        );
+      }
+      _pendingAiChoice = null;
+      return _resolveMealRole(pending.command, reply, role);
+    }
+    if (pending.awaitingScheduleDay) {
+      if (!plannerResult!.days.any((day) => day.dayNumber == reply)) {
+        return _questionProposal(
+          'Day $reply does not exist. Reply with a day number from this itinerary.',
+        );
+      }
+      _pendingAiChoice = null;
+      final command = pending.command.copyWith(dayNumber: reply);
+      return TripAiProposal(
+        command: command,
+        summary:
+            'Start day $reply at the requested time and reschedule all later stops.',
+      );
+    }
+    if (reply < 1 || reply > pending.choices.length) {
+      return _questionProposal(
+        'Choose one of these stops:\n${_numberedChoices(pending.choices)}',
+      );
+    }
+    _pendingAiChoice = null;
+    final name = pending.choices[reply - 1];
+    return TripAiProposal(
+      command: pending.command.copyWith(activityName: name),
+      summary: _resolvedCommandSummary(pending.command, name),
+    );
+  }
+
+  TripAiProposal _resolveMealRole(
+    TripAiCommand command,
+    int dayNumber,
+    String role,
+  ) {
+    final day = plannerResult!.days.firstWhere(
+      (item) => item.dayNumber == dayNumber,
+    );
+    final scheduled = const DailyTimeScheduleService().schedule(
+      day.places,
+      startTimeOverrides: plannerResult!.startTimeOverrides,
+    );
+    final match = scheduled
+        .where((stop) => stop.roleLabel.toLowerCase() == role)
+        .firstOrNull;
+    if (match == null) {
+      _pendingAiChoice = null;
+      return _questionProposal('Day $dayNumber does not contain $role.');
+    }
+    final name = match.scoredPlace.place.name;
+    _pendingAiChoice = null;
+    return TripAiProposal(
+      command: command.copyWith(activityName: name, dayNumber: dayNumber),
+      summary: _resolvedCommandSummary(command, name),
+    );
+  }
+
+  TripAiProposal _questionProposal(String message) => TripAiProposal(
+    command: TripAiCommand(
+      type: TripAiCommandType.unsupported,
+      destinationId: _selectedDestinationId,
+      explanation: message,
+    ),
+    summary: message,
+  );
+
+  String _resolvedCommandSummary(
+    TripAiCommand command,
+    String name,
+  ) => switch (command.type) {
+    TripAiCommandType.removeStop => 'Remove $name from the itinerary.',
+    TripAiCommandType.moveStop =>
+      'Move $name to day ${command.targetDayNumber}.',
+    TripAiCommandType.replaceStop =>
+      'Replace $name with the best available ${command.replacementPreference ?? 'alternative'}.',
+    _ => command.explanation,
+  };
+
+  String _numberedChoices(List<String> choices) => List.generate(
+    choices.length,
+    (index) => '${index + 1}. ${choices[index]}',
+  ).join('\n');
+
+  Future<String> _applyAiCommand(TripAiCommand command) async {
     final current = plannerResult;
     if (current == null) {
       return 'Generate a plan first, then ask me to refine it.';
     }
-    final lower = instruction.toLowerCase();
-    final budgetMatch = RegExp(
-      r'(?:under|budget(?:\s+of)?)\s*\$?\s*([0-9]+(?:\.[0-9]+)?)',
-    ).firstMatch(lower);
-    if (budgetMatch != null || lower.contains('cheaper')) {
+    if (command.destinationId != null &&
+        command.destinationId != _selectedDestinationId) {
+      return 'That proposal belongs to another destination. Nothing was changed.';
+    }
+    final snapshot = _captureAiUndoSnapshot();
+    if (command.type == TripAiCommandType.changeBudget) {
       final currentBudget = double.tryParse(budgetController.text.trim());
-      final requestedBudget = budgetMatch == null
-          ? (currentBudget == null ? null : currentBudget * 0.85)
-          : double.tryParse(budgetMatch.group(1)!);
+      final requestedBudget =
+          command.budget ??
+          (currentBudget == null ? null : currentBudget * 0.85);
       if (requestedBudget == null || requestedBudget <= 0) {
         return 'I could not determine a valid total budget from that request.';
       }
@@ -915,20 +1176,284 @@ class _PlanTripPageState extends State<PlanTripPage> {
       await _generatePlan();
       final regenerated = plannerResult;
       if (regenerated == null || !regenerated.validation.isValid) {
+        _restoreAiSnapshot(snapshot);
         return 'I could not create a valid plan at that budget.';
       }
+      if (regenerated.totalEstimatedTripCost > requestedBudget + 0.01) {
+        final attemptedTotal = regenerated.totalEstimatedTripCost;
+        _restoreAiSnapshot(snapshot);
+        return 'I could not create a complete plan under '
+            '\$${requestedBudget.toStringAsFixed(0)}. The lowest generated total was '
+            '\$${attemptedTotal.toStringAsFixed(0)}, so nothing was changed.';
+      }
+      _aiUndoSnapshot = snapshot;
       return 'Regenerated the itinerary with a total budget of '
           '\$${requestedBudget.toStringAsFixed(0)}. Validation passed.';
     }
-    final refinement = _refinementService.refine(
-      currentPlan: current,
-      instruction: instruction,
-    );
+    if (command.type == TripAiCommandType.changeStyle) {
+      final style = command.style;
+      if (!const ['Relaxed', 'Balanced', 'Explorer'].contains(style)) {
+        return 'That planning style is not supported.';
+      }
+      if (selectedPlan == style) {
+        return '$style is already selected. Nothing was changed.';
+      }
+      setState(() => selectedPlan = style!);
+      await _generatePlan();
+      if (plannerResult == null || identical(plannerResult, snapshot.result)) {
+        _restoreAiSnapshot(snapshot);
+        return 'I could not regenerate this destination using that style.';
+      }
+      _aiUndoSnapshot = snapshot;
+      return 'Regenerated this destination using the $style style.';
+    }
+    final instruction = switch (command.type) {
+      TripAiCommandType.relaxDay =>
+        command.dayNumber == null
+            ? 'relax schedule'
+            : 'make day ${command.dayNumber} more relaxing',
+      TripAiCommandType.addFood => 'add more food',
+      TripAiCommandType.removeMuseums => 'remove museums',
+      TripAiCommandType.reduceWalking => 'less walking',
+      TripAiCommandType.removeStop ||
+      TripAiCommandType.moveStop ||
+      TripAiCommandType.replaceStop ||
+      TripAiCommandType.swapStops ||
+      TripAiCommandType.replaceWithScheduledStop ||
+      TripAiCommandType.moveStopRelative ||
+      TripAiCommandType.moveStopTime => '',
+      TripAiCommandType.addStops ||
+      TripAiCommandType.removeStops ||
+      TripAiCommandType.setDayStartTime => '',
+      TripAiCommandType.explain || TripAiCommandType.unsupported => '',
+      _ => '',
+    };
+    final refinement = switch (command.type) {
+      TripAiCommandType.removeStop when command.activityName != null =>
+        _refinementService.removeStop(current, command.activityName!),
+      TripAiCommandType.removeStop
+          when command.dayNumber != null &&
+              command.activityNumbers.isNotEmpty =>
+        _refinementService.removeNumberedStops(
+          current,
+          command.dayNumber!,
+          command.activityNumbers,
+        ),
+      TripAiCommandType.moveStop
+          when command.activityName != null &&
+              command.targetDayNumber != null =>
+        _refinementService.moveStop(
+          current,
+          command.activityName!,
+          command.targetDayNumber!,
+        ),
+      TripAiCommandType.replaceStop when command.activityName != null =>
+        _refinementService.replaceStop(
+          current,
+          command.activityName!,
+          replacementPreference: command.replacementPreference,
+          replacementCriterion: command.replacementCriterion,
+        ),
+      TripAiCommandType.addFood => _refinementService.addFood(
+        current,
+        dayNumber: command.dayNumber,
+        mealType: command.mealType,
+      ),
+      TripAiCommandType.swapStops ||
+      TripAiCommandType.replaceWithScheduledStop ||
+      TripAiCommandType.moveStopRelative ||
+      TripAiCommandType.moveStopTime => _structuredScheduleRefinement(
+        current,
+        command,
+      ),
+      TripAiCommandType.addStops => _refinementService.addStops(
+        current,
+        dayNumber: command.dayNumber,
+        requestedCount: command.stopCount,
+        category: command.stopCategory,
+      ),
+      TripAiCommandType.removeStops when command.stopCount != null =>
+        _refinementService.removeStops(
+          current,
+          dayNumber: command.dayNumber,
+          count: command.stopCount!,
+          category: command.stopCategory,
+        ),
+      TripAiCommandType.setDayStartTime
+          when command.dayNumber != null && command.startMinutes != null =>
+        _refinementService.setDayStartTime(
+          current,
+          command.dayNumber!,
+          command.startMinutes!,
+        ),
+      _ when instruction.isNotEmpty => _refinementService.refine(
+        currentPlan: current,
+        instruction: instruction,
+      ),
+      _ => null,
+    };
+    if (refinement == null) return command.explanation;
     if (refinement.changed && refinement.plan.validation.isValid && mounted) {
       setState(() => plannerResult = refinement.plan);
+      _selectedDestination.scheduleSaved = false;
+      _persistSelectedDestination();
+      _aiUndoSnapshot = snapshot;
     }
     return refinement.message;
   }
+
+  PlanRefinementResult _structuredScheduleRefinement(
+    PlannerResult current,
+    TripAiCommand command,
+  ) {
+    final sourceName = _resolveStopReference(current, command.sourceStop);
+    if (sourceName == null) {
+      return PlanRefinementResult(
+        plan: current,
+        changed: false,
+        message:
+            'I could not uniquely resolve the source stop. Use its day and displayed name or number.',
+      );
+    }
+    if (command.type == TripAiCommandType.moveStopTime) {
+      final day = command.targetDayNumber;
+      final time = command.startMinutes;
+      if (day == null || time == null) {
+        return PlanRefinementResult(
+          plan: current,
+          changed: false,
+          message: 'Tell me both the destination day and time.',
+        );
+      }
+      return _refinementService.moveStopToTime(current, sourceName, day, time);
+    }
+    final targetName = _resolveStopReference(current, command.targetStop);
+    if (targetName == null) {
+      return PlanRefinementResult(
+        plan: current,
+        changed: false,
+        message:
+            'I could not uniquely resolve the target stop. Use its day and displayed name or number.',
+      );
+    }
+    return switch (command.type) {
+      TripAiCommandType.swapStops => _refinementService.swapStops(
+        current,
+        sourceName,
+        targetName,
+      ),
+      TripAiCommandType.replaceWithScheduledStop =>
+        _refinementService.replaceWithScheduledStop(
+          current,
+          sourceName,
+          targetName,
+        ),
+      TripAiCommandType.moveStopRelative => _refinementService.moveStopRelative(
+        current,
+        sourceName,
+        targetName,
+        command.relativePosition ?? 'before',
+      ),
+      _ => PlanRefinementResult(
+        plan: current,
+        changed: false,
+        message: 'That schedule edit is not supported.',
+      ),
+    };
+  }
+
+  String? _resolveStopReference(
+    PlannerResult current,
+    TripAiStopReference? reference,
+  ) {
+    if (reference == null) return null;
+    final days = reference.dayNumber == null
+        ? current.days
+        : current.days
+              .where((day) => day.dayNumber == reference.dayNumber)
+              .toList();
+    if (days.isEmpty) return null;
+    final number = reference.activityNumber;
+    if (number != null) {
+      if (days.length != 1 ||
+          number < 1 ||
+          number > days.single.places.length) {
+        return null;
+      }
+      return days.single.places[number - 1].place.name;
+    }
+    final meal = reference.mealType;
+    if (meal != null) {
+      if (days.length != 1) return null;
+      return const DailyTimeScheduleService()
+          .schedule(
+            days.single.places,
+            startTimeOverrides: current.startTimeOverrides,
+          )
+          .where((stop) => stop.roleLabel.toLowerCase() == meal)
+          .firstOrNull
+          ?.scoredPlace
+          .place
+          .name;
+    }
+    final name = reference.activityName;
+    if (name == null) return null;
+    final matches = _stopNameMatcher.rank(
+      name,
+      days.expand((day) => day.places).map((item) => item.place.name),
+    );
+    if (matches.isEmpty || matches.first.score < 0.72) return null;
+    if (matches.length > 1 &&
+        matches.first.score < 0.88 &&
+        matches.first.score - matches[1].score < 0.1) {
+      return null;
+    }
+    return matches.first.name;
+  }
+
+  _AiUndoSnapshot _captureAiUndoSnapshot() {
+    final selected = _selectedDestination;
+    return _AiUndoSnapshot(
+      destinationId: selected.id,
+      result: plannerResult,
+      budgetText: budgetController.text,
+      selectedPlan: selectedPlan,
+      hotelRecommendations: List<HotelStay>.of(hotelRecommendations),
+      selectedHotel: selectedHotel,
+      placeDataSource: placeDataSource,
+      scheduleSaved: selected.scheduleSaved,
+      planGenerated: planGenerated,
+    );
+  }
+
+  void _restoreAiSnapshot(_AiUndoSnapshot snapshot) {
+    if (!mounted || snapshot.destinationId != _selectedDestinationId) return;
+    setState(() {
+      plannerResult = snapshot.result;
+      budgetController.text = snapshot.budgetText;
+      selectedPlan = snapshot.selectedPlan;
+      hotelRecommendations = List<HotelStay>.of(snapshot.hotelRecommendations);
+      selectedHotel = snapshot.selectedHotel;
+      placeDataSource = snapshot.placeDataSource;
+      planGenerated = snapshot.planGenerated;
+      _selectedDestination.scheduleSaved = snapshot.scheduleSaved;
+      _persistSelectedDestination();
+    });
+  }
+
+  Future<String> _undoAiChange() async {
+    final snapshot = _aiUndoSnapshot;
+    if (snapshot == null) return 'There is no AI change to undo.';
+    if (snapshot.destinationId != _selectedDestinationId) {
+      return 'Select the destination changed by AI before undoing it.';
+    }
+    _restoreAiSnapshot(snapshot);
+    _aiUndoSnapshot = null;
+    return 'Restored the plan from before the last AI change.';
+  }
+
+  bool _canUndoAiChange() =>
+      _aiUndoSnapshot?.destinationId == _selectedDestinationId;
 
   Future<void> _saveTripDraft() async {
     _persistSelectedDestination();
@@ -1173,7 +1698,14 @@ class _PlanTripPageState extends State<PlanTripPage> {
                               flex: 2,
                               child: SizedBox(
                                 height: 430,
-                                child: AiChatWidget(onRefinePlan: _refinePlan),
+                                child: AiChatWidget(
+                                  onPropose: _proposeAiChange,
+                                  onApply: _applyAiCommand,
+                                  onUndo: _undoAiChange,
+                                  canUndo: _canUndoAiChange,
+                                  liveAiEnabled:
+                                      AppConfig.aiAssistantUrl.isNotEmpty,
+                                ),
                               ),
                             ),
                           ],
@@ -1186,7 +1718,13 @@ class _PlanTripPageState extends State<PlanTripPage> {
                         const SizedBox(height: 20),
                         SizedBox(
                           height: 430,
-                          child: AiChatWidget(onRefinePlan: _refinePlan),
+                          child: AiChatWidget(
+                            onPropose: _proposeAiChange,
+                            onApply: _applyAiCommand,
+                            onUndo: _undoAiChange,
+                            canUndo: _canUndoAiChange,
+                            liveAiEnabled: AppConfig.aiAssistantUrl.isNotEmpty,
+                          ),
                         ),
                       ],
                       const SizedBox(height: 20),
@@ -1260,6 +1798,44 @@ class _PlanTripPageState extends State<PlanTripPage> {
       ),
     );
   }
+}
+
+class _AiUndoSnapshot {
+  const _AiUndoSnapshot({
+    required this.destinationId,
+    required this.result,
+    required this.budgetText,
+    required this.selectedPlan,
+    required this.hotelRecommendations,
+    required this.selectedHotel,
+    required this.placeDataSource,
+    required this.scheduleSaved,
+    required this.planGenerated,
+  });
+
+  final String destinationId;
+  final PlannerResult? result;
+  final String budgetText;
+  final String selectedPlan;
+  final List<HotelStay> hotelRecommendations;
+  final HotelStay? selectedHotel;
+  final String placeDataSource;
+  final bool scheduleSaved;
+  final bool planGenerated;
+}
+
+class _PendingAiChoice {
+  const _PendingAiChoice({
+    required this.command,
+    this.choices = const [],
+    this.awaitingDay = false,
+    this.awaitingScheduleDay = false,
+  });
+
+  final TripAiCommand command;
+  final List<String> choices;
+  final bool awaitingDay;
+  final bool awaitingScheduleDay;
 }
 
 class _PreferenceStatusCard extends StatelessWidget {
@@ -3028,6 +3604,7 @@ class _PlanPreview extends StatelessWidget {
                   targetMinutes: result!.profile.targetMinutesPerDay,
                   restMinutes: result!.profile.restMinutesPerDay,
                   hotel: result!.hotel,
+                  startTimeOverrides: result!.startTimeOverrides,
                 ),
                 if (i != result!.days.length - 1) const Divider(height: 32),
               ],
@@ -3395,18 +3972,21 @@ class _GeneratedDayPreview extends StatelessWidget {
   final int targetMinutes;
   final int restMinutes;
   final HotelStay? hotel;
+  final Map<String, int> startTimeOverrides;
 
   const _GeneratedDayPreview({
     required this.day,
     required this.targetMinutes,
     required this.restMinutes,
     required this.hotel,
+    required this.startTimeOverrides,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheduledStops = const DailyTimeScheduleService().schedule(
       day.places,
+      startTimeOverrides: startTimeOverrides,
     );
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3434,7 +4014,14 @@ class _GeneratedDayPreview extends StatelessWidget {
               else ...[
                 if (hotel != null)
                   _HotelRouteEndpoint(
-                    time: '7:30 AM',
+                    time: _formatStartTime(
+                      scheduledStops.isEmpty
+                          ? 7 * 60 + 30
+                          : (scheduledStops.first.startMinutes - 30).clamp(
+                              0,
+                              1439,
+                            ),
+                    ),
                     label: 'Start at ${hotel!.name}',
                   ),
                 for (
@@ -3563,6 +4150,14 @@ class _GeneratedDayPreview extends StatelessWidget {
     if (hours == 0) return '$minutes min';
     if (minutes == 0) return '$hours hr';
     return '$hours hr $minutes min';
+  }
+
+  String _formatStartTime(int minutes) {
+    final hour24 = (minutes ~/ 60) % 24;
+    final minute = minutes % 60;
+    final period = hour24 >= 12 ? 'PM' : 'AM';
+    final hour = hour24 % 12 == 0 ? 12 : hour24 % 12;
+    return '$hour:${minute.toString().padLeft(2, '0')} $period';
   }
 }
 

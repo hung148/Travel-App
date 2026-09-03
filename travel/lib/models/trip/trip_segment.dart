@@ -12,6 +12,7 @@ class TripSegment {
   final HotelSelection? hotel;
   final List<PlannerDay> days;
   final bool scheduleSaved;
+  final Map<String, int> startTimeOverrides;
 
   const TripSegment({
     required this.id,
@@ -22,6 +23,7 @@ class TripSegment {
     this.hotel,
     this.days = const [],
     this.scheduleSaved = false,
+    this.startTimeOverrides = const {},
   });
 
   int get numberOfDays {
@@ -33,24 +35,15 @@ class TripSegment {
   }
 
   double get scheduleCost {
-    return days.fold(
-      0,
-      (total, day) => total + day.estimatedCost,
-    );
+    return days.fold(0, (total, day) => total + day.estimatedCost);
   }
 
   double get foodCost {
-    return days.fold(
-      0,
-      (total, day) => total + day.estimatedFoodCost,
-    );
+    return days.fold(0, (total, day) => total + day.estimatedFoodCost);
   }
 
   double get activityCost {
-    return days.fold(
-      0,
-      (total, day) => total + day.estimatedActivityCost,
-    );
+    return days.fold(0, (total, day) => total + day.estimatedActivityCost);
   }
 
   double get estimatedTotalCost {
@@ -66,6 +59,7 @@ class TripSegment {
     HotelSelection? hotel,
     List<PlannerDay>? days,
     bool? scheduleSaved,
+    Map<String, int>? startTimeOverrides,
   }) {
     return TripSegment(
       id: id ?? this.id,
@@ -76,6 +70,7 @@ class TripSegment {
       hotel: hotel ?? this.hotel,
       days: days ?? this.days,
       scheduleSaved: scheduleSaved ?? this.scheduleSaved,
+      startTimeOverrides: startTimeOverrides ?? this.startTimeOverrides,
     );
   }
 
@@ -89,6 +84,7 @@ class TripSegment {
       'hotel': hotel?.toMap(),
       'days': days.map((day) => day.toMap()).toList(),
       'scheduleSaved': scheduleSaved,
+      'startTimeOverrides': startTimeOverrides,
     };
   }
 
@@ -101,22 +97,21 @@ class TripSegment {
       destination: data['destination'] as String? ?? '',
       startDate: _dateFromFirestore(data['startDate']) ?? DateTime(1970),
       endDate: _dateFromFirestore(data['endDate']) ?? DateTime(1970),
-      allocatedBudget:
-          (data['allocatedBudget'] as num?)?.toDouble() ?? 0,
+      allocatedBudget: (data['allocatedBudget'] as num?)?.toDouble() ?? 0,
       hotel: hotelData is Map
-          ? HotelSelection.fromMap(
-              Map<String, dynamic>.from(hotelData),
-            )
+          ? HotelSelection.fromMap(Map<String, dynamic>.from(hotelData))
           : null,
       days: dayList
           .whereType<Map>()
-          .map(
-            (day) => PlannerDay.fromMap(
-              Map<String, dynamic>.from(day),
-            ),
-          )
+          .map((day) => PlannerDay.fromMap(Map<String, dynamic>.from(day)))
           .toList(),
       scheduleSaved: data['scheduleSaved'] as bool? ?? false,
+      startTimeOverrides:
+          (data['startTimeOverrides'] as Map<dynamic, dynamic>? ?? const {})
+              .map(
+                (key, value) =>
+                    MapEntry(key.toString(), (value as num).toInt()),
+              ),
     );
   }
 

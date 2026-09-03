@@ -1,0 +1,19 @@
+{
+  "name": "travel-ai-functions",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "dev": "node local-server.js",
+    "eval": "node evals/run-evals.js",
+    "lint": "node --check index.js && node --check local-server.js && node --check trip-command.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.3.0",
+    "firebase-functions": "^7.3.2"
+  }
+}

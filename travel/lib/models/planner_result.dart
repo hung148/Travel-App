@@ -51,11 +51,7 @@ class PlannerDay {
       dayNumber: (data['dayNumber'] as num?)?.toInt() ?? 0,
       places: placeList
           .whereType<Map>()
-          .map(
-            (item) => ScoredPlace.fromMap(
-              Map<String, dynamic>.from(item),
-            ),
-          )
+          .map((item) => ScoredPlace.fromMap(Map<String, dynamic>.from(item)))
           .toList(),
     );
   }
@@ -68,6 +64,7 @@ class PlannerResult {
   final List<ScoredPlace> rankedPlaces;
   final List<PlannerDay> days;
   final HotelStay? hotel;
+  final Map<String, int> startTimeOverrides;
 
   const PlannerResult({
     required this.budgetAllocation,
@@ -76,6 +73,7 @@ class PlannerResult {
     required this.rankedPlaces,
     required this.days,
     this.hotel,
+    this.startTimeOverrides = const {},
   });
 
   double get totalEstimatedCost {

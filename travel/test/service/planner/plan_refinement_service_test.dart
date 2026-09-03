@@ -35,6 +35,41 @@ void main() {
     expect(result.plan.days.last.places, hasLength(3));
   });
 
+  test('relaxing a day preserves meals before optional activities', () {
+    final breakfast = _place('breakfast', category: 'cafe');
+    final lunch = _place('lunch', category: 'restaurant');
+    final dinner = _place('dinner', category: 'sushi_restaurant');
+    final plan = _plan(
+      days: [
+        PlannerDay(
+          dayNumber: 1,
+          places: [
+            breakfast,
+            _place('park-low', score: 50),
+            lunch,
+            _place('museum-medium', category: 'museum', score: 60),
+            dinner,
+            _place('park-high', score: 70),
+            _place('garden', category: 'garden', score: 75),
+            _place('landmark', category: 'landmark', score: 72),
+          ],
+        ),
+      ],
+    );
+
+    final result = service.refine(
+      currentPlan: plan,
+      instruction: 'make day 1 more relaxing',
+    );
+
+    expect(result.changed, isTrue);
+    expect(
+      result.plan.days.single.places.map((item) => item.place.id),
+      containsAll(['breakfast', 'lunch', 'dinner']),
+    );
+    expect(result.plan.days.single.activityCount, 3);
+  });
+
   test('removes museums and validates the changed plan', () {
     final museum = _place('museum', category: 'museum');
     final park = _place('park', category: 'park');
@@ -108,6 +143,337 @@ void main() {
       contains(PlannerValidationCode.dailyDiningLimitExceeded),
     );
   });
+
+  test('adds exactly one requested meal to only the requested day', () {
+    final activity1 = _place('activity-1');
+    final activity2 = _place('activity-2');
+    final cafe = _place('new-cafe', category: 'cafe');
+    final plan = _plan(
+      days: [
+        PlannerDay(dayNumber: 1, places: [activity1]),
+        PlannerDay(dayNumber: 2, places: [activity2]),
+      ],
+      ranked: [activity1, activity2, cafe],
+    );
+
+    final result = service.addFood(plan, dayNumber: 1, mealType: 'breakfast');
+
+    expect(result.changed, isTrue);
+    expect(result.plan.days.first.places, hasLength(2));
+    expect(result.plan.days.first.places.first.place.id, 'new-cafe');
+    expect(result.plan.days.last.places, hasLength(1));
+  });
+
+  test('removes one specifically named stop', () {
+    final palace = _place('palace');
+    final park = _place('park');
+    final result = service.removeStop(
+      _plan(
+        days: [
+          PlannerDay(dayNumber: 1, places: [palace, park]),
+        ],
+      ),
+      'palace',
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.plan.days.single.places.map((item) => item.place.id), [
+      'park',
+    ]);
+  });
+
+  test('moves one specifically named stop to another day', () {
+    final palace = _place('palace');
+    final park = _place('park');
+    final result = service.moveStop(
+      _plan(
+        days: [
+          PlannerDay(dayNumber: 1, places: [palace]),
+          PlannerDay(dayNumber: 2, places: [park]),
+        ],
+      ),
+      'palace',
+      2,
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.plan.days.first.places, isEmpty);
+    expect(result.plan.days.last.places.map((item) => item.place.id), [
+      'park',
+      'palace',
+    ]);
+  });
+
+  test('moves any named stop to any existing later day', () {
+    final breakfast = _place('breakfast', category: 'cafe');
+    final result = service.moveStop(
+      _plan(
+        days: [
+          PlannerDay(dayNumber: 1, places: [breakfast]),
+          const PlannerDay(dayNumber: 2, places: []),
+          const PlannerDay(dayNumber: 3, places: []),
+          const PlannerDay(dayNumber: 4, places: []),
+        ],
+      ),
+      'breakfast',
+      4,
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.plan.days.first.places, isEmpty);
+    expect(result.plan.days.last.places.single.place.id, 'breakfast');
+  });
+
+  test('does not move a stop to a day outside the itinerary', () {
+    final palace = _place('palace');
+    final plan = _plan(
+      days: [
+        PlannerDay(dayNumber: 1, places: [palace]),
+      ],
+    );
+    final result = service.moveStop(plan, 'palace', 9);
+
+    expect(result.changed, isFalse);
+    expect(result.plan, same(plan));
+    expect(result.message, contains('Day 9 does not exist'));
+  });
+
+  test('removes multiple numbered stops from only the requested day', () {
+    final result = service.removeNumberedStops(
+      _plan(
+        days: [
+          PlannerDay(
+            dayNumber: 1,
+            places: [
+              _place('one'),
+              _place('two'),
+              _place('three'),
+              _place('four'),
+            ],
+          ),
+          PlannerDay(dayNumber: 2, places: [_place('other-day')]),
+        ],
+      ),
+      1,
+      [3, 4],
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.plan.days.first.places.map((item) => item.place.id), [
+      'one',
+      'two',
+    ]);
+    expect(result.plan.days.last.places.single.place.id, 'other-day');
+  });
+
+  test('replaces a named stop with the best unused matching alternative', () {
+    final palace = _place('palace', score: 70);
+    final museum = _place('museum', category: 'museum', score: 95);
+    final park = _place('park', category: 'park', score: 90);
+    final result = service.replaceStop(
+      _plan(
+        days: [
+          PlannerDay(dayNumber: 1, places: [palace]),
+        ],
+        ranked: [palace, museum, park],
+      ),
+      'palace',
+      replacementPreference: 'park',
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.plan.days.single.places.single.place.id, 'park');
+  });
+
+  test('replaces a stop using the requested smarter ranking criterion', () {
+    final old = _place('old');
+    final highlyRated = _place('high-rating', rating: 4.9, cost: 50, score: 70);
+    final cheap = _place('cheap', rating: 4.0, cost: 2, score: 60);
+    final plan = _plan(
+      days: [
+        PlannerDay(dayNumber: 1, places: [old]),
+      ],
+      ranked: [old, highlyRated, cheap],
+    );
+
+    final cheaperResult = service.replaceStop(
+      plan,
+      'old',
+      replacementCriterion: 'cheaper',
+    );
+    final ratedResult = service.replaceStop(
+      plan,
+      'old',
+      replacementCriterion: 'higher_rated',
+    );
+
+    expect(cheaperResult.plan.days.single.places.single.place.id, 'cheap');
+    expect(ratedResult.plan.days.single.places.single.place.id, 'high-rating');
+  });
+
+  test('swaps scheduled stops across different days', () {
+    final first = _place('first');
+    final second = _place('second');
+    final result = service.swapStops(
+      _plan(
+        days: [
+          PlannerDay(dayNumber: 1, places: [first]),
+          PlannerDay(dayNumber: 2, places: [second]),
+        ],
+      ),
+      'first',
+      'second',
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.plan.days.first.places.single.place.id, 'second');
+    expect(result.plan.days.last.places.single.place.id, 'first');
+  });
+
+  test('replaces one scheduled stop using another scheduled stop', () {
+    final first = _place('first');
+    final second = _place('second');
+    final result = service.replaceWithScheduledStop(
+      _plan(
+        days: [
+          PlannerDay(dayNumber: 1, places: [first]),
+          PlannerDay(dayNumber: 2, places: [second]),
+        ],
+      ),
+      'first',
+      'second',
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.plan.days.first.places.single.place.id, 'second');
+    expect(result.plan.days.last.places, isEmpty);
+  });
+
+  test('moves a stop before another stop', () {
+    final first = _place('first');
+    final second = _place('second');
+    final third = _place('third');
+    final result = service.moveStopRelative(
+      _plan(
+        days: [
+          PlannerDay(dayNumber: 1, places: [first, second, third]),
+        ],
+      ),
+      'third',
+      'first',
+      'before',
+    );
+
+    expect(result.plan.days.single.places.map((item) => item.place.id), [
+      'third',
+      'first',
+      'second',
+    ]);
+  });
+
+  test('moves a stop to an exact non-conflicting time on another day', () {
+    final first = _place('first');
+    final second = _place('second');
+    final result = service.moveStopToTime(
+      _plan(
+        days: [
+          PlannerDay(dayNumber: 1, places: [first]),
+          PlannerDay(dayNumber: 2, places: [second]),
+        ],
+      ),
+      'first',
+      2,
+      14 * 60,
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.plan.days.first.places, isEmpty);
+    expect(result.plan.startTimeOverrides['first'], 14 * 60);
+  });
+
+  test('reschedules an entire day from a requested start time', () {
+    final first = _place('first');
+    final second = _place('second');
+    final result = service.setDayStartTime(
+      _plan(
+        days: [
+          PlannerDay(dayNumber: 1, places: [first, second]),
+        ],
+      ),
+      1,
+      9 * 60,
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.plan.startTimeOverrides['first'], 9 * 60 + 30);
+    expect(result.plan.startTimeOverrides['second'], 11 * 60 + 30);
+  });
+
+  test('rejects a late day start when all stops cannot fit', () {
+    final result = service.setDayStartTime(
+      _plan(
+        days: [
+          PlannerDay(
+            dayNumber: 1,
+            places: List.generate(4, (index) => _place('place-$index')),
+          ),
+        ],
+      ),
+      1,
+      20 * 60,
+    );
+
+    expect(result.changed, isFalse);
+    expect(result.message, contains('past midnight'));
+  });
+
+  test('adds an exact number of safe unused activities to one day', () {
+    final scheduled = _place('scheduled');
+    final result = service.addStops(
+      _plan(
+        days: [
+          PlannerDay(dayNumber: 1, places: [scheduled]),
+        ],
+        ranked: [
+          scheduled,
+          _place('candidate-1'),
+          _place('candidate-2'),
+          _place('candidate-3'),
+        ],
+      ),
+      dayNumber: 1,
+      requestedCount: 2,
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.plan.days.single.places, hasLength(3));
+  });
+
+  test('removes an exact number of lowest-priority optional stops', () {
+    final result = service.removeStops(
+      _plan(
+        days: [
+          PlannerDay(
+            dayNumber: 1,
+            places: [
+              _place('high', score: 90),
+              _place('low', score: 40),
+              _place('middle', score: 60),
+              _place('meal', category: 'restaurant'),
+            ],
+          ),
+        ],
+      ),
+      dayNumber: 1,
+      count: 2,
+    );
+
+    expect(
+      result.plan.days.single.places.map((item) => item.place.id),
+      containsAll(['high', 'meal']),
+    );
+    expect(result.plan.days.single.places, hasLength(2));
+  });
 }
 
 PlannerResult _plan({
@@ -130,21 +496,27 @@ PlannerResult _plan({
   );
 }
 
-ScoredPlace _place(String id, {String category = 'park'}) {
+ScoredPlace _place(
+  String id, {
+  String category = 'park',
+  double score = 80,
+  double rating = 4.5,
+  double cost = 10,
+}) {
   return ScoredPlace(
     place: TravelPlace(
       id: id,
       name: id,
       category: category,
       tags: [category],
-      rating: 4.5,
+      rating: rating,
       reviewCount: 1000,
-      estimatedCost: 10,
+      estimatedCost: cost,
       latitude: 0,
       longitude: 0,
       estimatedVisitMinutes: 90,
     ),
-    totalScore: 80,
+    totalScore: score,
     ratingScore: 80,
     reviewScore: 80,
     preferenceScore: 80,

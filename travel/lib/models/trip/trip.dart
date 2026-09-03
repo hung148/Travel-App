@@ -42,10 +42,8 @@ class Trip {
   int get totalSegmentDays =>
       segments.fold(0, (total, segment) => total + segment.numberOfDays);
 
-  double get allocatedSegmentBudget => segments.fold(
-        0,
-        (total, segment) => total + segment.allocatedBudget,
-      );
+  double get allocatedSegmentBudget =>
+      segments.fold(0, (total, segment) => total + segment.allocatedBudget);
 
   double get totalHotelCost =>
       segments.fold(0, (total, segment) => total + segment.hotelCost);
@@ -109,9 +107,8 @@ class Trip {
       segments: segmentList
           .whereType<Map>()
           .map(
-            (segment) => TripSegment.fromMap(
-              Map<String, dynamic>.from(segment),
-            ),
+            (segment) =>
+                TripSegment.fromMap(Map<String, dynamic>.from(segment)),
           )
           .toList(),
     );

@@ -12,7 +12,10 @@ class DailyTimeScheduleService {
     this.transferMinutes = 30,
   });
 
-  List<ScheduledStop> schedule(List<ScoredPlace> places) {
+  List<ScheduledStop> schedule(
+    List<ScoredPlace> places, {
+    Map<String, int> startTimeOverrides = const {},
+  }) {
     final result = <ScheduledStop>[];
     var cursor = 8 * 60;
     var diningIndex = 0;
@@ -38,6 +41,7 @@ class DailyTimeScheduleService {
       } else {
         label = role.label;
       }
+      start = startTimeOverrides[item.place.id] ?? start;
 
       result.add(
         ScheduledStop(scoredPlace: item, startMinutes: start, roleLabel: label),

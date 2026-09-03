@@ -1,0 +1,35 @@
+[
+  {"name":"relax one day","instruction":"Day 2 has too many stops. Make it easier.","expectedCommand":"relax_day","expectedDayNumber":2},
+  {"name":"relax full schedule","instruction":"This vacation feels rushed. Slow the schedule down.","expectedCommand":"relax_day"},
+  {"name":"explicit budget","instruction":"Keep this destination under $900.","expectedCommand":"change_budget","expectedBudget":900},
+  {"name":"cheaper without invented amount","instruction":"This is too expensive. Make it cheaper.","expectedCommand":"change_budget"},
+  {"name":"more local food","instruction":"I want to try more local food during this stop.","expectedCommand":"add_food"},
+  {"name":"targeted breakfast","instruction":"Add breakfast to day 1.","expectedCommand":"add_food","expectedDayNumber":1,"expectedMealType":"breakfast"},
+  {"name":"remove meal asks for day","instruction":"Remove breakfast.","expectedCommand":"remove_stop","expectedMealType":"breakfast"},
+  {"name":"remove numbered activities","instruction":"Remove activities 3 and 4 from day 1.","expectedCommand":"remove_stop","expectedDayNumber":1,"expectedActivityNumbers":[3,4]},
+  {"name":"remove museums","instruction":"We are not interested in museums.","expectedCommand":"remove_museums"},
+  {"name":"reduce walking","instruction":"My parents cannot walk long distances between places.","expectedCommand":"reduce_walking"},
+  {"name":"relaxed style","instruction":"Change this destination to the relaxed planning style.","expectedCommand":"change_style","expectedStyle":"Relaxed"},
+  {"name":"explorer style","instruction":"Use the Explorer style here.","expectedCommand":"change_style","expectedStyle":"Explorer"},
+  {"name":"explain itinerary","instruction":"Why did you choose these places for me?","expectedCommand":"explain"},
+  {"name":"unsafe booking request","instruction":"Buy two plane tickets and book the hotel now.","expectedCommand":"unsupported"},
+  {"name":"unsupported weather mutation","instruction":"Check next month's weather and guarantee it will not rain.","expectedCommand":"unsupported"},
+  {"name":"remove named stop","instruction":"Remove Thien Mu Pagoda from my itinerary.","expectedCommand":"remove_stop","expectedActivityName":"Thien Mu Pagoda"},
+  {"name":"move named stop to earlier day","instruction":"Move Museum to day 1.","expectedCommand":"move_stop","expectedActivityName":"Museum","expectedTargetDayNumber":1},
+  {"name":"move named stop to later day","instruction":"Move Imperial City to day 4.","expectedCommand":"move_stop","expectedActivityName":"Imperial City","expectedTargetDayNumber":4},
+  {"name":"replace named stop","instruction":"Replace Walking Street with a park.","expectedCommand":"replace_stop","expectedActivityName":"Walking Street","expectedReplacementPreference":"park"}
+  ,{"name":"replace breakfast better","instruction":"Change breakfast on day 2 to a better place.","expectedCommand":"replace_stop","expectedDayNumber":2,"expectedMealType":"breakfast","expectedReplacementCriterion":"best_match"}
+  ,{"name":"replace numbered stop closer","instruction":"Replace activity 2 on day 1 with something closer.","expectedCommand":"replace_stop","expectedDayNumber":1,"expectedActivityNumbers":[2],"expectedReplacementCriterion":"closer"}
+  ,{"name":"replace named stop cheaper","instruction":"Replace Museum with a cheaper place.","expectedCommand":"replace_stop","expectedActivityName":"Museum","expectedReplacementCriterion":"cheaper"}
+  ,{"name":"swap across days","instruction":"Swap activity 1 on day 1 with lunch on day 2.","expectedCommand":"swap_stops"}
+  ,{"name":"replace with scheduled stop","instruction":"Replace activity 1 on day 1 with Museum from day 2.","expectedCommand":"replace_with_scheduled_stop"}
+  ,{"name":"move before stop","instruction":"Move Museum before Walking Street.","expectedCommand":"move_stop_relative"}
+  ,{"name":"move to exact time","instruction":"Move Imperial City to 2 PM on day 2.","expectedCommand":"move_stop_time"}
+  ,{"name":"set day start","instruction":"Start day 2 at 9 AM and reschedule everything.","expectedCommand":"set_day_start_time","expectedDayNumber":2,"expectedStartMinutes":540}
+  ,{"name":"add exact stops","instruction":"Add 2 more activities to day 1.","expectedCommand":"add_stops","expectedDayNumber":1,"expectedStopCount":2}
+  ,{"name":"make busier opposite","instruction":"Make day 2 busier.","expectedCommand":"add_stops","expectedDayNumber":2}
+  ,{"name":"remove exact stops","instruction":"Remove 3 optional stops from day 2.","expectedCommand":"remove_stops","expectedDayNumber":2,"expectedStopCount":3}
+  ,{"name":"partial move screenshot","instruction":"Move KDL to day 1.","expectedCommand":"move_stop","expectedActivityName":"KDL","expectedTargetDayNumber":1}
+  ,{"name":"closer breakfast screenshot","instruction":"Find a closer breakfast for day 1.","expectedCommand":"replace_stop","expectedDayNumber":1,"expectedMealType":"breakfast","expectedReplacementCriterion":"closer"}
+  ,{"name":"already selected style","instruction":"Use Explorer style.","expectedCommand":"change_style","expectedStyle":"Explorer"}
+]
