@@ -21,6 +21,7 @@ void main() {
         containsAll(['bakery', 'meal_takeaway', 'hotel']),
       );
       expect(result.places.map((place) => place.id), ['shared-place']);
+      expect(result.places.map((place) => place.id), isNot(contains('sports-shop')));
       expect(
         result.hotels.map((hotel) => hotel.id),
         containsAll(['shared-place', 'hotel-place']),
@@ -74,6 +75,17 @@ class _FakeMapService extends MapService {
         userRatingsTotal: 80,
         types: const ['hotel', 'lodging', 'restaurant'],
       ),
+      if (type != 'hotel')
+        NearbyPlace(
+          placeId: 'sports-shop',
+          name: 'Sportswear Shop',
+          address: 'Retail Address',
+          latitude: latitude,
+          longitude: longitude,
+          rating: 4.8,
+          userRatingsTotal: 500,
+          types: const ['sporting_goods_store', 'store'],
+        ),
     ];
   }
 }

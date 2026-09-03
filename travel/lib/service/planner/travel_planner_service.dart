@@ -35,6 +35,9 @@ class TravelPlannerService {
     required double centerLongitude,
   }) {
     final profile = PlannerProfile.fromActivityLevel(preference.activityLevel);
+    final eligibleCandidatePlaces = candidatePlaces
+        .where((place) => !_isStandaloneRetailStore(place))
+        .toList();
     var budgetAllocation = budgetService.allocate(
       totalBudget: trip.budget,
       spendingStyle: preference.spendingStyle,
@@ -49,7 +52,7 @@ class TravelPlannerService {
       (index) => PlannerDay(dayNumber: index + 1, places: []),
     );
 
-    if (candidatePlaces.isEmpty) {
+    if (eligibleCandidatePlaces.isEmpty) {
       final validation = _requireWarningFree(
         validationService.validate(
           days: days,
@@ -68,7 +71,7 @@ class TravelPlannerService {
     }
 
     var rankedPlaces = placeScoringService.rankPlaces(
-      places: candidatePlaces,
+      places: eligibleCandidatePlaces,
       preference: preference,
       dailyActivityBudget: budgetAllocation.dailyActivitiesBudget(trip.days),
       dailyFoodBudget: budgetAllocation.dailyFoodBudget(trip.days),
@@ -122,7 +125,7 @@ class TravelPlannerService {
     budgetAllocation = adjustedAllocation;
 
     rankedPlaces = placeScoringService.rankPlaces(
-      places: candidatePlaces,
+      places: eligibleCandidatePlaces,
       preference: preference,
       dailyActivityBudget: budgetAllocation.dailyActivitiesBudget(trip.days),
       dailyFoodBudget: budgetAllocation.dailyFoodBudget(trip.days),
@@ -179,6 +182,18 @@ class TravelPlannerService {
       rankedPlaces: rankedPlaces,
       days: days,
     );
+  }
+
+  /// Individual retail businesses are not itinerary attractions. Actual malls
+  /// remain eligible even when Google also attaches one or more store types.
+  bool _isStandaloneRetailStore(TravelPlace place) {
+    final types = {
+      place.category,
+      ...place.tags,
+    }.map((value) => value.toLowerCase().trim()).toSet();
+    if (types.contains('shopping_mall')) return false;
+    return types.contains('store') ||
+        types.any((type) => type.endsWith('_store'));
   }
 
   PlannerValidationResult _requireWarningFree(

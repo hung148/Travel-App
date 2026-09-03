@@ -51,6 +51,45 @@ void main() {
     expect(arranged, hasLength(10));
   });
 
+  test('planner removes standalone retail shops but keeps actual malls', () {
+    final planner = TravelPlannerService(
+      placeScoringService: PlaceScoringService(),
+    );
+    final result = planner.generatePlan(
+      trip: Trip(
+        id: 'trip',
+        ownerId: 'user',
+        destination: 'Test City',
+        budget: 10000,
+        days: 1,
+        status: 'draft',
+      ),
+      preference: Preference(
+        id: 'preference',
+        ownerId: 'user',
+        experienceType: const ['shopping'],
+        activityLevel: 'Moderate',
+        spendingStyle: 'Normal',
+        interests: const ['shopping'],
+      ),
+      candidatePlaces: [
+        _place('breakfast', 'cafe'),
+        _place('lunch', 'restaurant'),
+        _place('dinner', 'sushi_restaurant'),
+        _place('sportswear', 'sporting_goods_store', rating: 5),
+        _place('mall', 'shopping_mall', rating: 4),
+      ],
+      centerLatitude: 0,
+      centerLongitude: 0,
+    );
+
+    expect(
+      result.rankedPlaces.map((item) => item.place.id),
+      isNot(contains('sportswear')),
+    );
+    expect(result.rankedPlaces.map((item) => item.place.id), contains('mall'));
+  });
+
   test('places breakfast, lunch, and dinner around activities', () {
     const service = DailyCompositionService();
     final arranged = service.arrange(

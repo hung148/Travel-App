@@ -46,6 +46,13 @@ class DestinationPlaceService {
     'extended_stay_hotel',
   };
 
+  static bool _isStandaloneRetailStore(NearbyPlace place) {
+    final types = place.types.map((type) => type.toLowerCase().trim()).toSet();
+    if (types.contains('shopping_mall')) return false;
+    return types.contains('store') ||
+        types.any((type) => type.endsWith('_store'));
+  }
+
   Future<DestinationCandidates> loadForDestination(
     String destination, {
     int radiusMeters = 15000,
@@ -76,6 +83,7 @@ class DestinationPlaceService {
       if (nearbyPlace.types.any(_accommodationTypes.contains)) {
         continue;
       }
+      if (_isStandaloneRetailStore(nearbyPlace)) continue;
       uniquePlaces.putIfAbsent(nearbyPlace.placeId, () => nearbyPlace);
     }
 
