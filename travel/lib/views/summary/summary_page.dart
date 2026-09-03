@@ -299,7 +299,7 @@ class _HotelReview extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           CircleAvatar(
-            backgroundColor: Colors.indigo.shade700,
+            backgroundColor: Theme.of(context).colorScheme.primary,
             child: const Icon(Icons.hotel_rounded, color: Colors.white),
           ),
           const SizedBox(width: 12),
@@ -514,7 +514,7 @@ class _HotelStopRow extends StatelessWidget {
       children: [
         CircleAvatar(
           radius: 15,
-          backgroundColor: Colors.indigo.shade700,
+          backgroundColor: Theme.of(context).colorScheme.primary,
           child: const Icon(Icons.hotel_rounded, size: 17, color: Colors.white),
         ),
         const SizedBox(width: 12),
@@ -670,7 +670,7 @@ class _ReviewCard extends StatelessWidget {
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.78),
         ),
       ),
       child: child,

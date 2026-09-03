@@ -3005,7 +3005,7 @@ class _DestinationMapState extends State<_DestinationMap> {
                                   scale: _hotelHighlighted ? 1.18 : 1,
                                   child: Container(
                                     decoration: BoxDecoration(
-                                      color: Colors.indigo.shade700,
+                                      color: Theme.of(context).colorScheme.primary,
                                       shape: BoxShape.circle,
                                       border: Border.all(
                                         color: Colors.white,
@@ -3081,12 +3081,12 @@ class _DestinationMapState extends State<_DestinationMap> {
                   ),
                 )
               else if (_hotelHighlighted)
-                const Positioned(
+                Positioned(
                   top: 20,
                   right: 20,
                   child: Card(
-                    color: Colors.indigo,
-                    child: Padding(
+                    color: Theme.of(context).colorScheme.primary,
+                    child: const Padding(
                       padding: EdgeInsets.symmetric(
                         horizontal: 12,
                         vertical: 7,
@@ -3261,7 +3261,7 @@ class _PlanOptions extends StatelessWidget {
                                 ? Theme.of(context).colorScheme.primary
                                 : Theme.of(
                                     context,
-                                  ).dividerColor.withValues(alpha: 0.45),
+                                  ).dividerColor.withValues(alpha: 0.82),
                             width: selected && enabled ? 2 : 1,
                           ),
                         ),
@@ -4330,7 +4330,7 @@ class _HotelRouteEndpoint extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 11,
-            backgroundColor: Colors.indigo.shade700,
+            backgroundColor: Theme.of(context).colorScheme.primary,
             child: const Icon(
               Icons.hotel_rounded,
               size: 13,
@@ -4407,7 +4407,7 @@ class _Panel extends StatelessWidget {
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.78),
         ),
       ),
       child: child,

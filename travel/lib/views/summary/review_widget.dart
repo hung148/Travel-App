@@ -35,7 +35,7 @@ class _ReviewWidgetState extends State<ReviewWidget> {
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.78),
         ),
       ),
       child: Column(

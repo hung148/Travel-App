@@ -287,7 +287,7 @@ class _ReviewCard extends StatelessWidget {
       color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(18),
       border: Border.all(
-        color: Theme.of(context).dividerColor.withValues(alpha: .35),
+        color: Theme.of(context).dividerColor.withValues(alpha: .78),
       ),
     ),
     child: child,

@@ -76,17 +76,15 @@ class _TravelBrandPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
     return Container(
       margin: const EdgeInsets.all(20),
       padding: const EdgeInsets.all(56),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(32),
-        gradient: LinearGradient(
+        gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [colors.primary, const Color(0xFF55A7FF)],
+          colors: [Color(0xFFFBF7F3), Color(0xFFEDE0D6)],
         ),
       ),
       child: Column(
@@ -98,7 +96,7 @@ class _TravelBrandPanel extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.16),
+                  color: const Color(0xFF5A3E32),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: const Icon(Icons.travel_explore, color: Colors.white),
@@ -107,7 +105,7 @@ class _TravelBrandPanel extends StatelessWidget {
               const Text(
                 'Travel App',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: Color(0xFF1C1816),
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                 ),
@@ -118,7 +116,7 @@ class _TravelBrandPanel extends StatelessWidget {
           const Text(
             'Plan less.\nExperience more.',
             style: TextStyle(
-              color: Colors.white,
+              color: Color(0xFF1C1816),
               fontSize: 52,
               height: 1.05,
               fontWeight: FontWeight.w800,
@@ -129,7 +127,7 @@ class _TravelBrandPanel extends StatelessWidget {
           Text(
             'Tell us your budget, travel style, and interests. We help turn them into a trip that fits you.',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.88),
+              color: const Color(0xFF6F5B50),
               fontSize: 17,
               height: 1.55,
             ),
@@ -153,7 +151,7 @@ class _TravelBrandPanel extends StatelessWidget {
           Text(
             'Your trip, optimized around you.',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.68),
+              color: const Color(0xFF8B7468),
               fontSize: 14,
             ),
           ),
@@ -177,16 +175,16 @@ class _Benefit extends StatelessWidget {
           width: 38,
           height: 38,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.14),
+            color: const Color(0xFFE4D3C8),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, color: Colors.white, size: 20),
+          child: Icon(icon, color: const Color(0xFF5A3E32), size: 20),
         ),
         const SizedBox(width: 12),
         Text(
           text,
           style: const TextStyle(
-            color: Colors.white,
+            color: Color(0xFF1C1816),
             fontSize: 15,
             fontWeight: FontWeight.w600,
           ),
@@ -217,7 +215,7 @@ class _FormCard extends StatelessWidget {
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.78),
         ),
         boxShadow: [
           BoxShadow(

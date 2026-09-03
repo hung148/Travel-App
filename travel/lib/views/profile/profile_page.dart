@@ -48,7 +48,7 @@ class _ProfilePageState extends State<ProfilePage> {
         );
     final trips = tripViewModel.tripHistory;
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F8FC),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -216,7 +216,7 @@ class _TopBar extends StatelessWidget {
           width: 42,
           height: 42,
           decoration: BoxDecoration(
-            color: const Color(0xFF2C7BE5),
+            color: Theme.of(context).colorScheme.primary,
             borderRadius: BorderRadius.circular(13),
           ),
           child: const Icon(Icons.travel_explore_rounded, color: Colors.white),
@@ -247,8 +247,8 @@ class _TopBar extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         CircleAvatar(
-          backgroundColor: const Color(0xFFEAF2FF),
-          foregroundColor: const Color(0xFF2C7BE5),
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+          foregroundColor: Theme.of(context).colorScheme.onSurface,
           child: Text(
             (user.name.trim().isEmpty ? user.email : user.name)
                 .substring(0, 1)
@@ -272,7 +272,9 @@ class _Hero extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(26),
         gradient: const LinearGradient(
-          colors: [Color(0xFF143B73), Color(0xFF2C7BE5)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF8F1EB), Color(0xFFEDE0D6)],
         ),
       ),
       child: Wrap(
@@ -288,7 +290,7 @@ class _Hero extends StatelessWidget {
                 Text(
                   'Welcome back, ${user.name.split(' ').first} 👋',
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Color(0xFF1C1816),
                     fontSize: 32,
                     fontWeight: FontWeight.w900,
                   ),
@@ -297,7 +299,7 @@ class _Hero extends StatelessWidget {
                 const Text(
                   'Tell us where you want to go next. We’ll help organize the budget, places, and schedule.',
                   style: TextStyle(
-                    color: Colors.white70,
+                    color: Color(0xFF6F5B50),
                     fontSize: 16,
                     height: 1.5,
                   ),
@@ -308,8 +310,8 @@ class _Hero extends StatelessWidget {
           FilledButton.icon(
             onPressed: () => Navigator.pushNamed(context, '/plan-trip'),
             style: FilledButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF143B73),
+              backgroundColor: const Color(0xFF241C18),
+              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
             ),
             icon: const Icon(Icons.add_rounded),
@@ -388,9 +390,9 @@ class _UpcomingCard extends StatelessWidget {
           ? const Text('Start a new plan to see it here.')
           : Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.calendar_month_rounded,
-                  color: Color(0xFF2C7BE5),
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
                 const SizedBox(width: 10),
                 Text(
@@ -421,9 +423,9 @@ class _Panel extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE6EAF2)),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -442,7 +444,10 @@ class _Panel extends StatelessWidget {
               ?trailing,
             ],
           ),
-          Text(subtitle, style: const TextStyle(color: Color(0xFF667085))),
+          Text(
+            subtitle,
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
           const SizedBox(height: 18),
           child,
         ],

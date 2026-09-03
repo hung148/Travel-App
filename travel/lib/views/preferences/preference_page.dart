@@ -448,18 +448,18 @@ class _PreferenceSidePanel extends StatelessWidget {
       margin: const EdgeInsets.all(20),
       padding: const EdgeInsets.all(42),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary,
+        color: const Color(0xFFF4EAE3),
         borderRadius: BorderRadius.circular(30),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.travel_explore, color: Colors.white, size: 34),
+          const Icon(Icons.travel_explore, color: Color(0xFF5A3E32), size: 34),
           const Spacer(),
           const Text(
             'Make every trip\nfeel like yours.',
             style: TextStyle(
-              color: Colors.white,
+              color: Color(0xFF1C1816),
               fontSize: 38,
               height: 1.08,
               fontWeight: FontWeight.w800,
@@ -469,7 +469,7 @@ class _PreferenceSidePanel extends StatelessWidget {
           Text(
             'Your preferences help the planner understand what deserves more of your time and budget.',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.82),
+              color: const Color(0xFF6F5B50),
               fontSize: 15,
               height: 1.5,
             ),
@@ -477,7 +477,7 @@ class _PreferenceSidePanel extends StatelessWidget {
           const Spacer(),
           Text(
             'You can change these later.',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.62)),
+            style: const TextStyle(color: Color(0xFF8B7468)),
           ),
         ],
       ),
@@ -508,7 +508,7 @@ class _QuestionPage extends StatelessWidget {
           color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(26),
           border: Border.all(
-            color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.78),
           ),
         ),
         child: Column(
@@ -657,7 +657,7 @@ class _ChoiceCard extends StatelessWidget {
             border: Border.all(
               color: selected
                   ? primary
-                  : Theme.of(context).dividerColor.withValues(alpha: 0.42),
+                  : Theme.of(context).dividerColor.withValues(alpha: 0.82),
               width: selected ? 1.8 : 1,
             ),
           ),
