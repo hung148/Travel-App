@@ -18,12 +18,19 @@ import 'package:travel/views/profile/profile_page.dart';
 import 'package:travel/views/plan_trip/plan_trip_page.dart';
 import 'package:travel/views/summary/summary_page.dart';
 
-import 'firebase_options.dart';
+import 'firebase_options_dev.dart' as dev;
+import 'firebase_options_prod.dart' as prod;
+
+const environment = String.fromEnvironment('ENV', defaultValue: 'dev');
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Firebase.initializeApp(
+    options: environment == 'prod'
+          ? prod.DefaultFirebaseOptions.currentPlatform
+          : dev.DefaultFirebaseOptions.currentPlatform,
+    );
 
   runApp(const MyApp());
 }
