@@ -37,10 +37,12 @@ import '../preferences/preference_page.dart';
 import '../summary/summary_page.dart';
 import 'models/destination_draft.dart';
 import 'models/destination_date_availability.dart';
+import 'models/map_search_area.dart';
 import '../../models/trip/travel_leg.dart';
 import 'models/travel_time_estimator.dart';
 import 'widgets/add_destination_dialog.dart';
 import 'widgets/destination_selector.dart';
+import 'widgets/map_area_picker_dialog.dart';
 
 class PlanTripPage extends StatefulWidget {
   const PlanTripPage({super.key});
@@ -124,6 +126,15 @@ class _PlanTripPageState extends State<PlanTripPage> {
 
   DestinationDraft _draftFromSegment(TripSegment segment) {
     final hotel = segment.hotel;
+    final mapSearchArea = segment.searchCenterLatitude == null ||
+            segment.searchCenterLongitude == null ||
+            segment.searchRadiusMeters == null
+        ? null
+        : MapSearchArea(
+            latitude: segment.searchCenterLatitude!,
+            longitude: segment.searchCenterLongitude!,
+            radiusMeters: segment.searchRadiusMeters!,
+          );
     return DestinationDraft(
       id: segment.id,
       destination: segment.destination,
@@ -150,6 +161,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       undoDays: segment.undoDays,
       undoBudget: segment.undoBudget,
       undoStyle: segment.undoStyle,
+      mapSearchArea: mapSearchArea,
     );
   }
 
@@ -188,6 +200,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
       undoDays: draft.undoDays,
       undoBudget: draft.undoBudget,
       undoStyle: draft.undoStyle,
+      searchCenterLatitude: draft.mapSearchArea?.latitude,
+      searchCenterLongitude: draft.mapSearchArea?.longitude,
+      searchRadiusMeters: draft.mapSearchArea?.radiusMeters,
     );
     final exists = _tripViewModel.draftSegments.any(
       (item) => item.id == draft.id,
@@ -400,6 +415,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       destination.savedDays = const [];
       destination.selectedHotel = null;
       destination.hotelRecommendations = const [];
+      destination.mapSearchArea = null;
       destination.scheduleSaved = false;
       if (destination.id == _selectedDestinationId) {
         _loadDestination(destination);
@@ -633,6 +649,67 @@ class _PlanTripPageState extends State<PlanTripPage> {
     }
   }
 
+  Future<void> _chooseMapArea() async {
+    final service = _mapService;
+    if (service == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('A Google Maps API key is required to search an area.'),
+        ),
+      );
+      return;
+    }
+
+    final destination = destinationController.text.trim();
+    if (destination.isEmpty) return;
+    try {
+      final current = _selectedDestination.mapSearchArea;
+      final center = current == null
+          ? await service.geocodeAddress(destination)
+          : Coordinates(
+              latitude: current.latitude,
+              longitude: current.longitude,
+            );
+      if (!mounted) return;
+      final selected = await showDialog<MapSearchArea>(
+        context: context,
+        builder: (_) => MapAreaPickerDialog(
+          destination: destination,
+          initialCenter: LatLng(center.latitude, center.longitude),
+          initialArea: current,
+        ),
+      );
+      if (selected == null || !mounted) return;
+      setState(() {
+        _selectedDestination.mapSearchArea = selected;
+        _selectedDestination.plannerResult = null;
+        _selectedDestination.savedDays = const [];
+        _selectedDestination.scheduleSaved = false;
+        plannerResult = null;
+        planGenerated = false;
+        placeDataSource =
+            'Custom map area • ${selected.radiusLabel} search radius';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open this destination on the map. $error')),
+      );
+    }
+  }
+
+  void _clearMapArea() {
+    setState(() {
+      _selectedDestination.mapSearchArea = null;
+      _selectedDestination.plannerResult = null;
+      _selectedDestination.savedDays = const [];
+      _selectedDestination.scheduleSaved = false;
+      plannerResult = null;
+      planGenerated = false;
+      placeDataSource = 'Google Places ready';
+    });
+  }
+
   String _dateLabel() {
     if (dates == null) return 'Choose travel dates';
     String format(DateTime date) => '${date.month}/${date.day}/${date.year}';
@@ -737,7 +814,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
     setState(() => isGenerating = true);
 
     try {
-      var candidatePlaces = List<TravelPlace>.of(mockTokyoPlaces);
+      var candidatePlaces = _destinationPlaceService == null
+          ? List<TravelPlace>.of(mockTokyoPlaces)
+          : <TravelPlace>[];
       var centerLatitude = 35.6762;
       var centerLongitude = 139.6503;
       var nextPlaceDataSource =
@@ -747,26 +826,37 @@ class _PlanTripPageState extends State<PlanTripPage> {
       final destinationPlaceService = _destinationPlaceService;
       if (destinationPlaceService != null) {
         try {
-          final destinationCandidates = await destinationPlaceService
-              .loadForDestination(destination);
+          final selectedArea = _selectedDestination.mapSearchArea;
+          final destinationCandidates = selectedArea == null
+              ? await destinationPlaceService.loadForDestination(destination)
+              : await destinationPlaceService.loadForArea(
+                  center: Coordinates(
+                    latitude: selectedArea.latitude,
+                    longitude: selectedArea.longitude,
+                  ),
+                  radiusMeters: selectedArea.radiusMeters,
+                );
           if (destinationCandidates.places.isNotEmpty) {
             candidatePlaces = destinationCandidates.places;
             centerLatitude = destinationCandidates.center.latitude;
             centerLongitude = destinationCandidates.center.longitude;
-            nextPlaceDataSource =
-                'Live Google Places • ${candidatePlaces.length} candidates';
+            nextPlaceDataSource = selectedArea == null
+                ? 'Live Google Places • ${candidatePlaces.length} candidates'
+                : 'Custom ${selectedArea.radiusLabel} map area • '
+                      '${candidatePlaces.length} candidates';
             nextHotels = destinationCandidates.hotels;
           } else {
             nextPlaceDataSource =
-                'Mock Tokyo data • Google returned no candidates';
+                'Google Places returned no candidates in this area';
           }
         } catch (error) {
-          nextPlaceDataSource = 'Mock Tokyo data • Google Places unavailable';
+          candidatePlaces = const [];
+          nextPlaceDataSource = 'Google Places unavailable';
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  'Could not load Google Places. Using mock data. $error',
+                  'Could not load Google Places for this area. $error',
                 ),
               ),
             );
@@ -1800,6 +1890,14 @@ class _PlanTripPageState extends State<PlanTripPage> {
                     ),
                     if (_destinations.isNotEmpty) ...[
                       const SizedBox(height: 20),
+                      _AreaPlanningCard(
+                        area: _selectedDestination.mapSearchArea,
+                        destination: destinationController.text.trim(),
+                        enabled: _mapService != null && !isGenerating,
+                        onConfigure: _chooseMapArea,
+                        onClear: _clearMapArea,
+                      ),
+                      const SizedBox(height: 20),
                       _HotelStayCard(
                         recommendations: hotelRecommendations,
                         selectedHotel: selectedHotel,
@@ -2265,6 +2363,136 @@ class _LabeledField extends StatelessWidget {
         const SizedBox(height: 8),
         child,
       ],
+    );
+  }
+}
+
+class _AreaPlanningCard extends StatelessWidget {
+  const _AreaPlanningCard({
+    required this.area,
+    required this.destination,
+    required this.enabled,
+    required this.onConfigure,
+    required this.onClear,
+  });
+
+  final MapSearchArea? area;
+  final String destination;
+  final bool enabled;
+  final VoidCallback onConfigure;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final configured = area != null;
+
+    return _Panel(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 720;
+          final copy = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'MAP-LED PLANNING',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.4,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                configured
+                    ? 'Your travel zone is ready'
+                    : 'Choose exactly where you want to explore',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                configured
+                    ? 'The next schedule will use only verified places inside the ${area!.radiusLabel} circle.'
+                    : 'Draw a circle around part of $destination. The planner will discover places inside it, rank them, and build an efficient route.',
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+              if (configured) ...[
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Chip(
+                      avatar: const Icon(Icons.radio_button_checked, size: 18),
+                      label: Text('${area!.radiusLabel} radius'),
+                    ),
+                    const Chip(
+                      avatar: Icon(Icons.filter_alt_outlined, size: 18),
+                      label: Text('Preferences applied'),
+                    ),
+                    const Chip(
+                      avatar: Icon(Icons.route_outlined, size: 18),
+                      label: Text('Route optimized'),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          );
+          final actions = Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton.icon(
+                onPressed: enabled ? onConfigure : null,
+                icon: Icon(
+                  configured
+                      ? Icons.edit_location_alt_outlined
+                      : Icons.gesture_rounded,
+                ),
+                label: Text(configured ? 'Edit travel zone' : 'Draw on map'),
+              ),
+              if (configured)
+                TextButton.icon(
+                  onPressed: onClear,
+                  icon: const Icon(Icons.restart_alt_rounded),
+                  label: const Text('Use whole city'),
+                ),
+            ],
+          );
+
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [copy, const SizedBox(height: 18), actions],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: colors.primaryContainer,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Icon(
+                  Icons.travel_explore_rounded,
+                  size: 34,
+                  color: colors.onPrimaryContainer,
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(child: copy),
+              const SizedBox(width: 24),
+              actions,
+            ],
+          );
+        },
+      ),
     );
   }
 }

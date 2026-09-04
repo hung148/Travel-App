@@ -132,6 +132,66 @@ void main() {
     },
   );
 
+  test(
+    'Trip destination autocomplete restores Da Lat when Google only returns Lam Dong',
+    () async {
+      final client = MockClient((request) async => http.Response(
+            jsonEncode({
+              'suggestions': [
+                {
+                  'placePrediction': {
+                    'placeId': 'lam-dong',
+                    'text': {'text': 'Lâm Đồng, Việt Nam'},
+                    'types': ['administrative_area_level_1', 'political'],
+                  },
+                },
+              ],
+            }),
+            200,
+          ));
+      final service = MapService(apiKey: 'test-key', client: client);
+
+      final result = await service.getPlaceSuggestions(
+        'Đà Lạt, Lâm Đồng, Việt Nam',
+        tripDestinationsOnly: true,
+      );
+
+      expect(result, hasLength(1));
+      expect(result.single.description, 'Đà Lạt, Lâm Đồng, Việt Nam');
+      expect(result.single.types, contains('locality'));
+    },
+  );
+
+  test('Mall search rejects related stores returned by Google', () async {
+    final client = MockClient((request) async => http.Response(
+          jsonEncode({
+            'places': [
+              {
+                'id': 'vincom',
+                'displayName': {'text': 'Vincom Plaza'},
+                'types': ['shopping_mall', 'point_of_interest'],
+              },
+              {
+                'id': 'sportswear',
+                'displayName': {'text': 'Sportswear Shop'},
+                'types': ['sporting_goods_store', 'store'],
+              },
+            ],
+          }),
+          200,
+        ));
+    final service = MapService(apiKey: 'test-key', client: client);
+
+    final result = await service.getNearbyPlaces(
+      latitude: 11.94,
+      longitude: 108.44,
+      radius: 15000,
+      type: 'shopping_mall',
+    );
+
+    expect(result.map((place) => place.placeId), ['vincom']);
+  });
+
   test('walking route uses Routes API and decodes its polyline', () async {
     final client = MockClient((request) async {
       expect(request.method, 'POST');

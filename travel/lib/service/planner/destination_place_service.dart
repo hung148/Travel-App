@@ -46,11 +46,11 @@ class DestinationPlaceService {
     'extended_stay_hotel',
   };
 
-  static bool _isStandaloneRetailStore(NearbyPlace place) {
+  static bool _isInvalidRetailCandidate(NearbyPlace place) {
     final types = place.types.map((type) => type.toLowerCase().trim()).toSet();
-    if (types.contains('shopping_mall')) return false;
-    return types.contains('store') ||
+    final isRetail = types.contains('store') ||
         types.any((type) => type.endsWith('_store'));
+    return isRetail && !place.isActualShoppingMall;
   }
 
   Future<DestinationCandidates> loadForDestination(
@@ -58,6 +58,13 @@ class DestinationPlaceService {
     int radiusMeters = 15000,
   }) async {
     final center = await mapService.geocodeAddress(destination);
+    return loadForArea(center: center, radiusMeters: radiusMeters);
+  }
+
+  Future<DestinationCandidates> loadForArea({
+    required Coordinates center,
+    required int radiusMeters,
+  }) async {
     final searches = await Future.wait(
       _candidateTypes.map(
         (type) => mapService.getNearbyPlaces(
@@ -83,7 +90,8 @@ class DestinationPlaceService {
       if (nearbyPlace.types.any(_accommodationTypes.contains)) {
         continue;
       }
-      if (_isStandaloneRetailStore(nearbyPlace)) continue;
+      if (_isInvalidRetailCandidate(nearbyPlace)) continue;
+      if (_distanceMeters(center, nearbyPlace) > radiusMeters) continue;
       uniquePlaces.putIfAbsent(nearbyPlace.placeId, () => nearbyPlace);
     }
 
@@ -94,7 +102,9 @@ class DestinationPlaceService {
           hotelResults
               .where(
                 (hotel) =>
-                    hotel.placeId.isNotEmpty && hotel.name.trim().isNotEmpty,
+                    hotel.placeId.isNotEmpty &&
+                    hotel.name.trim().isNotEmpty &&
+                    _distanceMeters(center, hotel) <= radiusMeters,
               )
               .map(
                 (hotel) => HotelStay(
@@ -113,6 +123,16 @@ class DestinationPlaceService {
               .toList()
             ..sort((left, right) => right.rating.compareTo(left.rating)),
     );
+  }
+
+  double _distanceMeters(Coordinates center, NearbyPlace place) {
+    return mapService.calculateDistanceKm(
+          startLat: center.latitude,
+          startLng: center.longitude,
+          endLat: place.latitude,
+          endLng: place.longitude,
+        ) *
+        1000;
   }
 
   double _estimatedHotelNightlyRate(NearbyPlace hotel) {

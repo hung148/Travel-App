@@ -36,7 +36,7 @@ class TravelPlannerService {
   }) {
     final profile = PlannerProfile.fromActivityLevel(preference.activityLevel);
     final eligibleCandidatePlaces = candidatePlaces
-        .where((place) => !_isStandaloneRetailStore(place))
+        .where((place) => !_isInvalidRetailCandidate(place))
         .toList();
     var budgetAllocation = budgetService.allocate(
       totalBudget: trip.budget,
@@ -186,14 +186,14 @@ class TravelPlannerService {
 
   /// Individual retail businesses are not itinerary attractions. Actual malls
   /// remain eligible even when Google also attaches one or more store types.
-  bool _isStandaloneRetailStore(TravelPlace place) {
+  bool _isInvalidRetailCandidate(TravelPlace place) {
     final types = {
       place.category,
       ...place.tags,
     }.map((value) => value.toLowerCase().trim()).toSet();
-    if (types.contains('shopping_mall')) return false;
-    return types.contains('store') ||
+    final isRetail = types.contains('store') ||
         types.any((type) => type.endsWith('_store'));
+    return isRetail && !types.contains('shopping_mall');
   }
 
   PlannerValidationResult _requireWarningFree(

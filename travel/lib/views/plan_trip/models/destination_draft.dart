@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../models/hotel_stay.dart';
 import '../../../models/planner_result.dart';
+import 'map_search_area.dart';
 
 /// Temporary UI state used until the multi-destination TripViewModel contract
 /// is merged. Keeping this under views prevents the UI branch from owning
@@ -23,6 +24,7 @@ class DestinationDraft {
     this.undoDays = const [],
     this.undoBudget,
     this.undoStyle,
+    this.mapSearchArea,
   });
 
   final String id;
@@ -40,6 +42,7 @@ class DestinationDraft {
   List<PlannerDay> undoDays;
   double? undoBudget;
   String? undoStyle;
+  MapSearchArea? mapSearchArea;
 
   List<PlannerDay> get days => plannerResult?.days ?? savedDays;
 

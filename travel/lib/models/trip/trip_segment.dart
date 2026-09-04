@@ -16,6 +16,9 @@ class TripSegment {
   final List<PlannerDay> undoDays;
   final double? undoBudget;
   final String? undoStyle;
+  final double? searchCenterLatitude;
+  final double? searchCenterLongitude;
+  final int? searchRadiusMeters;
 
   const TripSegment({
     required this.id,
@@ -30,6 +33,9 @@ class TripSegment {
     this.undoDays = const [],
     this.undoBudget,
     this.undoStyle,
+    this.searchCenterLatitude,
+    this.searchCenterLongitude,
+    this.searchRadiusMeters,
   });
 
   int get numberOfDays {
@@ -69,6 +75,9 @@ class TripSegment {
     List<PlannerDay>? undoDays,
     double? undoBudget,
     String? undoStyle,
+    double? searchCenterLatitude,
+    double? searchCenterLongitude,
+    int? searchRadiusMeters,
   }) {
     return TripSegment(
       id: id ?? this.id,
@@ -83,6 +92,11 @@ class TripSegment {
       undoDays: undoDays ?? this.undoDays,
       undoBudget: undoBudget ?? this.undoBudget,
       undoStyle: undoStyle ?? this.undoStyle,
+      searchCenterLatitude:
+          searchCenterLatitude ?? this.searchCenterLatitude,
+      searchCenterLongitude:
+          searchCenterLongitude ?? this.searchCenterLongitude,
+      searchRadiusMeters: searchRadiusMeters ?? this.searchRadiusMeters,
     );
   }
 
@@ -100,6 +114,9 @@ class TripSegment {
       'undoDays': undoDays.map((day) => day.toMap()).toList(),
       'undoBudget': undoBudget,
       'undoStyle': undoStyle,
+      'searchCenterLatitude': searchCenterLatitude,
+      'searchCenterLongitude': searchCenterLongitude,
+      'searchRadiusMeters': searchRadiusMeters,
     };
   }
 
@@ -134,6 +151,11 @@ class TripSegment {
           .toList(),
       undoBudget: (data['undoBudget'] as num?)?.toDouble(),
       undoStyle: data['undoStyle'] as String?,
+      searchCenterLatitude:
+          (data['searchCenterLatitude'] as num?)?.toDouble(),
+      searchCenterLongitude:
+          (data['searchCenterLongitude'] as num?)?.toDouble(),
+      searchRadiusMeters: (data['searchRadiusMeters'] as num?)?.toInt(),
     );
   }
 

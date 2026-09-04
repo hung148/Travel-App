@@ -88,7 +88,33 @@ class MapService {
       );
     }).toList();
     if (!tripDestinationsOnly) return parsed;
-    return parsed.where((suggestion) => suggestion.isGeographicArea).toList();
+
+    final geographic = parsed
+        .where((suggestion) => suggestion.isGeographicArea)
+        .toList();
+
+    // Google's autocomplete sometimes resolves Đà Lạt to its parent province
+    // (Lâm Đồng) and omits the city itself. Trip planning only needs the
+    // canonical destination text—the selected value is geocoded afterwards—so
+    // guarantee the city result for all common accented/unaccented spellings.
+    if (_isDaLatQuery(input)) {
+      geographic.removeWhere(
+        (suggestion) => _isLamDongWithoutDaLat(suggestion.description),
+      );
+      if (!geographic.any(
+        (suggestion) => _isDaLatQuery(suggestion.description),
+      )) {
+        geographic.insert(
+          0,
+          const PlaceSuggestion(
+            placeId: 'canonical-da-lat-vn',
+            description: 'Đà Lạt, Lâm Đồng, Việt Nam',
+            types: ['locality', 'political'],
+          ),
+        );
+      }
+    }
+    return geographic;
   }
 
   /// ==============================
@@ -187,7 +213,7 @@ class MapService {
 
     final results = data['places'] as List<dynamic>? ?? const [];
 
-    return results.map((item) {
+    final places = results.map((item) {
       return NearbyPlace(
         placeId: item['id'] ?? '',
         name: item['displayName']?['text'] ?? '',
@@ -201,6 +227,29 @@ class MapService {
         photoUrl: _photoUrl(item['photos']),
       );
     }).toList();
+
+    // The nearby endpoint can occasionally return related retail businesses
+    // for a mall search. Never allow those results to enter the candidate pool.
+    if (type == 'shopping_mall') {
+      return places.where((place) => place.isActualShoppingMall).toList();
+    }
+    return places;
+  }
+
+  static bool _isDaLatQuery(String value) {
+    final normalized = value
+        .toLowerCase()
+        .replaceAll('đ', 'd')
+        .replaceAll(RegExp('[àáạảãâầấậẩẫăằắặẳẵ]'), 'a')
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .trim();
+    return RegExp(r'(^| )da ?lat($| )').hasMatch(normalized);
+  }
+
+  static bool _isLamDongWithoutDaLat(String value) {
+    final lower = value.toLowerCase();
+    return (lower.contains('lâm đồng') || lower.contains('lam dong')) &&
+        !_isDaLatQuery(value);
   }
 
   /// ==============================
@@ -486,7 +535,7 @@ class PlaceSuggestion {
   final String description;
   final List<String> types;
 
-  PlaceSuggestion({
+  const PlaceSuggestion({
     required this.placeId,
     required this.description,
     this.types = const [],
@@ -575,6 +624,13 @@ class NearbyPlace {
     this.priceLevel,
     this.photoUrl,
   });
+
+  bool get isActualShoppingMall {
+    final normalizedTypes = types
+        .map((type) => type.toLowerCase().trim())
+        .toSet();
+    return normalizedTypes.contains('shopping_mall');
+  }
 
   @override
   String toString() {
