@@ -153,7 +153,45 @@ class _PhotoGalleryDialog extends StatefulWidget {
 
 class _PhotoGalleryDialogState extends State<_PhotoGalleryDialog> {
   late final PageController _controller = PageController();
+
+  /// One provider per photo, created once.
+  ///
+  /// The [PageView] renders these rather than building a fresh
+  /// `Image.network` per page, so a page that was already warmed by
+  /// [_precacheNext] draws straight from the image cache instead of starting
+  /// its own request.
+  late final List<ImageProvider> _images = widget.photoUrls
+      .map<ImageProvider>(NetworkImage.new)
+      .toList();
+
   int _index = 0;
+
+  /// Pages already handed to [precacheImage], so arriving at one twice does
+  /// not queue the work again.
+  final Set<int> _warmed = <int>{};
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // precacheImage needs a context, so this cannot happen in initState.
+    _precacheNext(_index);
+  }
+
+  /// Fetches the one photo after [index], and no further.
+  ///
+  /// A PageView only builds the page you are looking at, so without this every
+  /// swipe started its own download and landed on a spinner. Staying one photo
+  /// ahead is enough to hide that, while each URL is a separate billed Places
+  /// Photo request - so the gallery does not buy four more photos for someone
+  /// who opens it, glances at the first, and closes it again.
+  void _precacheNext(int index) {
+    final next = index + 1;
+    if (next >= _images.length) return;
+    if (!_warmed.add(next)) return;
+    // A photo that fails is reported by the errorBuilder when its page is
+    // shown; swallowing it here only keeps the warm-up from throwing.
+    precacheImage(_images[next], context, onError: (_, __) {});
+  }
 
   @override
   void dispose() {
@@ -186,12 +224,20 @@ class _PhotoGalleryDialogState extends State<_PhotoGalleryDialog> {
               child: PageView.builder(
                 controller: _controller,
                 itemCount: count,
-                onPageChanged: (index) => setState(() => _index = index),
+                // Builds the neighbouring pages instead of only the visible
+                // one, so a swipe lands on a widget that already exists. The
+                // page behind you was loaded on the way here, so in practice
+                // this only reaches forward - the same one photo ahead.
+                allowImplicitScrolling: true,
+                onPageChanged: (index) {
+                  setState(() => _index = index);
+                  _precacheNext(index);
+                },
                 itemBuilder: (context, index) => InteractiveViewer(
                   minScale: 0.8,
                   maxScale: 4,
-                  child: Image.network(
-                    widget.photoUrls[index],
+                  child: Image(
+                    image: _images[index],
                     width: double.infinity,
                     height: 620,
                     fit: BoxFit.contain,

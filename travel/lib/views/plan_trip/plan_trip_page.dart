@@ -94,6 +94,18 @@ class _PlanTripPageState extends State<PlanTripPage> {
       : 'Mock Tokyo data • Google API key not configured';
   Preference? savedPreference;
   String? preferenceError;
+
+  /// The view model this page is subscribed to, kept so the listener can be
+  /// detached again in [dispose].
+  PreferenceViewmodel? _preferenceViewModel;
+
+  /// The saved preference the itinerary on screen was actually built from.
+  ///
+  /// A save round-trips through Firestore and comes back as an equal but
+  /// separate object; without this the reload would look like a second change
+  /// and regenerate the plan twice.
+  Preference? _generatedFromPreference;
+
   PlannerResult? plannerResult;
   List<HotelStay> hotelRecommendations = const [];
   HotelStay? selectedHotel;
@@ -122,6 +134,69 @@ class _PlanTripPageState extends State<PlanTripPage> {
       await _loadSegmentsFromViewModel();
       await _loadPreference();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // The view model is the single source of truth for the saved preference,
+    // and it is a ChangeNotifier - so subscribing to it catches a change made
+    // ANYWHERE (this page's Edit button, the Preferences tab, onboarding)
+    // rather than only the one path that happened to call _loadPreference().
+    final viewModel = context.read<PreferenceViewmodel>();
+    if (identical(viewModel, _preferenceViewModel)) return;
+    _preferenceViewModel?.removeListener(_onPreferenceChanged);
+    _preferenceViewModel = viewModel..addListener(_onPreferenceChanged);
+  }
+
+  /// Applies a preference saved anywhere in the app, then rebuilds the
+  /// itinerary to match it.
+  ///
+  /// Regenerating is the point. A plan that does not reflect the current
+  /// preference is worse than no plan at all: the page says "Luxury spending"
+  /// over a schedule built for Budget, and the only hint that the two
+  /// disagree is a button the user has to know to press.
+  void _onPreferenceChanged() {
+    if (!mounted) return;
+
+    final updated = _preferenceViewModel?.preference;
+    if (updated == null || updated == savedPreference) return;
+
+    final previous = savedPreference;
+    setState(() {
+      savedPreference = updated;
+      isLoadingPreference = false;
+      preferenceError = null;
+      // Follow the saved activity level only when it is what changed.
+      // Otherwise a spending-style edit would quietly discard the pace the
+      // user picked on this page.
+      if (previous == null || previous.activityLevel != updated.activityLevel) {
+        selectedPlan = _planForActivityLevel(updated.activityLevel);
+      }
+    });
+
+    // The very first load is not a change the user made, and there is nothing
+    // on screen yet to bring back into line.
+    if (previous == null || !planGenerated || isGenerating) return;
+    if (updated == _generatedFromPreference) return;
+
+    _regenerateForPreferenceChange();
+  }
+
+  Future<void> _regenerateForPreferenceChange() async {
+    // _generatePlan reports anything missing through its own snackbars; if the
+    // setup is still incomplete there is simply nothing to rebuild yet.
+    if (_missingTripSetup.isNotEmpty) return;
+
+    final before = plannerResult;
+    await _generatePlan();
+    if (!mounted || identical(plannerResult, before)) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Preferences updated — schedule regenerated.'),
+      ),
+    );
   }
 
   /// Everything the planner needs before it can produce anything.
@@ -674,6 +749,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
 
   @override
   void dispose() {
+    _preferenceViewModel?.removeListener(_onPreferenceChanged);
     budgetController.removeListener(_onSetupFieldChanged);
     destinationController.removeListener(_onSetupFieldChanged);
     destinationController.dispose();
@@ -838,13 +914,19 @@ class _PlanTripPageState extends State<PlanTripPage> {
     if (!mounted) return;
 
     final preference = viewModel.preference;
+    final previous = savedPreference;
     setState(() {
       isLoadingPreference = false;
       savedPreference = preference;
       preferenceError = preference == null
           ? viewModel.errorMessage ?? 'No saved preference was found.'
           : null;
-      if (preference != null) {
+      // On the first load, follow the saved activity level. After that, only
+      // when it is what changed - a reload must not throw away the pace the
+      // user picked on this page.
+      if (preference != null &&
+          (previous == null ||
+              previous.activityLevel != preference.activityLevel)) {
         selectedPlan = _planForActivityLevel(preference.activityLevel);
       }
     });
@@ -1006,6 +1088,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
 
       setState(() {
         plannerResult = result;
+        _generatedFromPreference = savedPreference;
         _selectedDestination.currencyCode = currencyCode;
         planGenerated = true;
         placeDataSource = nextPlaceDataSource;
