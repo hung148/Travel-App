@@ -224,8 +224,6 @@ class _PlanTripPageState extends State<PlanTripPage> {
     ];
   }
 
-  bool get _isTripSetupComplete => _missingTripSetup.isEmpty;
-
   TripViewModel get _tripViewModel => context.read<TripViewModel>();
 
   Future<void> _loadSegmentsFromViewModel() async {
