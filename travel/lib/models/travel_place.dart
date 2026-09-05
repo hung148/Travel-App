@@ -15,7 +15,8 @@ class TravelPlace {
   final double longitude;
 
   final int estimatedVisitMinutes;
-  final String? photoUrl;
+  /// Up to [MapService.maxPhotosPerPlace] photos, most representative first.
+  final List<String> photoUrls;
 
   const TravelPlace({
     required this.id,
@@ -28,7 +29,7 @@ class TravelPlace {
     required this.latitude,
     required this.longitude,
     required this.estimatedVisitMinutes,
-    this.photoUrl,
+    this.photoUrls = const [],
   });
 
   /// Planning cost for ONE person, in the trip currency.
@@ -41,6 +42,21 @@ class TravelPlace {
 
   /// What the whole party pays for this stop.
   double estimatedCostFor(int travelers) => cost.amountFor(travelers);
+
+  /// The first photo, for the thumbnail.
+  String? get photoUrl => photoUrls.isEmpty ? null : photoUrls.first;
+
+  static List<String> _photoUrlsFromMap(Map<String, dynamic> data) {
+    final list = data['photoUrls'];
+    if (list is List) {
+      return list
+          .map((item) => item.toString())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    final single = data['photoUrl'] as String?;
+    return single == null || single.isEmpty ? const [] : [single];
+  }
 
   bool get isDining {
     final types = {category, ...tags}.map((value) => value.toLowerCase());
@@ -67,7 +83,7 @@ class TravelPlace {
       'latitude': latitude,
       'longitude': longitude,
       'estimatedVisitMinutes': estimatedVisitMinutes,
-      'photoUrl': photoUrl,
+      'photoUrls': photoUrls,
     };
   }
 
@@ -93,7 +109,8 @@ class TravelPlace {
       longitude: (data['longitude'] as num?)?.toDouble() ?? 0,
       estimatedVisitMinutes:
           (data['estimatedVisitMinutes'] as num?)?.toInt() ?? 0,
-      photoUrl: data['photoUrl'] as String?,
+      // Plans saved before stops had a gallery stored a single photoUrl.
+      photoUrls: _photoUrlsFromMap(data),
     );
   }
 }

@@ -302,7 +302,7 @@ class MapService {
         types: List<String>.from(item['types'] ?? []),
         priceLevel: _priceLevelFromGoogle(item['priceLevel']),
         priceRange: _priceRangeFromGoogle(item['priceRange']),
-        photoUrl: _photoUrl(item['photos']),
+        photoUrls: _photoUrls(item['photos']),
       );
     }).toList();
 
@@ -688,17 +688,32 @@ class MapService {
     };
   }
 
-  String? _photoUrl(Object? value) {
+  /// Every photo Google returns for a place, capped.
+  ///
+  /// Each of these URLs is a separate billed Places Photo request when it is
+  /// actually rendered, so the cap keeps a saved trip - and the bill - from
+  /// growing with however many photos a popular place happens to have.
+  static const maxPhotosPerPlace = 5;
+
+  List<String> _photoUrls(Object? value) {
     final photos = value as List<dynamic>? ?? const [];
-    if (photos.isEmpty) return null;
-    final photo = photos.first as Map<String, dynamic>?;
-    final name = photo?['name'] as String?;
-    if (name == null || name.isEmpty) return null;
-    return Uri.https('places.googleapis.com', '/v1/$name/media', {
-      'maxWidthPx': '1200',
-      'maxHeightPx': '900',
-      'key': apiKey,
-    }).toString();
+    final urls = <String>[];
+
+    for (final photo in photos) {
+      if (urls.length >= maxPhotosPerPlace) break;
+      if (photo is! Map) continue;
+      final name = photo['name'] as String?;
+      if (name == null || name.isEmpty) continue;
+      urls.add(
+        Uri.https('places.googleapis.com', '/v1/$name/media', {
+          'maxWidthPx': '1200',
+          'maxHeightPx': '900',
+          'key': apiKey,
+        }).toString(),
+      );
+    }
+
+    return urls;
   }
 }
 
@@ -806,7 +821,10 @@ class NearbyPlace {
 
   /// Published price band, when Google has one for this place.
   final GooglePriceRange? priceRange;
-  final String? photoUrl;
+  final List<String> photoUrls;
+
+  /// The first photo, for callers that only show one.
+  String? get photoUrl => photoUrls.isEmpty ? null : photoUrls.first;
 
   NearbyPlace({
     required this.placeId,
@@ -819,7 +837,7 @@ class NearbyPlace {
     required this.types,
     this.priceLevel,
     this.priceRange,
-    this.photoUrl,
+    this.photoUrls = const [],
   });
 
   bool get isActualShoppingMall {

@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../../models/preference/preferences.dart';
 import '../../models/planner_profile.dart';
+import '../../models/spending_profile.dart';
 import '../../models/score_place.dart';
 import '../../models/travel_place.dart';
 import 'preference_normalizer.dart';
@@ -34,9 +35,12 @@ class PlaceScoringService {
       preference: preference,
     );
 
-    final budget = _budgetScore(
+    // Spending style decides which price band counts as a good fit, instead
+    // of every style preferring whatever is cheapest.
+    final spending = SpendingProfile.fromName(preference.spendingStyle);
+    final budget = spending.costFitScore(
       placeCost: place.estimatedCost,
-      dailyActivityBudget: place.isDining
+      dailyBudget: place.isDining
           ? dailyFoodBudget ?? dailyActivityBudget
           : dailyActivityBudget,
     );
@@ -53,7 +57,7 @@ class PlaceScoringService {
       toleranceKm: profile.distanceToleranceKm,
     );
 
-    final weights = profile.scoringWeights;
+    final weights = profile.scoringWeights.weightedFor(spending);
     final total =
         rating * weights.rating +
         reviews * weights.reviews +
@@ -154,42 +158,6 @@ class PlaceScoringService {
     return max(45, score).clamp(0, 100).toDouble();
   }
 
-  double _budgetScore({
-    required double placeCost,
-    required double dailyActivityBudget,
-  }) {
-    if (dailyActivityBudget <= 0) {
-      return 50;
-    }
-
-    if (placeCost <= 0) {
-      return 100;
-    }
-
-    final ratio = placeCost / dailyActivityBudget;
-
-    if (ratio <= 0.20) {
-      return 100;
-    }
-
-    if (ratio <= 0.35) {
-      return 90;
-    }
-
-    if (ratio <= 0.50) {
-      return 75;
-    }
-
-    if (ratio <= 0.75) {
-      return 55;
-    }
-
-    if (ratio <= 1.0) {
-      return 35;
-    }
-
-    return 10;
-  }
 
   double _distanceScore({
     required double distanceKm,

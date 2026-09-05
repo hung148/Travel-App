@@ -129,20 +129,27 @@ class _PlanTripPageState extends State<PlanTripPage> {
   /// The generate button appears only once this holds, rather than sitting
   /// there greyed out - a disabled control tells you that you cannot proceed
   /// but not why, and the fields it depends on are right above it.
-  bool get _isTripSetupComplete {
-    if (savedPreference == null) return false;
-    if (_destinations.isEmpty) return false;
-    if (destinationController.text.trim().isEmpty) return false;
-    if (dates == null) return false;
-
+  /// What the form is still waiting for, named the way the fields are
+  /// labelled, in the order they appear.
+  ///
+  /// The generate button is hidden rather than disabled, so without this the
+  /// form gives no reason - you fill everything in and nothing appears, with
+  /// no way to tell which check is unhappy.
+  List<String> get _missingTripSetup {
     final budget = double.tryParse(budgetController.text.trim());
-    if (budget == null || budget <= 0) return false;
 
-    if (!Money.isValidCode(currencyCode)) return false;
-    if (travelers < 1) return false;
-
-    return true;
+    return [
+      if (savedPreference == null) 'your saved preferences',
+      if (_destinations.isEmpty || destinationController.text.trim().isEmpty)
+        'a destination',
+      if (dates == null) 'travel dates',
+      if (budget == null || budget <= 0) 'a total budget',
+      if (!Money.isValidCode(currencyCode)) 'a currency',
+      if (travelers < 1) 'at least one traveler',
+    ];
   }
+
+  bool get _isTripSetupComplete => _missingTripSetup.isEmpty;
 
   TripViewModel get _tripViewModel => context.read<TripViewModel>();
 
@@ -383,7 +390,12 @@ class _PlanTripPageState extends State<PlanTripPage> {
       id: 'destination-${DateTime.now().microsecondsSinceEpoch}',
       destination: value.destination,
       placeId: value.placeId,
-      dates: null,
+      // The first destination inherits whatever the user filled in before
+      // there was anything to attach it to - the fields are visible from the
+      // start, so dates and a budget can legitimately be set first. Later
+      // destinations start empty: each leg has its own dates, and they are not
+      // allowed to overlap.
+      dates: previous == null ? dates : null,
       budget: previous == null
           ? double.tryParse(budgetController.text.trim()) ?? 0
           : 0,
@@ -700,8 +712,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
       }
       setState(() {
         dates = selected;
-        // Dates can be chosen before any destination exists; they are applied
-        // to the destination when one is added.
+        // Dates can be chosen before any destination exists. _addDestination
+        // carries them onto the first destination added.
         final destination = _selectedDestinationOrNull;
         if (destination != null) {
           destination.dates = selected;
@@ -2111,7 +2123,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       onPickDates: _pickDates,
                       onTravelersChanged: (value) =>
                           setState(() => travelers = value),
-                      canGenerate: _isTripSetupComplete,
+                      missingSetup: _missingTripSetup,
                       isGenerating: isGenerating,
                       planGenerated: planGenerated,
                       onGenerate: _generatePlan,
@@ -2375,9 +2387,10 @@ class _TripSetupCard extends StatelessWidget {
   final VoidCallback onPickDates;
   final ValueChanged<int> onTravelersChanged;
 
-  /// True once every field the planner needs has a value. The action is not
-  /// rendered at all until then.
-  final bool canGenerate;
+  /// What the form is still waiting for. Empty means the plan can be
+  /// generated; otherwise the card says what is missing instead of leaving an
+  /// empty space where the button would be.
+  final List<String> missingSetup;
   final bool isGenerating;
   final bool planGenerated;
   final VoidCallback onGenerate;
@@ -2392,7 +2405,7 @@ class _TripSetupCard extends StatelessWidget {
     required this.onCurrencyChanged,
     required this.onPickDates,
     required this.onTravelersChanged,
-    required this.canGenerate,
+    required this.missingSetup,
     required this.isGenerating,
     required this.planGenerated,
     required this.onGenerate,
@@ -2591,8 +2604,8 @@ class _TripSetupCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               layout,
-              if (canGenerate) ...[
-                const SizedBox(height: 20),
+              const SizedBox(height: 20),
+              if (missingSetup.isEmpty)
                 Align(
                   alignment: wide
                       ? Alignment.centerRight
@@ -2623,8 +2636,31 @@ class _TripSetupCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                )
+              else
+                Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline_rounded,
+                      size: 17,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Add ${_readableList(missingSetup)} to generate a plan.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
             ],
           );
         },
@@ -2640,6 +2676,13 @@ class _TripSetupCard extends StatelessWidget {
 /// That cost the TextField its focus highlight, which this puts back: while
 /// anything inside has focus the border thickens and takes the primary colour,
 /// matching the theme's own focusedBorder.
+/// "a, b and c" - so the missing-fields line reads as a sentence.
+String _readableList(List<String> items) {
+  if (items.isEmpty) return '';
+  if (items.length == 1) return items.first;
+  return '${items.take(items.length - 1).join(', ')} and ${items.last}';
+}
+
 class _FieldBox extends StatelessWidget {
   final double height;
   final BorderRadius radius;
@@ -3158,7 +3201,14 @@ class _DestinationMap extends StatefulWidget {
   final String destinationId;
   final PlannerResult? result;
 
-  const _DestinationMap({required this.destinationId, required this.result});
+  /// Full screen drops the panel, the fixed height and the expand button.
+  final bool fullscreen;
+
+  const _DestinationMap({
+    required this.destinationId,
+    required this.result,
+    this.fullscreen = false,
+  });
 
   @override
   State<_DestinationMap> createState() => _DestinationMapState();
@@ -3175,6 +3225,13 @@ class _DestinationMapState extends State<_DestinationMap> {
   bool _hotelHighlighted = false;
 
   static const _fallbackCenter = LatLng(35.6762, 139.6503);
+
+  /// Walking routes cost one Google Routes call per day, so they are cached by
+  /// itinerary signature and shared across instances. Opening the map full
+  /// screen builds a second [_DestinationMap]; without this it would re-fetch
+  /// every day's route and show the spinner again.
+  static final Map<String, Map<int, List<LatLng>>> _routeCache = {};
+  static final Set<String> _fallbackSignatures = {};
 
   @override
   void initState() {
@@ -3227,6 +3284,17 @@ class _DestinationMapState extends State<_DestinationMap> {
     final signature = _resultSignature();
     if (signature == _loadedSignature) return;
     _loadedSignature = signature;
+
+    final cached = _routeCache[signature];
+    if (cached != null) {
+      _walkingRoutes
+        ..clear()
+        ..addAll(cached);
+      _routeFallbackUsed = _fallbackSignatures.contains(signature);
+      _isLoadingRoutes = false;
+      return;
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadWalkingRoutes());
   }
 
@@ -3255,6 +3323,22 @@ class _DestinationMapState extends State<_DestinationMap> {
           .expand((day) => day.places)
           .map((item) => LatLng(item.place.latitude, item.place.longitude)),
     ];
+  }
+
+  void _openFullscreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => Scaffold(
+          appBar: AppBar(title: const Text('Route map')),
+          body: _DestinationMap(
+            destinationId: widget.destinationId,
+            result: widget.result,
+            fullscreen: true,
+          ),
+        ),
+      ),
+    );
   }
 
   void _fitFullRoute() {
@@ -3328,6 +3412,13 @@ class _DestinationMapState extends State<_DestinationMap> {
           }),
     );
 
+    _routeCache[_loadedSignature] = Map<int, List<LatLng>>.from(loadedRoutes);
+    if (fallbackUsed) {
+      _fallbackSignatures.add(_loadedSignature);
+    } else {
+      _fallbackSignatures.remove(_loadedSignature);
+    }
+
     if (!mounted || _resultSignature() != _loadedSignature) return;
     setState(() {
       _walkingRoutes.addAll(loadedRoutes);
@@ -3388,383 +3479,409 @@ class _DestinationMapState extends State<_DestinationMap> {
               .where((day) => day.dayNumber == _highlightedDay)
               .firstOrNull;
 
-    return _Panel(
-      padding: EdgeInsets.zero,
-      child: SizedBox(
-        height: 430,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(22),
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: FlutterMap(
-                  key: ValueKey(
-                    points
-                        .map((point) => '${point.latitude},${point.longitude}')
-                        .join('|'),
-                  ),
-                  mapController: _mapController,
-                  options: mapOptions,
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.travelplanner.travel',
-                      maxNativeZoom: 19,
-                    ),
-                    TranslucentPointer(
-                      child: MouseRegion(
-                        hitTestBehavior: HitTestBehavior.deferToChild,
-                        cursor: SystemMouseCursors.click,
-                        onHover: (_) {
-                          final hit = _routeHitNotifier.value;
-                          if (hit != null && hit.hitValues.isNotEmpty) {
-                            _highlightDay(hit.hitValues.first);
-                          }
-                        },
-                        onExit: (_) => _highlightDay(null),
-                        child: PolylineLayer<int>(
-                          hitNotifier: _routeHitNotifier,
-                          minimumHitbox: 20,
-                          polylines: [
-                            for (final day in routeDays)
-                              Polyline<int>(
-                                points:
-                                    _walkingRoutes[day.dayNumber] ??
-                                    <LatLng>[
-                                      if (hotel != null)
-                                        LatLng(hotel.latitude, hotel.longitude),
-                                      ...day.places.map(
-                                        (item) => LatLng(
-                                          item.place.latitude,
-                                          item.place.longitude,
-                                        ),
-                                      ),
-                                      if (hotel != null)
-                                        LatLng(hotel.latitude, hotel.longitude),
-                                    ],
-                                color: _dayColor(context, day.dayNumber)
-                                    .withValues(
-                                      alpha:
-                                          _hotelHighlighted ||
-                                              _highlightedDay == null ||
-                                              _highlightedDay == day.dayNumber
-                                          ? 1
-                                          : 0.18,
-                                    ),
-                                strokeWidth: _hotelHighlighted
-                                    ? 7
-                                    : _highlightedDay == day.dayNumber
-                                    ? 8
-                                    : 4,
-                                borderColor: Colors.white,
-                                borderStrokeWidth:
-                                    _hotelHighlighted ||
-                                        _highlightedDay == day.dayNumber
-                                    ? 3
-                                    : 1,
-                                hitValue: day.dayNumber,
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (highlightedRoute != null && !_hotelHighlighted)
-                      TranslucentPointer(
-                        child: PolylineLayer<int>(
-                          polylines: [
-                            Polyline<int>(
-                              points:
-                                  _walkingRoutes[highlightedRoute.dayNumber] ??
-                                  <LatLng>[
-                                    if (hotel != null)
-                                      LatLng(hotel.latitude, hotel.longitude),
-                                    ...highlightedRoute.places.map(
-                                      (item) => LatLng(
-                                        item.place.latitude,
-                                        item.place.longitude,
-                                      ),
-                                    ),
-                                    if (hotel != null)
-                                      LatLng(hotel.latitude, hotel.longitude),
-                                  ],
-                              color: _dayColor(
-                                context,
-                                highlightedRoute.dayNumber,
-                              ),
-                              strokeWidth: 9,
-                              borderColor: Colors.white,
-                              borderStrokeWidth: 4,
-                              hitValue: highlightedRoute.dayNumber,
-                            ),
-                          ],
-                        ),
-                      ),
-                    MarkerLayer(
-                      markers: [
-                        for (final day in markerDays)
-                          for (
-                            int stopIndex = 0;
-                            stopIndex < day.places.length;
-                            stopIndex++
-                          )
-                            Marker(
-                              point: LatLng(
-                                day.places[stopIndex].place.latitude,
-                                day.places[stopIndex].place.longitude,
-                              ),
-                              width: 54,
-                              height: 54,
-                              alignment: Alignment.topCenter,
-                              child: Tooltip(
-                                message:
-                                    'Day ${day.dayNumber}, stop ${stopIndex + 1}: '
-                                    '${day.places[stopIndex].place.name}',
-                                child: MouseRegion(
-                                  cursor: SystemMouseCursors.click,
-                                  onEnter: (_) => _highlightDay(day.dayNumber),
-                                  onExit: (_) {
-                                    if (_highlightedDay == day.dayNumber) {
-                                      _highlightDay(null);
-                                    }
-                                  },
-                                  child: AnimatedOpacity(
-                                    duration: const Duration(milliseconds: 140),
-                                    opacity:
-                                        _hotelHighlighted ||
-                                            _highlightedDay == null ||
-                                            _highlightedDay == day.dayNumber
-                                        ? 1
-                                        : 0.28,
-                                    child: AnimatedScale(
-                                      duration: const Duration(
-                                        milliseconds: 140,
-                                      ),
-                                      scale: _highlightedDay == day.dayNumber
-                                          ? 1.25
-                                          : 1,
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          color: _dayColor(
-                                            context,
-                                            day.dayNumber,
-                                          ),
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: Colors.white,
-                                            width:
-                                                _highlightedDay == day.dayNumber
-                                                ? 4
-                                                : 3,
-                                          ),
-                                          boxShadow: const [
-                                            BoxShadow(
-                                              color: Colors.black26,
-                                              blurRadius: 5,
-                                            ),
-                                          ],
-                                        ),
-                                        alignment: Alignment.center,
-                                        child: Text(
-                                          '${day.dayNumber}.${stopIndex + 1}',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                        ),
-                                      ),
+    // Inline, the map keeps the panel, its fixed height and rounded corners.
+    // Full screen it fills the page, so that chrome comes off.
+    Widget frame(Widget map) => widget.fullscreen
+        ? map
+        : _Panel(
+            padding: EdgeInsets.zero,
+            child: SizedBox(
+              height: 430,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(22),
+                child: map,
+              ),
+            ),
+          );
+
+    return frame(
+      Stack(
+        children: [
+          Positioned.fill(
+            child: FlutterMap(
+              key: ValueKey(
+                points
+                    .map((point) => '${point.latitude},${point.longitude}')
+                    .join('|'),
+              ),
+              mapController: _mapController,
+              options: mapOptions,
+              children: [
+                TileLayer(
+                  urlTemplate:
+                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.travelplanner.travel',
+                  maxNativeZoom: 19,
+                ),
+                TranslucentPointer(
+                  child: MouseRegion(
+                    hitTestBehavior: HitTestBehavior.deferToChild,
+                    cursor: SystemMouseCursors.click,
+                    onHover: (_) {
+                      final hit = _routeHitNotifier.value;
+                      if (hit != null && hit.hitValues.isNotEmpty) {
+                        _highlightDay(hit.hitValues.first);
+                      }
+                    },
+                    onExit: (_) => _highlightDay(null),
+                    child: PolylineLayer<int>(
+                      hitNotifier: _routeHitNotifier,
+                      minimumHitbox: 20,
+                      polylines: [
+                        for (final day in routeDays)
+                          Polyline<int>(
+                            points:
+                                _walkingRoutes[day.dayNumber] ??
+                                <LatLng>[
+                                  if (hotel != null)
+                                    LatLng(hotel.latitude, hotel.longitude),
+                                  ...day.places.map(
+                                    (item) => LatLng(
+                                      item.place.latitude,
+                                      item.place.longitude,
                                     ),
                                   ),
+                                  if (hotel != null)
+                                    LatLng(hotel.latitude, hotel.longitude),
+                                ],
+                            color: _dayColor(context, day.dayNumber)
+                                .withValues(
+                                  alpha:
+                                      _hotelHighlighted ||
+                                          _highlightedDay == null ||
+                                          _highlightedDay == day.dayNumber
+                                      ? 1
+                                      : 0.18,
                                 ),
-                              ),
-                            ),
+                            strokeWidth: _hotelHighlighted
+                                ? 7
+                                : _highlightedDay == day.dayNumber
+                                ? 8
+                                : 4,
+                            borderColor: Colors.white,
+                            borderStrokeWidth:
+                                _hotelHighlighted ||
+                                    _highlightedDay == day.dayNumber
+                                ? 3
+                                : 1,
+                            hitValue: day.dayNumber,
+                          ),
                       ],
                     ),
-                    if (hotel != null)
-                      MarkerLayer(
-                        markers: [
-                          Marker(
-                            point: LatLng(hotel.latitude, hotel.longitude),
-                            width: _hotelHighlighted ? 78 : 66,
-                            height: _hotelHighlighted ? 78 : 66,
-                            alignment: Alignment.topCenter,
+                  ),
+                ),
+                if (highlightedRoute != null && !_hotelHighlighted)
+                  TranslucentPointer(
+                    child: PolylineLayer<int>(
+                      polylines: [
+                        Polyline<int>(
+                          points:
+                              _walkingRoutes[highlightedRoute.dayNumber] ??
+                              <LatLng>[
+                                if (hotel != null)
+                                  LatLng(hotel.latitude, hotel.longitude),
+                                ...highlightedRoute.places.map(
+                                  (item) => LatLng(
+                                    item.place.latitude,
+                                    item.place.longitude,
+                                  ),
+                                ),
+                                if (hotel != null)
+                                  LatLng(hotel.latitude, hotel.longitude),
+                              ],
+                          color: _dayColor(
+                            context,
+                            highlightedRoute.dayNumber,
+                          ),
+                          strokeWidth: 9,
+                          borderColor: Colors.white,
+                          borderStrokeWidth: 4,
+                          hitValue: highlightedRoute.dayNumber,
+                        ),
+                      ],
+                    ),
+                  ),
+                MarkerLayer(
+                  markers: [
+                    for (final day in markerDays)
+                      for (
+                        int stopIndex = 0;
+                        stopIndex < day.places.length;
+                        stopIndex++
+                      )
+                        Marker(
+                          point: LatLng(
+                            day.places[stopIndex].place.latitude,
+                            day.places[stopIndex].place.longitude,
+                          ),
+                          width: 54,
+                          height: 54,
+                          alignment: Alignment.topCenter,
+                          child: Tooltip(
+                            message:
+                                'Day ${day.dayNumber}, stop ${stopIndex + 1}: '
+                                '${day.places[stopIndex].place.name}',
                             child: MouseRegion(
                               cursor: SystemMouseCursors.click,
-                              onEnter: (_) => _highlightHotel(true),
-                              onExit: (_) => _highlightHotel(false),
-                              child: Tooltip(
-                                message:
-                                    'Hotel: ${hotel.name} • all daily routes',
+                              onEnter: (_) => _highlightDay(day.dayNumber),
+                              onExit: (_) {
+                                if (_highlightedDay == day.dayNumber) {
+                                  _highlightDay(null);
+                                }
+                              },
+                              child: AnimatedOpacity(
+                                duration: const Duration(milliseconds: 140),
+                                opacity:
+                                    _hotelHighlighted ||
+                                        _highlightedDay == null ||
+                                        _highlightedDay == day.dayNumber
+                                    ? 1
+                                    : 0.28,
                                 child: AnimatedScale(
-                                  duration: const Duration(milliseconds: 140),
-                                  scale: _hotelHighlighted ? 1.18 : 1,
+                                  duration: const Duration(
+                                    milliseconds: 140,
+                                  ),
+                                  scale: _highlightedDay == day.dayNumber
+                                      ? 1.25
+                                      : 1,
                                   child: Container(
                                     decoration: BoxDecoration(
-                                      color: Theme.of(context).colorScheme.primary,
+                                      color: _dayColor(
+                                        context,
+                                        day.dayNumber,
+                                      ),
                                       shape: BoxShape.circle,
                                       border: Border.all(
                                         color: Colors.white,
-                                        width: _hotelHighlighted ? 6 : 4,
+                                        width:
+                                            _highlightedDay == day.dayNumber
+                                            ? 4
+                                            : 3,
                                       ),
-                                      boxShadow: [
+                                      boxShadow: const [
                                         BoxShadow(
-                                          color: Colors.black.withValues(
-                                            alpha: _hotelHighlighted
-                                                ? 0.45
-                                                : 0.26,
-                                          ),
-                                          blurRadius: _hotelHighlighted
-                                              ? 14
-                                              : 6,
-                                          spreadRadius: _hotelHighlighted
-                                              ? 3
-                                              : 0,
+                                          color: Colors.black26,
+                                          blurRadius: 5,
                                         ),
                                       ],
                                     ),
-                                    child: const Icon(
-                                      Icons.hotel_rounded,
-                                      color: Colors.white,
-                                      size: 30,
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      '${day.dayNumber}.${stopIndex + 1}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w900,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        ],
-                      ),
+                        ),
                   ],
                 ),
-              ),
-              Positioned(
-                top: 16,
-                left: 16,
-                child: Chip(
-                  avatar: const Icon(Icons.location_searching, size: 18),
-                  label: Text(
-                    points.isEmpty
-                        ? 'Destination map'
-                        : '${points.length} itinerary stops',
-                  ),
-                  backgroundColor: Theme.of(context).colorScheme.surface,
-                ),
-              ),
-              if (_isLoadingRoutes)
-                const Positioned(
-                  top: 20,
-                  right: 20,
-                  child: Card(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 7,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                if (hotel != null)
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: LatLng(hotel.latitude, hotel.longitude),
+                        width: _hotelHighlighted ? 78 : 66,
+                        height: _hotelHighlighted ? 78 : 66,
+                        alignment: Alignment.topCenter,
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          onEnter: (_) => _highlightHotel(true),
+                          onExit: (_) => _highlightHotel(false),
+                          child: Tooltip(
+                            message:
+                                'Hotel: ${hotel.name} • all daily routes',
+                            child: AnimatedScale(
+                              duration: const Duration(milliseconds: 140),
+                              scale: _hotelHighlighted ? 1.18 : 1,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: _hotelHighlighted ? 6 : 4,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: _hotelHighlighted
+                                            ? 0.45
+                                            : 0.26,
+                                      ),
+                                      blurRadius: _hotelHighlighted
+                                          ? 14
+                                          : 6,
+                                      spreadRadius: _hotelHighlighted
+                                          ? 3
+                                          : 0,
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.hotel_rounded,
+                                  color: Colors.white,
+                                  size: 30,
+                                ),
+                              ),
+                            ),
                           ),
-                          SizedBox(width: 7),
-                          Text('Loading walking routes...'),
-                        ],
-                      ),
-                    ),
-                  ),
-                )
-              else if (_hotelHighlighted)
-                Positioned(
-                  top: 20,
-                  right: 20,
-                  child: Card(
-                    color: Theme.of(context).colorScheme.primary,
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 7,
-                      ),
-                      child: Text(
-                        'All hotel routes highlighted',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                    ),
+                    ],
                   ),
-                )
-              else if (_highlightedDay != null)
-                Positioned(
-                  top: 20,
-                  right: 20,
-                  child: Card(
-                    color: _dayColor(context, _highlightedDay!),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 7,
-                      ),
-                      child: Text(
-                        'Day $_highlightedDay highlighted',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-                )
-              else if (_routeFallbackUsed)
-                const Positioned(
-                  top: 20,
-                  right: 20,
-                  child: Card(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 7,
-                      ),
-                      child: Text('Route API unavailable • showing stop order'),
-                    ),
-                  ),
-                ),
-              Positioned(
-                right: 8,
-                bottom: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 3,
-                  ),
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.surface.withValues(alpha: 0.88),
-                  child: const Text(
-                    '© OpenStreetMap contributors',
-                    style: TextStyle(fontSize: 10),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 16,
+            left: 16,
+            child: Chip(
+              avatar: const Icon(Icons.location_searching, size: 18),
+              label: Text(
+                points.isEmpty
+                    ? 'Destination map'
+                    : '${points.length} itinerary stops',
+              ),
+              backgroundColor: Theme.of(context).colorScheme.surface,
+            ),
+          ),
+          if (!widget.fullscreen)
+            Positioned(
+              top: 16,
+              right: 16,
+              child: Tooltip(
+                message: 'Open the map full screen',
+                child: Material(
+                  color: Theme.of(context).colorScheme.surface,
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  elevation: 2,
+                  child: IconButton(
+                    onPressed: _openFullscreen,
+                    icon: const Icon(Icons.fullscreen_rounded),
                   ),
                 ),
               ),
-              if (points.isNotEmpty)
-                Positioned(
-                  left: 14,
-                  bottom: 14,
-                  child: Tooltip(
-                    message: 'Return to the full itinerary route',
-                    child: FilledButton.icon(
-                      onPressed: _fitFullRoute,
-                      icon: const Icon(Icons.center_focus_strong_rounded),
-                      label: const Text('Back to route'),
+            ),
+          if (_isLoadingRoutes)
+            const Positioned(
+              top: 20,
+              right: 76,
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 7),
+                      Text('Loading walking routes...'),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else if (_hotelHighlighted)
+            Positioned(
+              top: 20,
+              right: 76,
+              child: Card(
+                color: Theme.of(context).colorScheme.primary,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  child: Text(
+                    'All hotel routes highlighted',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-            ],
+              ),
+            )
+          else if (_highlightedDay != null)
+            Positioned(
+              top: 20,
+              right: 76,
+              child: Card(
+                color: _dayColor(context, _highlightedDay!),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  child: Text(
+                    'Day $_highlightedDay highlighted',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else if (_routeFallbackUsed)
+            const Positioned(
+              top: 20,
+              right: 76,
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  child: Text('Route API unavailable • showing stop order'),
+                ),
+              ),
+            ),
+          Positioned(
+            right: 8,
+            bottom: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 6,
+                vertical: 3,
+              ),
+              color: Theme.of(
+                context,
+              ).colorScheme.surface.withValues(alpha: 0.88),
+              child: const Text(
+                '© OpenStreetMap contributors',
+                style: TextStyle(fontSize: 10),
+              ),
+            ),
           ),
-        ),
+          if (points.isNotEmpty)
+            Positioned(
+              left: 14,
+              bottom: 14,
+              child: Tooltip(
+                message: 'Return to the full itinerary route',
+                child: FilledButton.icon(
+                  onPressed: _fitFullRoute,
+                  icon: const Icon(Icons.center_focus_strong_rounded),
+                  label: const Text('Back to route'),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -4891,7 +5008,7 @@ class _GeneratedDayPreview extends StatelessWidget {
                             const SizedBox(width: 8),
                             PlacePhoto(
                               placeName: day.places[stopIndex].place.name,
-                              photoUrl: day.places[stopIndex].place.photoUrl,
+                              photoUrls: day.places[stopIndex].place.photoUrls,
                               width: 72,
                               height: 72,
                               borderRadius: 14,

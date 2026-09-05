@@ -1,3 +1,5 @@
+import 'spending_profile.dart';
+
 class PlannerScoringWeights {
   final double rating;
   final double reviews;
@@ -14,6 +16,31 @@ class PlannerScoringWeights {
   });
 
   double get total => rating + reviews + preference + budget + distance;
+
+  /// The pace profile's weights, tilted by spending style and renormalised.
+  ///
+  /// Budget leans on cost, Luxury on rating; the remaining weights keep their
+  /// relative sizes, so the pace profile's balance survives the tilt.
+  PlannerScoringWeights weightedFor(SpendingProfile spending) {
+    final tilted = PlannerScoringWeights(
+      rating: rating * spending.ratingWeightFactor,
+      reviews: reviews,
+      preference: preference,
+      budget: budget * spending.budgetWeightFactor,
+      distance: distance,
+    );
+
+    final sum = tilted.total;
+    if (sum <= 0) return this;
+
+    return PlannerScoringWeights(
+      rating: tilted.rating / sum,
+      reviews: tilted.reviews / sum,
+      preference: tilted.preference / sum,
+      budget: tilted.budget / sum,
+      distance: tilted.distance / sum,
+    );
+  }
 }
 
 enum PlannerStyle { relaxed, balanced, explorer }

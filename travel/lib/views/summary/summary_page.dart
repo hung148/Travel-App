@@ -483,7 +483,7 @@ class _DayReview extends StatelessWidget {
                         role: scheduled.roleLabel,
                         category: item.place.category,
                         minutes: item.place.estimatedVisitMinutes,
-                        photoUrl: item.place.photoUrl,
+                        photoUrls: item.place.photoUrls,
                       );
                     },
                   ),
@@ -551,7 +551,7 @@ class _StopRow extends StatelessWidget {
   final String role;
   final String category;
   final int minutes;
-  final String? photoUrl;
+  final List<String> photoUrls;
 
   const _StopRow({
     required this.number,
@@ -560,7 +560,7 @@ class _StopRow extends StatelessWidget {
     required this.role,
     required this.category,
     required this.minutes,
-    required this.photoUrl,
+    required this.photoUrls,
   });
 
   @override
@@ -591,7 +591,7 @@ class _StopRow extends StatelessWidget {
         const SizedBox(width: 8),
         PlacePhoto(
           placeName: title,
-          photoUrl: photoUrl,
+          photoUrls: photoUrls,
           width: 68,
           height: 68,
           borderRadius: 14,

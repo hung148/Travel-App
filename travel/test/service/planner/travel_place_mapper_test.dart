@@ -24,7 +24,10 @@ void main() {
         userRatingsTotal: 1234,
         types: const ['museum', 'point_of_interest', 'establishment'],
         priceLevel: 2,
-        photoUrl: 'https://example.com/place.jpg',
+        photoUrls: const [
+          'https://example.com/place.jpg',
+          'https://example.com/place-2.jpg',
+        ],
       ),
       calibration: calibration,
     );
@@ -37,6 +40,7 @@ void main() {
     expect(result.reviewCount, 1234);
     expect(result.estimatedCost, 25);
     expect(result.photoUrl, 'https://example.com/place.jpg');
+    expect(result.photoUrls, hasLength(2));
     expect(result.estimatedVisitMinutes, 120);
     expect(result.latitude, 35.1);
     expect(result.longitude, 139.1);

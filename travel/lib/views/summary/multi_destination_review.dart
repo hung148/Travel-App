@@ -142,7 +142,7 @@ class MultiDestinationReview extends StatelessWidget {
                           const SizedBox(width: 8),
                           PlacePhoto(
                             placeName: place.place.name,
-                            photoUrl: place.place.photoUrl,
+                            photoUrls: place.place.photoUrls,
                             width: 52,
                             height: 52,
                             borderRadius: 12,
