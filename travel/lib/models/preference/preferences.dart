@@ -48,6 +48,24 @@ class Preference {
     required this.interests,
   });
 
+  /// The user's travel style tags, merged and deduplicated.
+  ///
+  /// The preference form asks ONE question but writes the answer to both
+  /// [experienceType] and [interests], so the recommendation engine keeps
+  /// working against the older field names. Reading either field alone is
+  /// wrong, and reading both without deduplicating shows every tag twice -
+  /// which is exactly what the dashboard used to do. Read this instead.
+  ///
+  /// Insertion-ordered, so the tags stay in the order the user picked them.
+  Set<String> get styleTags {
+    final tags = <String>{};
+    for (final tag in [...experienceType, ...interests]) {
+      final trimmed = tag.trim();
+      if (trimmed.isNotEmpty) tags.add(trimmed);
+    }
+    return tags;
+  }
+
   /// Convert Preference -> Map (for Firestore)
   ///
   /// Firestore stores data as key-value pairs,

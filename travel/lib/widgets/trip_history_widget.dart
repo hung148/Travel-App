@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../models/trip/trip.dart';
+import '../models/trip/trip.dart';
 
 class TripHistoryWidget extends StatelessWidget {
   final List<Trip> trips;

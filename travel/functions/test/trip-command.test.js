@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { recoverExplicitArguments, validateCommand } from "../trip-command.js";
+import {
+  commandSchema,
+  recoverExplicitArguments,
+  systemInstruction,
+  validateCommand,
+} from "../trip-command.js";
 
 test("accepts and normalizes a destination-scoped command", () => {
   const command = validateCommand(
@@ -252,4 +257,153 @@ test("recovers a partial stop name omitted by the model", () => {
   assert.equal(recovered.arguments.activityName, "KDL");
   assert.equal(recovered.arguments.targetDayNumber, 1);
   assert.equal(validateCommand(recovered, "hue").command, "move_stop");
+});
+
+test("keeps the reply message on a conversational answer", () => {
+  const command = validateCommand(
+    {
+      command: "answer",
+      destinationId: "hue",
+      arguments: {},
+      explanation: "Answered a packing question.",
+      message: "  Pack light layers and a rain shell for November.  ",
+    },
+    "hue",
+  );
+
+  assert.equal(command.command, "answer");
+  assert.equal(
+    command.message,
+    "Pack light layers and a rain shell for November.",
+  );
+  assert.equal(command.arguments.dayNumber, null);
+});
+
+test("asks a question back with clarify", () => {
+  const command = validateCommand(
+    {
+      command: "clarify",
+      destinationId: "hue",
+      arguments: {},
+      explanation: "Need the start time.",
+      message: "What time should the day start?",
+    },
+    "hue",
+  );
+
+  assert.equal(command.command, "clarify");
+  assert.equal(command.message, "What time should the day start?");
+});
+
+test("promotes explanation when a reply command omits message", () => {
+  const command = validateCommand(
+    {
+      command: "explain",
+      destinationId: "hue",
+      arguments: {},
+      explanation: "Built from your budget, style and route proximity.",
+      message: null,
+    },
+    "hue",
+  );
+
+  assert.equal(
+    command.message,
+    "Built from your budget, style and route proximity.",
+  );
+});
+
+test("drops any reply message from an edit command", () => {
+  const command = validateCommand(
+    {
+      command: "relax_day",
+      destinationId: "hue",
+      arguments: { dayNumber: 2 },
+      explanation: "Relax day 2.",
+      message: "chatty text that does not belong on an edit",
+    },
+    "hue",
+  );
+
+  assert.equal(command.message, null);
+});
+
+test("accepts sparse arguments from a model that omits unused fields", () => {
+  // Reproduces the Groq 400: gpt-oss-20b emitted every argument except
+  // targetDayNumber on a clarify.
+  const command = validateCommand(
+    {
+      command: "clarify",
+      destinationId: "hue",
+      arguments: {
+        activityName: null,
+        activityNumbers: [],
+        budget: null,
+        dayNumber: null,
+        mealType: null,
+        relativePosition: null,
+        replacementCriterion: null,
+        replacementPreference: null,
+        sourceStop: null,
+        targetStop: null,
+        startMinutes: null,
+        stopCount: null,
+        stopCategory: null,
+        style: null,
+      },
+      explanation: "Which day would you like to shift later?",
+      message: "Which day would you like to shift later?",
+    },
+    "hue",
+  );
+
+  assert.equal(command.command, "clarify");
+  assert.equal(command.arguments.targetDayNumber, null);
+});
+
+test("accepts a reply command with no arguments object at all", () => {
+  const command = validateCommand(
+    {
+      command: "answer",
+      destinationId: "hue",
+      explanation: "Answered a weather question.",
+      message: "November in Hue is the wettest month.",
+    },
+    "hue",
+  );
+
+  assert.equal(command.command, "answer");
+  assert.deepEqual(command.arguments.activityNumbers, []);
+});
+
+test("still requires arguments on an edit command", () => {
+  assert.throws(
+    () =>
+      validateCommand(
+        { command: "relax_day", destinationId: "hue", explanation: "Relax." },
+        "hue",
+      ),
+    /arguments are missing/,
+  );
+});
+
+test("the schema still lists every argument key as required", () => {
+  // Both providers reject a schema whose `required` omits any property, so this
+  // list cannot be relaxed - the prompt checklist is what keeps the model honest.
+  assert.ok(commandSchema.required.includes("message"));
+  assert.equal(commandSchema.properties.arguments.required.length, 15);
+  assert.deepEqual(
+    commandSchema.properties.arguments.properties.sourceStop.required,
+    ["dayNumber", "activityNumber", "activityName", "mealType"],
+  );
+});
+
+test("the prompt names every argument key the schema requires", () => {
+  for (const key of commandSchema.properties.arguments.required) {
+    assert.ok(
+      systemInstruction.includes(key),
+      `system prompt never mentions the required argument ${key}`,
+    );
+  }
+  assert.ok(systemInstruction.includes("ARGUMENT CHECKLIST"));
 });

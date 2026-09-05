@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travel/models/cost_estimate.dart';
 import 'package:travel/models/preference/preferences.dart';
 import 'package:travel/models/travel_place.dart';
 import 'package:travel/models/trip/trip.dart';
@@ -107,7 +108,12 @@ List<TravelPlace> _meals(int count) => List.generate(
     tags: const ['food'],
     rating: 4,
     reviewCount: 100,
-    estimatedCost: 10,
+    cost: const CostEstimate(
+      low: 10,
+      high: 10,
+      currencyCode: 'USD',
+      source: CostSource.userProvided,
+    ),
     latitude: 0,
     longitude: 0,
     estimatedVisitMinutes: 60,
@@ -144,7 +150,12 @@ TravelPlace _place(String id, {required int minutes, double rating = 4.5}) {
     tags: const ['history'],
     rating: rating,
     reviewCount: 1000,
-    estimatedCost: 10,
+    cost: const CostEstimate(
+      low: 10,
+      high: 10,
+      currencyCode: 'USD',
+      source: CostSource.userProvided,
+    ),
     latitude: 0,
     longitude: 0,
     estimatedVisitMinutes: minutes,

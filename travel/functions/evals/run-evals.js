@@ -18,6 +18,7 @@ const context = {
   destination: "Hue, Vietnam",
   budget: 1200,
   plannerStyle: "Balanced",
+  history: [],
   days: [
     {
       dayNumber: 1,

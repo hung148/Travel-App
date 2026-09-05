@@ -1,5 +1,11 @@
 enum TripAiCommandType {
+  answer,
+  clarify,
   explain,
+
+  /// "Why is the total that much?" - answered from the same CostBreakdown
+  /// the breakdown sheet renders, so the two can never disagree.
+  explainCost,
   changeBudget,
   relaxDay,
   addFood,
@@ -23,6 +29,7 @@ class TripAiCommand {
   const TripAiCommand({
     required this.type,
     required this.explanation,
+    this.message,
     this.destinationId,
     this.dayNumber,
     this.budget,
@@ -42,7 +49,14 @@ class TripAiCommand {
   });
 
   final TripAiCommandType type;
+
+  /// One-line preview of what applying this command would do. Shown next to
+  /// the Apply button.
   final String explanation;
+
+  /// Conversational reply for answer, clarify and explain. Null for edits.
+  final String? message;
+
   final String? destinationId;
   final int? dayNumber;
   final double? budget;
@@ -60,14 +74,32 @@ class TripAiCommand {
   final int? stopCount;
   final String? stopCategory;
 
+  /// Text the chat bubble should show: the conversational reply when there is
+  /// one, otherwise the short preview line.
+  String get reply {
+    final text = message?.trim();
+    return (text != null && text.isNotEmpty) ? text : explanation;
+  }
+
+  /// True when this reply is prose meant to be read rather than applied.
+  bool get isConversation => switch (type) {
+    TripAiCommandType.answer ||
+    TripAiCommandType.clarify ||
+    TripAiCommandType.explain ||
+    TripAiCommandType.explainCost => true,
+    _ => false,
+  };
+
   TripAiCommand copyWith({
     String? activityName,
     int? dayNumber,
     List<int>? activityNumbers,
     String? explanation,
+    String? message,
   }) => TripAiCommand(
     type: type,
     explanation: explanation ?? this.explanation,
+    message: message ?? this.message,
     destinationId: destinationId,
     dayNumber: dayNumber ?? this.dayNumber,
     budget: budget,
@@ -86,14 +118,23 @@ class TripAiCommand {
     stopCategory: stopCategory,
   );
 
+  /// answer, clarify, explain and unsupported are conversation only, so the
+  /// Apply button never appears for them.
   bool get changesTrip => switch (type) {
-    TripAiCommandType.explain || TripAiCommandType.unsupported => false,
+    TripAiCommandType.answer ||
+    TripAiCommandType.clarify ||
+    TripAiCommandType.explain ||
+    TripAiCommandType.explainCost ||
+    TripAiCommandType.unsupported => false,
     _ => true,
   };
 
   factory TripAiCommand.fromJson(Map<String, dynamic> json) {
     final type = switch (json['command']) {
+      'answer' => TripAiCommandType.answer,
+      'clarify' => TripAiCommandType.clarify,
       'explain' => TripAiCommandType.explain,
+      'explain_cost' => TripAiCommandType.explainCost,
       'change_budget' => TripAiCommandType.changeBudget,
       'relax_day' => TripAiCommandType.relaxDay,
       'add_food' => TripAiCommandType.addFood,
@@ -116,11 +157,13 @@ class TripAiCommand {
     final arguments = json['arguments'] is Map
         ? Map<String, dynamic>.from(json['arguments'] as Map)
         : const <String, dynamic>{};
+    final message = (json['message'] as String?)?.trim();
     return TripAiCommand(
       type: type,
       explanation: (json['explanation'] as String?)?.trim().isNotEmpty == true
           ? (json['explanation'] as String).trim()
           : 'I could not interpret that request safely.',
+      message: (message != null && message.isNotEmpty) ? message : null,
       destinationId: json['destinationId'] as String?,
       dayNumber: (arguments['dayNumber'] as num?)?.toInt(),
       budget: (arguments['budget'] as num?)?.toDouble(),

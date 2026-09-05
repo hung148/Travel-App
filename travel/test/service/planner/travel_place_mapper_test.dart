@@ -1,9 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travel/models/price_calibration.dart';
 import 'package:travel/service/map_service.dart';
 import 'package:travel/service/planner/travel_place_mapper.dart';
 
 void main() {
   const mapper = TravelPlaceMapper();
+  const calibration = PriceCalibration(
+    currencyCode: 'USD',
+    levelBands: {2: PriceBand(25, 25)},
+    source: PriceCalibrationSource.observedPrices,
+    sampleSize: 1,
+  );
 
   test('maps all Google nearby fields used by the planner', () {
     final result = mapper.fromNearbyPlace(
@@ -19,6 +26,7 @@ void main() {
         priceLevel: 2,
         photoUrl: 'https://example.com/place.jpg',
       ),
+      calibration: calibration,
     );
 
     expect(result.id, 'google-id');
@@ -46,6 +54,7 @@ void main() {
         userRatingsTotal: 50,
         types: const ['park', 'point_of_interest'],
       ),
+      calibration: calibration,
     );
 
     expect(result.category, 'park');

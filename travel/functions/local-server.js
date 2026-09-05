@@ -11,7 +11,11 @@ import {
 const host = "127.0.0.1";
 const port = Number.parseInt(process.env.AI_GATEWAY_PORT || "8787", 10);
 const groqApiKey = process.env.GROQ_API_KEY;
-const model = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
+// Only three Groq models support structured outputs with strict: true -
+// openai/gpt-oss-20b, openai/gpt-oss-120b and qwen/qwen3.8-27b. The 120b is the
+// largest of them and carries the same free-tier quota as the 20b, so it is the
+// default; anything outside that list will fail the response_format check.
+const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const maximumBodyBytes = 64 * 1024;
 
 class GatewayError extends Error {
@@ -40,6 +44,20 @@ async function readJson(request) {
     chunks.push(chunk);
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+export function salvageFailedGeneration(errorBody) {
+  try {
+    const parsed = JSON.parse(errorBody);
+    const raw = parsed?.error?.failed_generation;
+    if (typeof raw !== "string") return null;
+    const command = JSON.parse(raw);
+    return command && typeof command === "object" && !Array.isArray(command)
+      ? command
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function interpretWithGroq({ instruction, context, apiKey }) {
@@ -85,6 +103,18 @@ export async function interpretWithGroq({ instruction, context, apiKey }) {
   );
   if (!providerResponse.ok) {
     const providerError = await providerResponse.text();
+    // Groq rejects its own generation when it misses a schema detail, but it
+    // hands the generated JSON back in the error. That output is usually
+    // correct in every way we care about, so salvage it rather than failing
+    // the user's message: validateCommand still has the final say.
+    const salvaged = salvageFailedGeneration(providerError);
+    if (salvaged) {
+      console.warn("Recovered a Groq generation that failed schema validation");
+      return validateCommand(
+        recoverExplicitArguments(salvaged, instruction),
+        context.destinationId,
+      );
+    }
     console.error("Groq request failed", providerResponse.status, providerError);
     throw new GatewayError(
       `Groq request failed (${providerResponse.status})`,

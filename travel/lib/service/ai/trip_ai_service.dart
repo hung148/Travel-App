@@ -15,51 +15,95 @@ class TripAiException implements Exception {
 }
 
 class TripAiService {
-  TripAiService({required this.endpoint, http.Client? client})
-    : _client = client ?? http.Client();
+  TripAiService({
+    required this.endpoint,
+    http.Client? client,
+    this.timeout = const Duration(seconds: 25),
+  }) : _client = client ?? http.Client();
 
   final String endpoint;
+  final Duration timeout;
   final http.Client _client;
 
+  static const _notConfigured =
+      'The AI service is not connected yet, so I can only handle a few basic '
+      'requests such as "make it cheaper" or "relax day 2".';
+  static const _unreachable =
+      'I could not reach the AI service, so I only understood a few basic '
+      'requests. Check your connection and try again.';
+
+  /// The model is the primary interpreter.
+  ///
+  /// The local keyword matcher below is a degraded offline path only. It must
+  /// never run ahead of the model: when it did, any sentence that happened to
+  /// contain a trigger word ("why is there a museum on day 2?") was answered by
+  /// a regex instead of the AI, which is why paraphrases and questions failed.
   Future<TripAiProposal> propose({
     required String instruction,
     required Map<String, dynamic> context,
     String? idToken,
+    List<Map<String, String>> history = const [],
   }) async {
-    final local = _localProposal(instruction, context);
-    if (endpoint.trim().isEmpty ||
-        local.command.type != TripAiCommandType.unsupported) {
-      return local;
+    if (endpoint.trim().isEmpty) {
+      return _fallback(instruction, context, _notConfigured);
     }
+
     late http.Response response;
     try {
-      response = await _client.post(
-        Uri.parse(endpoint),
-        headers: {
-          'Content-Type': 'application/json',
-          if (idToken != null) 'Authorization': 'Bearer $idToken',
-        },
-        body: jsonEncode({'instruction': instruction, 'context': context}),
-      );
+      response = await _client
+          .post(
+            Uri.parse(endpoint),
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              if (idToken != null) 'Authorization': 'Bearer $idToken',
+            },
+            body: utf8.encode(
+              jsonEncode({
+                'instruction': instruction,
+                'context': {...context, 'history': history},
+              }),
+            ),
+          )
+          .timeout(timeout);
     } on Exception {
-      return local;
+      return _fallback(instruction, context, _unreachable);
     }
+
     if (response.statusCode == 401) {
       throw const TripAiException(
         'Sign in again before using the AI planner.',
         statusCode: 401,
       );
     }
-    if (response.statusCode != 200) return local;
-    try {
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
-      final command = TripAiCommand.fromJson(json);
-      return TripAiProposal(command: command, summary: command.explanation);
-    } on FormatException {
-      return local;
-    } on TypeError {
-      return local;
+    if (response.statusCode != 200) {
+      return _fallback(instruction, context, _unreachable);
     }
+    try {
+      final json =
+          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      final command = TripAiCommand.fromJson(json);
+      return TripAiProposal(command: command, summary: command.reply);
+    } on FormatException {
+      return _fallback(instruction, context, _unreachable);
+    } on TypeError {
+      return _fallback(instruction, context, _unreachable);
+    }
+  }
+
+  TripAiProposal _fallback(
+    String instruction,
+    Map<String, dynamic> context,
+    String notice,
+  ) {
+    final local = _localProposal(instruction, context);
+    if (local.command.type != TripAiCommandType.unsupported) return local;
+    final command = TripAiCommand(
+      type: TripAiCommandType.unsupported,
+      destinationId: context['destinationId'] as String?,
+      explanation: notice,
+      message: notice,
+    );
+    return TripAiProposal(command: command, summary: notice);
   }
 
   TripAiProposal _localProposal(
@@ -150,6 +194,18 @@ class TripAiService {
     final removeNamed = RegExp(
       r'^(?:remove|delete)\s+(.+?)(?:\s+from\s+(?:the\s+)?itinerary)?\s*[.!?]*$',
     ).firstMatch(text);
+    // Tightened: these three used to fire on a bare mention of the word, which
+    // turned questions into destructive edits.
+    final removeMuseumsRequested = RegExp(
+      r'\b(?:no|not|none|remove|delete|avoid|skip|drop|without|less|fewer)\b[^.?!]*\bmuseums?\b',
+    ).hasMatch(text);
+    final reduceWalkingRequested = RegExp(
+      r'\b(?:less|fewer|reduce|shorter|cut|too\s+much|too\s+far|minimi[sz]e|shorten)\b[^.?!]*\b(?:walk\w*|travel\s+time|driving|transit)\b',
+    ).hasMatch(text);
+    final explainRequested =
+        text.contains('explain') ||
+        RegExp(r'^(?:why|how come)\b').hasMatch(text);
+
     if ((text.contains('start time') ||
             RegExp(r'start\s+(?:day\s+\d+\s+)?at').hasMatch(text)) &&
         startMinutes != null) {
@@ -192,7 +248,8 @@ class TripAiService {
         budget: budget == null ? null : double.tryParse(budget.group(1)!),
         explanation: budget == null
             ? 'Reduce this destination budget by 15% and regenerate it.'
-            : 'Set this destination budget to \$${budget.group(1)} and regenerate it.',
+            : 'Set this destination budget to ${budget.group(1)} and '
+                  'regenerate it.',
       );
     } else if (const ['relaxed', 'balanced', 'explorer'].any(text.contains) &&
         text.contains('style')) {
@@ -416,19 +473,27 @@ class TripAiService {
             ? 'Add one $mealType stop and revalidate the schedule.'
             : 'Add one $mealType stop to day ${day.group(1)} and revalidate the schedule.',
       );
-    } else if (text.contains('museum')) {
+    } else if (removeMuseumsRequested) {
       command = TripAiCommand(
         type: TripAiCommandType.removeMuseums,
         destinationId: destinationId,
         explanation: 'Remove museum stops and revalidate the schedule.',
       );
-    } else if (text.contains('walk') || text.contains('travel time')) {
+    } else if (reduceWalkingRequested) {
       command = TripAiCommand(
         type: TripAiCommandType.reduceWalking,
         destinationId: destinationId,
         explanation: 'Recheck the route ordering for shorter travel.',
       );
-    } else if (text.contains('explain') || text.contains('why')) {
+    } else if (_costExplanationRequested(text)) {
+      // The message is filled in by the caller, which is the only place that
+      // holds the plan the numbers come from.
+      command = TripAiCommand(
+        type: TripAiCommandType.explainCost,
+        destinationId: destinationId,
+        explanation: 'Explain how the trip total is calculated.',
+      );
+    } else if (explainRequested) {
       command = TripAiCommand(
         type: TripAiCommandType.explain,
         destinationId: destinationId,
@@ -443,7 +508,53 @@ class TripAiService {
             'I cannot safely apply that yet. Try changing the budget, relaxing a day, or naming an activity to remove, replace, or move.',
       );
     }
-    return TripAiProposal(command: command, summary: command.explanation);
+    return TripAiProposal(command: command, summary: command.reply);
+  }
+
+  /// Recognises "why is it that much" in the shapes people actually type.
+  /// Deliberately narrow: a question about money and where it came from, not
+  /// any mention of price.
+  static bool _costExplanationRequested(String text) {
+    const moneyWords = [
+      'cost',
+      'costs',
+      'price',
+      'prices',
+      'total',
+      'expense',
+      'expenses',
+      'budget',
+      'spend',
+      'spending',
+      'expensive',
+    ];
+    const askWords = [
+      'why',
+      'how',
+      'breakdown',
+      'break down',
+      'explain',
+      'made up',
+      'add up',
+      'adds up',
+      'come from',
+      'comes from',
+      'calculated',
+      'what makes',
+      'where does',
+    ];
+
+    final mentionsMoney = moneyWords.any(text.contains);
+    if (!mentionsMoney) return false;
+
+    // "change my budget to 900" is an edit, not a question.
+    if (RegExp(r'[0-9]').hasMatch(text) &&
+        RegExp(r'\b(under|to|set|change|reduce|increase|make)\b')
+            .hasMatch(text)) {
+      return false;
+    }
+
+    return askWords.any(text.contains);
   }
 
   int? _parseTimeMinutes(String text) {
@@ -464,8 +575,10 @@ class TripAiService {
   TripAiStopReference? _localStopReference(String raw, int? dayNumber) {
     final value = raw.trim();
     if (value.isEmpty) return null;
-    final activity = RegExp(r'^activity\s+(\d+)$', caseSensitive: false)
-        .firstMatch(value);
+    final activity = RegExp(
+      r'^activity\s+(\d+)$',
+      caseSensitive: false,
+    ).firstMatch(value);
     if (activity != null) {
       return TripAiStopReference(
         dayNumber: dayNumber,

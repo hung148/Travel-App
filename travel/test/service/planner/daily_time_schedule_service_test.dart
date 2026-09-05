@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travel/models/cost_estimate.dart';
 import 'package:travel/models/score_place.dart';
 import 'package:travel/models/travel_place.dart';
 import 'package:travel/service/planner/daily_time_schedule_service.dart';
@@ -34,7 +35,12 @@ ScoredPlace _place(String id, String category, int minutes) => ScoredPlace(
     tags: [category],
     rating: 4.5,
     reviewCount: 100,
-    estimatedCost: 15,
+    cost: const CostEstimate(
+      low: 15,
+      high: 15,
+      currencyCode: 'USD',
+      source: CostSource.userProvided,
+    ),
     latitude: 0,
     longitude: 0,
     estimatedVisitMinutes: minutes,

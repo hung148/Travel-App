@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createLocalServer, interpretWithGroq } from "../local-server.js";
+import {
+  createLocalServer,
+  interpretWithGroq,
+  salvageFailedGeneration,
+} from "../local-server.js";
+import { validateCommand } from "../trip-command.js";
 
 test("converts a Groq JSON response into a validated command", async (context) => {
   const originalFetch = globalThis.fetch;
@@ -63,4 +68,29 @@ test("serves health and a validated command over HTTP", async (context) => {
   });
   assert.equal(commandResponse.status, 200);
   assert.equal((await commandResponse.json()).destinationId, "hue");
+});
+
+test("salvages a generation Groq rejected for a missing schema field", () => {
+  const errorBody = JSON.stringify({
+    error: {
+      message: "Generated JSON does not match the expected schema.",
+      code: "json_validate_failed",
+      failed_generation: JSON.stringify({
+        command: "clarify",
+        destinationId: "hue",
+        arguments: { dayNumber: null, style: null },
+        explanation: "Which day would you like to shift later?",
+        message: "Which day would you like to shift later?",
+      }),
+    },
+  });
+
+  const salvaged = salvageFailedGeneration(errorBody);
+  assert.equal(salvaged.command, "clarify");
+  assert.equal(validateCommand(salvaged, "hue").command, "clarify");
+});
+
+test("ignores an error body with no salvageable generation", () => {
+  assert.equal(salvageFailedGeneration("rate limited"), null);
+  assert.equal(salvageFailedGeneration(JSON.stringify({ error: {} })), null);
 });

@@ -1,3 +1,5 @@
+import 'cost_estimate.dart';
+
 class TravelPlace {
   final String id;
   final String name;
@@ -7,7 +9,7 @@ class TravelPlace {
   final double rating;
   final int reviewCount;
 
-  final double estimatedCost;
+  final CostEstimate cost;
 
   final double latitude;
   final double longitude;
@@ -22,12 +24,23 @@ class TravelPlace {
     required this.tags,
     required this.rating,
     required this.reviewCount,
-    required this.estimatedCost,
+    required this.cost,
     required this.latitude,
     required this.longitude,
     required this.estimatedVisitMinutes,
     this.photoUrl,
   });
+
+  /// Planning cost for ONE person, in the trip currency.
+  ///
+  /// The planner compares this against per-person budget slices, so both sides
+  /// of every comparison stay in the same unit. Anything user-facing must go
+  /// through [cost] instead, which knows whether the number is honest enough
+  /// to print.
+  double get estimatedCost => cost.planningAmount;
+
+  /// What the whole party pays for this stop.
+  double estimatedCostFor(int travelers) => cost.amountFor(travelers);
 
   bool get isDining {
     final types = {category, ...tags}.map((value) => value.toLowerCase());
@@ -50,7 +63,7 @@ class TravelPlace {
       'tags': tags,
       'rating': rating,
       'reviewCount': reviewCount,
-      'estimatedCost': estimatedCost,
+      'cost': cost.toMap(),
       'latitude': latitude,
       'longitude': longitude,
       'estimatedVisitMinutes': estimatedVisitMinutes,
@@ -59,6 +72,8 @@ class TravelPlace {
   }
 
   factory TravelPlace.fromMap(Map<String, dynamic> data) {
+    final costData = data['cost'];
+
     return TravelPlace(
       id: data['id'] as String? ?? '',
       name: data['name'] as String? ?? '',
@@ -68,7 +83,12 @@ class TravelPlace {
           .toList(),
       rating: (data['rating'] as num?)?.toDouble() ?? 0,
       reviewCount: (data['reviewCount'] as num?)?.toInt() ?? 0,
-      estimatedCost: (data['estimatedCost'] as num?)?.toDouble() ?? 0,
+      // Plans saved before costs carried a source stored a bare number.
+      cost: costData is Map
+          ? CostEstimate.fromMap(Map<String, dynamic>.from(costData))
+          : CostEstimate.legacy(
+              (data['estimatedCost'] as num?)?.toDouble() ?? 0,
+            ),
       latitude: (data['latitude'] as num?)?.toDouble() ?? 0,
       longitude: (data['longitude'] as num?)?.toDouble() ?? 0,
       estimatedVisitMinutes:

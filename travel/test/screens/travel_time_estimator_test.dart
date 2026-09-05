@@ -8,7 +8,10 @@ class _FakeMapService extends MapService {
   final Map<String, Coordinates> points;
 
   @override
-  Future<Coordinates> geocodeAddress(String address) async => points[address]!;
+  Future<Coordinates> resolveDestinationCenter(
+    String destination, {
+    String? placeId,
+  }) async => points[destination]!;
 
   @override
   Future<DrivingRouteEstimate> getDrivingRouteEstimate({

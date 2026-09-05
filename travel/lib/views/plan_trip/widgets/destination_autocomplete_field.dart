@@ -13,12 +13,18 @@ class DestinationAutocompleteField extends StatefulWidget {
     this.autofocus = false,
     this.validator,
     this.mapService,
+    this.onSuggestionSelected,
   });
 
   final TextEditingController controller;
   final VoidCallback onChanged;
   final bool autofocus;
   final FormFieldValidator<String>? validator;
+
+  /// Fires with the suggestion the user picked, or null when the text is
+  /// edited by hand. The placeId is what lets planning resolve the exact
+  /// city instead of guessing from the text.
+  final ValueChanged<PlaceSuggestion?>? onSuggestionSelected;
 
   /// May be injected by tests. The configured Google service is used by
   /// default, while manual entry remains available without an API key.
@@ -52,6 +58,9 @@ class _DestinationAutocompleteFieldState
   }
 
   void _queryChanged(String value) {
+    // Typing invalidates any previously picked place: the id would no longer
+    // describe the text in the field.
+    widget.onSuggestionSelected?.call(null);
     widget.onChanged();
     _debounce?.cancel();
     final query = value.trim();
@@ -106,6 +115,7 @@ class _DestinationAutocompleteFieldState
     setState(() => _suggestions = const []);
     _menuController.close();
     _focusNode.unfocus();
+    widget.onSuggestionSelected?.call(suggestion);
     widget.onChanged();
   }
 

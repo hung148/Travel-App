@@ -20,7 +20,7 @@ void main() {
           body: SizedBox(
             height: 600,
             child: AiChatWidget(
-              onPropose: (_) async => const TripAiProposal(
+              onPropose: (_, __) async => const TripAiProposal(
                 command: command,
                 summary: 'Reduce lower-priority stops on day 2.',
               ),
@@ -64,7 +64,7 @@ void main() {
           body: SizedBox(
             height: 600,
             child: AiChatWidget(
-              onPropose: (_) async => const TripAiProposal(
+              onPropose: (_, __) async => const TripAiProposal(
                 command: command,
                 summary: 'Reduce lower-priority stops on day 2.',
               ),

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travel/models/cost_estimate.dart';
 
 import 'package:travel/models/hotel_selections.dart';
 import 'package:travel/models/planner_result.dart';
@@ -16,7 +17,7 @@ void main() {
       tags: ['breakfast'],
       rating: 4.7,
       reviewCount: 800,
-      estimatedCost: 12,
+      cost: CostEstimate(low: 12, high: 20, currencyCode: "USD", source: CostSource.unknown),
       latitude: 16.05,
       longitude: 108.20,
       estimatedVisitMinutes: 60,
@@ -29,7 +30,7 @@ void main() {
       tags: ['culture'],
       rating: 4.8,
       reviewCount: 1200,
-      estimatedCost: 20,
+      cost: CostEstimate(low: 20, high: 30, currencyCode: "USD", source: CostSource.unknown),
       latitude: 16.06,
       longitude: 108.21,
       estimatedVisitMinutes: 90,
@@ -94,7 +95,6 @@ void main() {
           allocatedBudget: 800,
           hotel: daNangHotel,
           days: const [day1],
-          scheduleSaved: true,
         ),
         TripSegment(
           id: 'hcm',
@@ -103,7 +103,6 @@ void main() {
           endDate: DateTime(2026, 9, 14),
           allocatedBudget: 1000,
           hotel: hcmHotel,
-          scheduleSaved: true,
         ),
       ],
     );
@@ -118,9 +117,6 @@ void main() {
 
     expect(restored.segments[0].hotel?.name, 'Da Nang Hotel');
     expect(restored.segments[1].hotel?.name, 'HCM Hotel');
-
-    expect(restored.segments[0].scheduleSaved, true);
-    expect(restored.segments[1].scheduleSaved, true);
 
     expect(restored.segments[0].days.length, 1);
     expect(restored.segments[0].days.first.places.length, 2);

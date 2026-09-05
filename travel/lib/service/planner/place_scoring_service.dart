@@ -118,11 +118,10 @@ class PlaceScoringService {
     required TravelPlace place,
     required Preference preference,
   }) {
-    final userPreferences =
-        <String>[...preference.experienceType, ...preference.interests]
-            .map(preferenceNormalizer.normalize)
-            .where((item) => item.isNotEmpty)
-            .toSet();
+    final userPreferences = preference.styleTags
+        .map(preferenceNormalizer.normalize)
+        .where((item) => item.isNotEmpty)
+        .toSet();
 
     if (userPreferences.isEmpty) {
       return 50;

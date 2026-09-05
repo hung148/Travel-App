@@ -1,3 +1,4 @@
+import '../../core/utils/money.dart';
 import '../../models/budget_allocation.dart';
 import '../../models/planner_profile.dart';
 import '../../models/planner_result.dart';
@@ -18,13 +19,22 @@ class PlannerValidationService {
     required List<ScoredPlace> rankedPlaces,
     required PlannerProfile profile,
     required BudgetAllocation budgetAllocation,
+    int travelers = 1,
+    String currencyCode = Money.defaultCurrencyCode,
     bool allowUserOverrides = false,
   }) {
     final issues = <PlannerValidationIssue>[];
-    final dailyActivityBudget = budgetAllocation.dailyActivitiesBudget(
+    // Place costs are per person, so the budget slices they are compared
+    // against have to be per person too. The messages show the party figure,
+    // because that is the number the user recognises.
+    final party = travelers < 1 ? 1 : travelers;
+    final currency = Money.normalize(currencyCode);
+    final dailyActivityBudget = budgetAllocation
+        .dailyActivitiesBudgetPerPerson(days.length, party);
+    final dailyFoodBudget = budgetAllocation.dailyFoodBudgetPerPerson(
       days.length,
+      party,
     );
-    final dailyFoodBudget = budgetAllocation.dailyFoodBudget(days.length);
     final seenPlaceIds = <String>{};
     final constraintSeverity = allowUserOverrides
         ? PlannerValidationSeverity.warning
@@ -53,7 +63,8 @@ class PlannerValidationService {
             dayNumber: day.dayNumber,
             message:
                 'Day ${day.dayNumber} exceeds its activity budget of '
-                '\$${dailyActivityBudget.toStringAsFixed(0)}.',
+                '${Money.format(dailyActivityBudget * party, currency)} for '
+                '$party ${party == 1 ? 'traveler' : 'travelers'}.',
           ),
         );
       }
@@ -118,7 +129,9 @@ class PlannerValidationService {
             severity: PlannerValidationSeverity.warning,
             dayNumber: day.dayNumber,
             message:
-                'Day ${day.dayNumber} keeps three meals but exceeds the daily food allocation of \$${dailyFoodBudget.toStringAsFixed(0)}.',
+                'Day ${day.dayNumber} keeps three meals but exceeds the daily '
+                'food allocation of '
+                '${Money.format(dailyFoodBudget * party, currency)}.',
           ),
         );
       }
@@ -185,10 +198,13 @@ class PlannerValidationService {
       );
     }
 
+    // Per-person day totals scaled to the party, so they can be compared
+    // against the allocation, which is the party's money.
     final totalActivityCost = days.fold<double>(
-      0,
-      (total, day) => total + day.estimatedActivityCost,
-    );
+          0,
+          (total, day) => total + day.estimatedActivityCost,
+        ) *
+        party;
     if (totalActivityCost > budgetAllocation.activities + 0.001) {
       issues.add(
         PlannerValidationIssue(
@@ -200,9 +216,10 @@ class PlannerValidationService {
     }
 
     final totalFoodCost = days.fold<double>(
-      0,
-      (total, day) => total + day.estimatedFoodCost,
-    );
+          0,
+          (total, day) => total + day.estimatedFoodCost,
+        ) *
+        party;
     if (totalFoodCost > budgetAllocation.food + 0.001) {
       issues.add(
         PlannerValidationIssue(

@@ -852,6 +852,8 @@ class PlanRefinementService {
       rankedPlaces: ranked,
       profile: original.profile,
       budgetAllocation: original.budgetAllocation,
+      travelers: original.partySize,
+      currencyCode: original.currencyCode,
       allowUserOverrides: true,
     );
     final result = PlannerResult(
@@ -862,6 +864,9 @@ class PlanRefinementService {
       days: days,
       hotel: original.hotel,
       startTimeOverrides: startTimeOverrides ?? original.startTimeOverrides,
+      travelers: original.travelers,
+      currencyCode: original.currencyCode,
+      calibrationNote: original.calibrationNote,
     );
     return PlanRefinementResult(
       plan: result,

@@ -13,7 +13,13 @@ class AiChatWidget extends StatefulWidget {
     required this.liveAiEnabled,
   });
 
-  final Future<TripAiProposal> Function(String instruction) onPropose;
+  /// [history] carries the recent turns of this chat, oldest first, so the AI
+  /// can resolve follow-ups such as "move it to day 2" or a bare "day 3".
+  final Future<TripAiProposal> Function(
+    String instruction,
+    List<Map<String, String>> history,
+  )
+  onPropose;
   final Future<String> Function(TripAiCommand command) onApply;
   final Future<String> Function()? onUndo;
   final bool Function()? canUndo;
@@ -24,13 +30,17 @@ class AiChatWidget extends StatefulWidget {
 }
 
 class _AiChatWidgetState extends State<AiChatWidget> {
+  /// How many past turns to send with each request.
+  static const _historyTurns = 8;
+
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final List<_ChatMessage> _messages = [
     const _ChatMessage(
       fromUser: false,
       text:
-          'Tell me what you want to change. I will preview safe changes before applying them.',
+          'Ask me anything about your trip. I can change the plan, explain why '
+          'it looks the way it does, or answer travel questions.',
     ),
   ];
   TripAiProposal? _pendingProposal;
@@ -39,9 +49,9 @@ class _AiChatWidgetState extends State<AiChatWidget> {
 
   static const _quickActions = [
     'Make it cheaper',
-    'Less walking',
-    'More food',
-    'Remove museums',
+    'Why this order?',
+    'What should I pack?',
+    'Best time to visit?',
     'Relax schedule',
   ];
 
@@ -63,10 +73,27 @@ class _AiChatWidgetState extends State<AiChatWidget> {
     });
   }
 
+  /// The last few turns, excluding the opening greeting.
+  List<Map<String, String>> _recentHistory() {
+    final turns = _messages
+        .skip(1)
+        .map(
+          (message) => {
+            'role': message.fromUser ? 'user' : 'assistant',
+            'text': message.text,
+          },
+        )
+        .toList();
+    if (turns.length <= _historyTurns) return turns;
+    return turns.sublist(turns.length - _historyTurns);
+  }
+
   Future<void> _send([String? preset]) async {
     if (_busy) return;
     final text = (preset ?? _controller.text).trim();
     if (text.isEmpty) return;
+    // Snapshot the history before the new message joins the list.
+    final history = _recentHistory();
     setState(() {
       _messages.add(_ChatMessage(fromUser: true, text: text));
       _pendingProposal = null;
@@ -75,7 +102,7 @@ class _AiChatWidgetState extends State<AiChatWidget> {
     _controller.clear();
     _scrollToBottom();
     try {
-      final proposal = await widget.onPropose(text);
+      final proposal = await widget.onPropose(text, history);
       if (!mounted) return;
       setState(() {
         _messages.add(_ChatMessage(fromUser: false, text: proposal.summary));
@@ -162,7 +189,7 @@ class _AiChatWidgetState extends State<AiChatWidget> {
                     ),
                     Text(
                       widget.liveAiEnabled
-                          ? 'Live AI • preview and validation enabled'
+                          ? 'Live AI • ask questions or request changes'
                           : 'Safe local commands • AI gateway not connected',
                       style: TextStyle(
                         fontSize: 14,
@@ -185,12 +212,22 @@ class _AiChatWidgetState extends State<AiChatWidget> {
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 final message = _messages[index];
+                final textStyle = TextStyle(
+                  color: message.fromUser
+                      ? colors.onPrimary
+                      : colors.onSurfaceVariant,
+                  height: 1.4,
+                );
                 return Align(
                   alignment: message.fromUser
                       ? Alignment.centerRight
                       : Alignment.centerLeft,
                   child: Container(
-                    constraints: const BoxConstraints(maxWidth: 360),
+                    // Answers can run several sentences, so give the assistant
+                    // a wider bubble than a one-line user request needs.
+                    constraints: BoxConstraints(
+                      maxWidth: message.fromUser ? 360 : 460,
+                    ),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
                       vertical: 11,
@@ -201,15 +238,9 @@ class _AiChatWidgetState extends State<AiChatWidget> {
                           : colors.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Text(
-                      message.text,
-                      style: TextStyle(
-                        color: message.fromUser
-                            ? colors.onPrimary
-                            : colors.onSurfaceVariant,
-                        height: 1.4,
-                      ),
-                    ),
+                    child: message.fromUser
+                        ? Text(message.text, style: textStyle)
+                        : SelectableText(message.text, style: textStyle),
                   ),
                 );
               },
@@ -274,7 +305,7 @@ class _AiChatWidgetState extends State<AiChatWidget> {
                     enabled: !_busy,
                     onSubmitted: (_) => _send(),
                     decoration: const InputDecoration(
-                      hintText: 'Ask AI to adjust your trip...',
+                      hintText: 'Ask a question or request a change...',
                     ),
                   ),
                 ),

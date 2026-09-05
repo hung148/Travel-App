@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travel/models/cost_estimate.dart';
 import 'package:travel/models/score_place.dart';
 import 'package:travel/models/travel_place.dart';
 import 'package:travel/service/planner/route_optimizer.dart';
@@ -53,7 +54,12 @@ ScoredPlace _scoredPlace(
     tags: const [],
     rating: 4,
     reviewCount: 100,
-    estimatedCost: 10,
+    cost: const CostEstimate(
+      low: 10,
+      high: 10,
+      currencyCode: 'USD',
+      source: CostSource.userProvided,
+    ),
     latitude: latitude,
     longitude: longitude,
     estimatedVisitMinutes: 60,

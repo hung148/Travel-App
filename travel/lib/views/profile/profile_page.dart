@@ -332,12 +332,13 @@ class _TravelStyleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // styleTags already merges experienceType and interests and drops
+    // duplicates; the pace and spending answers are single values.
     final chips = <String>[
-      ...preference.experienceType,
+      ...preference.styleTags,
       preference.activityLevel,
       preference.spendingStyle,
-      ...preference.interests,
-    ];
+    ].where((label) => label.trim().isNotEmpty).toList();
     return _Panel(
       title: 'Your travel style',
       subtitle: 'Used to personalize future plans.',

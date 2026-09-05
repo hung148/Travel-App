@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/utils/money.dart';
 import 'trip_segment.dart';
 
 class Trip {
@@ -12,6 +13,15 @@ class Trip {
   final double budget;
   final int days;
   final String status;
+
+  /// Party size. The budget below is the WHOLE party's money, so per-person
+  /// costs must be multiplied by this before any comparison against it.
+  final int travelers;
+
+  /// Currency the budget and every plan amount is denominated in. One trip is
+  /// planned in exactly one currency; nothing is ever converted.
+  final String currencyCode;
+
   final DateTime? startDate;
   final DateTime? endDate;
   final int? rating;
@@ -29,6 +39,8 @@ class Trip {
     required this.budget,
     required this.days,
     required this.status,
+    this.travelers = 1,
+    this.currencyCode = Money.defaultCurrencyCode,
     this.startDate,
     this.endDate,
     this.rating,
@@ -50,14 +62,23 @@ class Trip {
   double get totalHotelCost =>
       segments.fold(0, (total, segment) => total + segment.hotelCost);
 
-  double get totalFoodCost =>
-      segments.fold(0, (total, segment) => total + segment.foodCost);
+  /// Party size, guaranteed to be at least one.
+  int get partySize => travelers < 1 ? 1 : travelers;
 
-  double get totalActivityCost =>
-      segments.fold(0, (total, segment) => total + segment.activityCost);
+  double get totalFoodCost => segments.fold(
+        0,
+        (total, segment) => total + segment.foodCostFor(partySize),
+      );
 
-  double get estimatedSegmentsCost =>
-      segments.fold(0, (total, segment) => total + segment.estimatedTotalCost);
+  double get totalActivityCost => segments.fold(
+        0,
+        (total, segment) => total + segment.activityCostFor(partySize),
+      );
+
+  double get estimatedSegmentsCost => segments.fold(
+        0,
+        (total, segment) => total + segment.estimatedTotalCostFor(partySize),
+      );
 
   double get remainingBudget => budget - estimatedSegmentsCost;
 
@@ -69,6 +90,8 @@ class Trip {
     double? budget,
     int? days,
     String? status,
+    int? travelers,
+    String? currencyCode,
     DateTime? startDate,
     DateTime? endDate,
     int? rating,
@@ -84,6 +107,8 @@ class Trip {
       budget: budget ?? this.budget,
       days: days ?? this.days,
       status: status ?? this.status,
+      travelers: travelers ?? this.travelers,
+      currencyCode: currencyCode ?? this.currencyCode,
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       rating: rating ?? this.rating,
@@ -104,6 +129,8 @@ class Trip {
       budget: (data['budget'] as num?)?.toDouble() ?? 0,
       days: (data['days'] as num?)?.toInt() ?? 0,
       status: data['status'] as String? ?? 'draft',
+      travelers: (data['travelers'] as num?)?.toInt() ?? 1,
+      currencyCode: Money.normalize(data['currencyCode'] as String?),
       startDate: _dateFromFirestore(data['startDate']),
       endDate: _dateFromFirestore(data['endDate']),
       rating: (data['rating'] as num?)?.toInt(),
@@ -135,6 +162,8 @@ class Trip {
       'budget': budget,
       'days': days,
       'status': status,
+      'travelers': travelers,
+      'currencyCode': currencyCode,
       'startDate': startDate,
       'endDate': endDate,
       'rating': rating,

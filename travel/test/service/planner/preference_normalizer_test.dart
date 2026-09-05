@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travel/models/cost_estimate.dart';
 import 'package:travel/models/planner_profile.dart';
 import 'package:travel/models/preference/preferences.dart';
 import 'package:travel/models/travel_place.dart';
@@ -127,7 +128,12 @@ TravelPlace _place(String category) {
     tags: const [],
     rating: 4,
     reviewCount: 100,
-    estimatedCost: 10,
+    cost: const CostEstimate(
+      low: 10,
+      high: 10,
+      currencyCode: 'USD',
+      source: CostSource.userProvided,
+    ),
     latitude: 0,
     longitude: 0,
     estimatedVisitMinutes: 60,

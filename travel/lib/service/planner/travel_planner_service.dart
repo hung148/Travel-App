@@ -1,3 +1,4 @@
+import '../../core/utils/money.dart';
 import '../../models/planner_profile.dart';
 import '../../models/planner_result.dart';
 import '../../models/planner_validation.dart';
@@ -35,6 +36,10 @@ class TravelPlannerService {
     required double centerLongitude,
   }) {
     final profile = PlannerProfile.fromActivityLevel(preference.activityLevel);
+    // The budget is the WHOLE party's money, but every place cost is per
+    // person. Both facts have to be in scope for any comparison to be valid.
+    final travelers = trip.travelers < 1 ? 1 : trip.travelers;
+    final currency = Money.normalize(trip.currencyCode);
     final eligibleCandidatePlaces = candidatePlaces
         .where((place) => !_isInvalidRetailCandidate(place))
         .toList();
@@ -59,6 +64,8 @@ class TravelPlannerService {
           rankedPlaces: const [],
           profile: profile,
           budgetAllocation: budgetAllocation,
+          travelers: travelers,
+          currencyCode: currency,
         ),
       );
       return PlannerResult(
@@ -67,14 +74,22 @@ class TravelPlannerService {
         profile: profile,
         rankedPlaces: const [],
         days: days,
+        travelers: travelers,
+        currencyCode: currency,
       );
     }
 
     var rankedPlaces = placeScoringService.rankPlaces(
       places: eligibleCandidatePlaces,
       preference: preference,
-      dailyActivityBudget: budgetAllocation.dailyActivitiesBudget(trip.days),
-      dailyFoodBudget: budgetAllocation.dailyFoodBudget(trip.days),
+      dailyActivityBudget: budgetAllocation.dailyActivitiesBudgetPerPerson(
+        trip.days,
+        travelers,
+      ),
+      dailyFoodBudget: budgetAllocation.dailyFoodBudgetPerPerson(
+        trip.days,
+        travelers,
+      ),
       centerLatitude: centerLatitude,
       centerLongitude: centerLongitude,
       profile: profile,
@@ -90,6 +105,8 @@ class TravelPlannerService {
         rankedPlaces: rankedPlaces,
         profile: profile,
         budgetAllocation: budgetAllocation,
+        travelers: travelers,
+        currencyCode: currency,
         code: PlannerValidationCode.insufficientDiningCandidates,
         message:
             'Only ${diningCandidates.length} unique meal places were found, but $requiredMealCount are required for three meals per day. Create this trip manually or shorten it.',
@@ -105,8 +122,9 @@ class TravelPlannerService {
       dayCount: trip.days,
       mealsPerDay: profile.minDiningPlacesPerDay,
     );
+    // maximumDailyCost is per person; the food allocation is the party's.
     final minimumFoodAllocation =
-        cheapestDiningPlan.maximumDailyCost * trip.days;
+        cheapestDiningPlan.maximumDailyCost * trip.days * travelers;
     final adjustedAllocation = budgetService.ensureMinimumFoodBudget(
       allocation: budgetAllocation,
       minimumFoodBudget: minimumFoodAllocation,
@@ -117,9 +135,15 @@ class TravelPlannerService {
         rankedPlaces: rankedPlaces,
         profile: profile,
         budgetAllocation: budgetAllocation,
+        travelers: travelers,
+        currencyCode: currency,
         code: PlannerValidationCode.insufficientBudgetForRequiredMeals,
         message:
-            'This budget cannot cover three meals per day. At least \$${minimumFoodAllocation.toStringAsFixed(0)} must be available for food; increase the total budget or create the trip manually.',
+            'This budget cannot cover three meals per day for $travelers '
+            '${travelers == 1 ? 'traveler' : 'travelers'}. At least '
+            '${Money.format(minimumFoodAllocation, currency)} must be '
+            'available for food; increase the total budget or create the trip '
+            'manually.',
       );
     }
     budgetAllocation = adjustedAllocation;
@@ -127,8 +151,14 @@ class TravelPlannerService {
     rankedPlaces = placeScoringService.rankPlaces(
       places: eligibleCandidatePlaces,
       preference: preference,
-      dailyActivityBudget: budgetAllocation.dailyActivitiesBudget(trip.days),
-      dailyFoodBudget: budgetAllocation.dailyFoodBudget(trip.days),
+      dailyActivityBudget: budgetAllocation.dailyActivitiesBudgetPerPerson(
+        trip.days,
+        travelers,
+      ),
+      dailyFoodBudget: budgetAllocation.dailyFoodBudgetPerPerson(
+        trip.days,
+        travelers,
+      ),
       centerLatitude: centerLatitude,
       centerLongitude: centerLongitude,
       profile: profile,
@@ -142,13 +172,13 @@ class TravelPlannerService {
     );
     final diningPlan =
         preferredDiningPlan.maximumDailyCost <=
-            budgetAllocation.dailyFoodBudget(trip.days) + 0.001
+            budgetAllocation.dailyFoodBudgetPerPerson(trip.days, travelers) +
+                0.001
         ? preferredDiningPlan
         : cheapestDiningPlan;
 
-    final dailyActivityBudget = budgetAllocation.dailyActivitiesBudget(
-      trip.days,
-    );
+    final dailyActivityBudget = budgetAllocation
+        .dailyActivitiesBudgetPerPerson(trip.days, travelers);
 
     _distributePlaces(
       rankedPlaces: rankedPlaces,
@@ -172,6 +202,8 @@ class TravelPlannerService {
         rankedPlaces: rankedPlaces,
         profile: profile,
         budgetAllocation: budgetAllocation,
+        travelers: travelers,
+        currencyCode: currency,
       ),
     );
 
@@ -181,6 +213,8 @@ class TravelPlannerService {
       profile: profile,
       rankedPlaces: rankedPlaces,
       days: days,
+      travelers: travelers,
+      currencyCode: currency,
     );
   }
 
@@ -222,6 +256,8 @@ class TravelPlannerService {
     required BudgetAllocation budgetAllocation,
     required PlannerValidationCode code,
     required String message,
+    int travelers = 1,
+    String currencyCode = Money.defaultCurrencyCode,
   }) {
     return PlannerResult(
       budgetAllocation: budgetAllocation,
@@ -237,6 +273,8 @@ class TravelPlannerService {
       profile: profile,
       rankedPlaces: rankedPlaces,
       days: days,
+      travelers: travelers,
+      currencyCode: currencyCode,
     );
   }
 

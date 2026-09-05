@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travel/models/cost_estimate.dart';
 import 'package:travel/models/planner_profile.dart';
 import 'package:travel/models/planner_result.dart';
 import 'package:travel/models/planner_validation.dart';
@@ -51,7 +52,12 @@ void main() {
       tags: ['history'],
       rating: 4.5,
       reviewCount: 1000,
-      estimatedCost: 20,
+      cost: const CostEstimate(
+        low: 20,
+        high: 20,
+        currencyCode: 'USD',
+        source: CostSource.userProvided,
+      ),
       latitude: 0.07,
       longitude: 0,
       estimatedVisitMinutes: 90,
@@ -96,7 +102,12 @@ void main() {
       tags: [],
       rating: 4,
       reviewCount: 100,
-      estimatedCost: 25,
+      cost: const CostEstimate(
+        low: 25,
+        high: 25,
+        currencyCode: 'USD',
+        source: CostSource.userProvided,
+      ),
       latitude: 0,
       longitude: 0,
       estimatedVisitMinutes: 60,

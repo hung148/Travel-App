@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/money.dart';
 import '../plan_trip/models/destination_draft.dart';
 import '../../widgets/place_photo.dart';
 import 'review_widget.dart';
@@ -33,7 +34,7 @@ class MultiDestinationReview extends StatelessWidget {
           sum +
           item.days.fold<double>(
             0,
-            (daySum, day) => daySum + day.estimatedFoodCost,
+            (daySum, day) => daySum + day.estimatedFoodCostFor(travelers),
           ),
     );
     final activityTotal = planned.fold<double>(
@@ -42,10 +43,18 @@ class MultiDestinationReview extends StatelessWidget {
           sum +
           item.days.fold<double>(
             0,
-            (daySum, day) => daySum + day.estimatedActivityCost,
+            (daySum, day) => daySum + day.estimatedActivityCostFor(travelers),
           ),
     );
     final estimatedTotal = hotelTotal + foodTotal + activityTotal;
+    // Legs can be planned in different currencies. Amounts are never
+    // converted, so a combined total is only meaningful when every leg shares
+    // one currency.
+    final currencies = (planned.isEmpty ? destinations : planned)
+        .map((item) => item.currencyCode)
+        .toSet();
+    final currencyCode = currencies.isEmpty ? Money.defaultCurrencyCode : currencies.first;
+    final hasMixedCurrencies = currencies.length > 1;
     final firstDate = destinations
         .where((item) => item.dates != null)
         .map((item) => item.dates!.start)
@@ -80,11 +89,14 @@ class MultiDestinationReview extends StatelessWidget {
                       ),
                     ),
                   ),
+                  // Whether this leg actually has a schedule. The old flag
+                  // this read was set by a "Save schedule" button that saved
+                  // nothing, so it never reflected real state.
                   Icon(
-                    destination.scheduleSaved
-                        ? Icons.check_circle_rounded
-                        : Icons.pending_outlined,
-                    color: destination.scheduleSaved ? Colors.green : null,
+                    destination.days.isEmpty
+                        ? Icons.pending_outlined
+                        : Icons.check_circle_rounded,
+                    color: destination.days.isEmpty ? null : Colors.green,
                   ),
                 ],
               ),
@@ -104,8 +116,8 @@ class MultiDestinationReview extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '\$${destination.selectedHotel!.nightlyRate.toStringAsFixed(0)}/night • '
-                  '\$${destination.selectedHotel!.totalCost.toStringAsFixed(0)} total',
+                  '${Money.format(destination.selectedHotel!.nightlyRate, destination.currencyCode)}/night • '
+                  '${Money.format(destination.selectedHotel!.totalCost, destination.currencyCode)} total',
                 ),
                 const Divider(height: 28),
               ],
@@ -137,9 +149,6 @@ class MultiDestinationReview extends StatelessWidget {
                           ),
                           const SizedBox(width: 10),
                           Expanded(child: Text(place.place.name)),
-                          Text(
-                            '\$${place.place.estimatedCost.toStringAsFixed(0)}',
-                          ),
                         ],
                       ),
                     ),
@@ -155,7 +164,10 @@ class MultiDestinationReview extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '\$${destination.estimatedTotal.toStringAsFixed(0)}',
+                    Money.format(
+                      destination.estimatedTotalFor(travelers),
+                      destination.currencyCode,
+                    ),
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                 ],
@@ -190,7 +202,9 @@ class MultiDestinationReview extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       '${firstDate == null ? 'Dates not set' : '${_date(firstDate)} - ${_date(lastDate!)}'} • '
-                      '${destinations.length} destinations • $travelers travelers • Budget \$${totalBudget.toStringAsFixed(0)}',
+                      '${destinations.length} destinations • $travelers '
+                      '${travelers == 1 ? 'traveler' : 'travelers'} • Budget '
+                      '${Money.format(totalBudget, currencyCode)}',
                     ),
                   ],
                 ),
@@ -208,25 +222,52 @@ class MultiDestinationReview extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 14),
-                    _TotalRow(label: 'Hotels', amount: hotelTotal),
-                    _TotalRow(label: 'Food', amount: foodTotal),
-                    _TotalRow(label: 'Activities', amount: activityTotal),
-                    const _TextRow(
-                      label: 'Transportation',
-                      value: 'Not calculated yet',
-                    ),
-                    const Divider(height: 24),
-                    _TotalRow(
-                      label: 'Estimated total',
-                      amount: estimatedTotal,
-                      strong: true,
-                    ),
-                    _TotalRow(label: 'Budget', amount: totalBudget),
-                    _TotalRow(
-                      label: 'Remaining',
-                      amount: totalBudget - estimatedTotal,
-                      strong: true,
-                    ),
+                    if (hasMixedCurrencies)
+                      _TextRow(
+                        label: 'Currencies',
+                        value:
+                            '${currencies.join(', ')} — legs are priced in '
+                            'different currencies, so they are not combined.',
+                      )
+                    else ...[
+                      _TotalRow(
+                        label: 'Hotels',
+                        amount: hotelTotal,
+                        currencyCode: currencyCode,
+                      ),
+                      _TotalRow(
+                        label: 'Food',
+                        amount: foodTotal,
+                        currencyCode: currencyCode,
+                      ),
+                      _TotalRow(
+                        label: 'Activities',
+                        amount: activityTotal,
+                        currencyCode: currencyCode,
+                      ),
+                      const _TextRow(
+                        label: 'Transportation',
+                        value: 'Not calculated yet',
+                      ),
+                      const Divider(height: 24),
+                      _TotalRow(
+                        label: 'Estimated total',
+                        amount: estimatedTotal,
+                        currencyCode: currencyCode,
+                        strong: true,
+                      ),
+                      _TotalRow(
+                        label: 'Budget',
+                        amount: totalBudget,
+                        currencyCode: currencyCode,
+                      ),
+                      _TotalRow(
+                        label: 'Remaining',
+                        amount: totalBudget - estimatedTotal,
+                        currencyCode: currencyCode,
+                        strong: true,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -244,10 +285,12 @@ class _TotalRow extends StatelessWidget {
   const _TotalRow({
     required this.label,
     required this.amount,
+    required this.currencyCode,
     this.strong = false,
   });
   final String label;
   final double amount;
+  final String currencyCode;
   final bool strong;
   @override
   Widget build(BuildContext context) => Padding(
@@ -261,7 +304,7 @@ class _TotalRow extends StatelessWidget {
           ),
         ),
         Text(
-          '\$${amount.toStringAsFixed(0)}',
+          Money.format(amount, currencyCode),
           style: TextStyle(fontWeight: strong ? FontWeight.w900 : null),
         ),
       ],

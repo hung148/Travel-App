@@ -6,12 +6,15 @@ import '../planner_result.dart';
 class TripSegment {
   final String id;
   final String destination;
+
+  /// Google placeId for [destination], kept so a reloaded trip resolves the
+  /// same map center that was used when the destination was picked.
+  final String? destinationPlaceId;
   final DateTime startDate;
   final DateTime endDate;
   final double allocatedBudget;
   final HotelSelection? hotel;
   final List<PlannerDay> days;
-  final bool scheduleSaved;
   final Map<String, int> startTimeOverrides;
   final List<PlannerDay> undoDays;
   final double? undoBudget;
@@ -23,12 +26,12 @@ class TripSegment {
   const TripSegment({
     required this.id,
     required this.destination,
+    this.destinationPlaceId,
     required this.startDate,
     required this.endDate,
     required this.allocatedBudget,
     this.hotel,
     this.days = const [],
-    this.scheduleSaved = false,
     this.startTimeOverrides = const {},
     this.undoDays = const [],
     this.undoBudget,
@@ -46,6 +49,8 @@ class TripSegment {
     return hotel?.totalPrice ?? 0;
   }
 
+  // Per-person totals. Place costs are per person, so these are too.
+
   double get scheduleCost {
     return days.fold(0, (total, day) => total + day.estimatedCost);
   }
@@ -58,19 +63,37 @@ class TripSegment {
     return days.fold(0, (total, day) => total + day.estimatedActivityCost);
   }
 
-  double get estimatedTotalCost {
-    return hotelCost + scheduleCost;
-  }
+  // Party totals. These are what a user is shown or what gets compared
+  // against a budget.
+
+  double scheduleCostFor(int travelers) => days.fold(
+        0,
+        (total, day) => total + day.estimatedCostFor(travelers),
+      );
+
+  double foodCostFor(int travelers) => days.fold(
+        0,
+        (total, day) => total + day.estimatedFoodCostFor(travelers),
+      );
+
+  double activityCostFor(int travelers) => days.fold(
+        0,
+        (total, day) => total + day.estimatedActivityCostFor(travelers),
+      );
+
+  /// The hotel is already a party total; the schedule is not.
+  double estimatedTotalCostFor(int travelers) =>
+      hotelCost + scheduleCostFor(travelers);
 
   TripSegment copyWith({
     String? id,
     String? destination,
+    String? destinationPlaceId,
     DateTime? startDate,
     DateTime? endDate,
     double? allocatedBudget,
     HotelSelection? hotel,
     List<PlannerDay>? days,
-    bool? scheduleSaved,
     Map<String, int>? startTimeOverrides,
     List<PlannerDay>? undoDays,
     double? undoBudget,
@@ -82,12 +105,12 @@ class TripSegment {
     return TripSegment(
       id: id ?? this.id,
       destination: destination ?? this.destination,
+      destinationPlaceId: destinationPlaceId ?? this.destinationPlaceId,
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       allocatedBudget: allocatedBudget ?? this.allocatedBudget,
       hotel: hotel ?? this.hotel,
       days: days ?? this.days,
-      scheduleSaved: scheduleSaved ?? this.scheduleSaved,
       startTimeOverrides: startTimeOverrides ?? this.startTimeOverrides,
       undoDays: undoDays ?? this.undoDays,
       undoBudget: undoBudget ?? this.undoBudget,
@@ -104,12 +127,12 @@ class TripSegment {
     return {
       'id': id,
       'destination': destination,
+      'destinationPlaceId': destinationPlaceId,
       'startDate': startDate,
       'endDate': endDate,
       'allocatedBudget': allocatedBudget,
       'hotel': hotel?.toMap(),
       'days': days.map((day) => day.toMap()).toList(),
-      'scheduleSaved': scheduleSaved,
       'startTimeOverrides': startTimeOverrides,
       'undoDays': undoDays.map((day) => day.toMap()).toList(),
       'undoBudget': undoBudget,
@@ -128,6 +151,7 @@ class TripSegment {
     return TripSegment(
       id: data['id'] as String? ?? '',
       destination: data['destination'] as String? ?? '',
+      destinationPlaceId: data['destinationPlaceId'] as String?,
       startDate: _dateFromFirestore(data['startDate']) ?? DateTime(1970),
       endDate: _dateFromFirestore(data['endDate']) ?? DateTime(1970),
       allocatedBudget: (data['allocatedBudget'] as num?)?.toDouble() ?? 0,
@@ -138,7 +162,6 @@ class TripSegment {
           .whereType<Map>()
           .map((day) => PlannerDay.fromMap(Map<String, dynamic>.from(day)))
           .toList(),
-      scheduleSaved: data['scheduleSaved'] as bool? ?? false,
       startTimeOverrides:
           (data['startTimeOverrides'] as Map<dynamic, dynamic>? ?? const {})
               .map(

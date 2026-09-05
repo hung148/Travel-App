@@ -5,6 +5,9 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/app_config.dart';
+import '../../core/utils/money.dart';
+import '../../models/cost_breakdown.dart';
+import '../../models/cost_estimate.dart';
 import '../../models/planner_result.dart';
 import '../../models/budget_allocation.dart';
 import '../../models/planner_profile.dart';
@@ -27,7 +30,10 @@ import '../../service/planner/daily_time_schedule_service.dart';
 import '../../service/planner/place_scoring_service.dart';
 import '../../service/planner/plan_refinement_service.dart';
 import '../../service/planner/planner_validation_service.dart';
+import '../../service/currency_rate_service.dart';
 import '../../service/planner/travel_planner_service.dart';
+import '../../widgets/cost_breakdown_page.dart';
+import '../../widgets/inputs/currency_field.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/preference_viewmodel.dart';
 import '../../viewmodels/trip_viewmodel.dart';
@@ -71,6 +77,14 @@ class _PlanTripPageState extends State<PlanTripPage> {
 
   DateTimeRange? dates;
   int travelers = 2;
+
+  /// Currency the budget is typed in and the whole plan is priced in. This is
+  /// the user's choice and nothing else changes it - not the destination, not
+  /// what Google publishes locally.
+  String currencyCode = Money.defaultCurrencyCode;
+
+  /// Whether displayed amounts are per traveler or for the whole party.
+  PriceDisplayMode priceDisplayMode = PriceDisplayMode.total;
   bool planGenerated = false;
   bool isGenerating = false;
   bool isLoadingPreference = true;
@@ -84,6 +98,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
   List<HotelStay> hotelRecommendations = const [];
   HotelStay? selectedHotel;
   late final List<DestinationDraft> _destinations;
+
+  final CurrencyRateService _currencyRates = CurrencyRateService();
   String _selectedDestinationId = '';
   final List<TravelLegDraft> _travelLegs = [];
   final TravelTimeEstimator _travelTimeEstimator = const TravelTimeEstimator();
@@ -98,10 +114,34 @@ class _PlanTripPageState extends State<PlanTripPage> {
   void initState() {
     super.initState();
     _destinations = [];
+    // Text fields do not rebuild the page on their own, so the button would
+    // stay hidden until something else happened to trigger a frame.
+    budgetController.addListener(_onSetupFieldChanged);
+    destinationController.addListener(_onSetupFieldChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadSegmentsFromViewModel();
       await _loadPreference();
     });
+  }
+
+  /// Everything the planner needs before it can produce anything.
+  ///
+  /// The generate button appears only once this holds, rather than sitting
+  /// there greyed out - a disabled control tells you that you cannot proceed
+  /// but not why, and the fields it depends on are right above it.
+  bool get _isTripSetupComplete {
+    if (savedPreference == null) return false;
+    if (_destinations.isEmpty) return false;
+    if (destinationController.text.trim().isEmpty) return false;
+    if (dates == null) return false;
+
+    final budget = double.tryParse(budgetController.text.trim());
+    if (budget == null || budget <= 0) return false;
+
+    if (!Money.isValidCode(currencyCode)) return false;
+    if (travelers < 1) return false;
+
+    return true;
   }
 
   TripViewModel get _tripViewModel => context.read<TripViewModel>();
@@ -138,6 +178,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     return DestinationDraft(
       id: segment.id,
       destination: segment.destination,
+      placeId: segment.destinationPlaceId,
       dates: DateTimeRange(start: segment.startDate, end: segment.endDate),
       budget: segment.allocatedBudget,
       selectedHotel: hotel == null
@@ -154,7 +195,6 @@ class _PlanTripPageState extends State<PlanTripPage> {
               rooms: 1,
               userProvided: true,
             ),
-      scheduleSaved: segment.scheduleSaved,
       savedDays: segment.days,
       placeDataSource: 'Saved trip',
       startTimeOverrides: segment.startTimeOverrides,
@@ -183,6 +223,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     final segment = TripSegment(
       id: draft.id,
       destination: draft.destination,
+      destinationPlaceId: draft.placeId,
       startDate: range.start,
       endDate: range.end,
       allocatedBudget: draft.budget,
@@ -194,7 +235,6 @@ class _PlanTripPageState extends State<PlanTripPage> {
                     .firstOrNull
                     ?.days ??
                 const [],
-      scheduleSaved: draft.scheduleSaved,
       startTimeOverrides:
           draft.plannerResult?.startTimeOverrides ?? draft.startTimeOverrides,
       undoDays: draft.undoDays,
@@ -217,8 +257,21 @@ class _PlanTripPageState extends State<PlanTripPage> {
   DestinationDraft get _selectedDestination =>
       _destinations.firstWhere((item) => item.id == _selectedDestinationId);
 
+  /// Null until the first destination is added.
+  ///
+  /// The dates, budget, currency and traveller fields are visible from the
+  /// start now, so their handlers can fire while [_destinations] is still
+  /// empty - and [_selectedDestination] throws in that state.
+  DestinationDraft? get _selectedDestinationOrNull {
+    for (final destination in _destinations) {
+      if (destination.id == _selectedDestinationId) return destination;
+    }
+    return null;
+  }
+
   void _persistSelectedDestination() {
-    final selected = _selectedDestination;
+    final selected = _selectedDestinationOrNull;
+    if (selected == null) return;
     selected.destination = destinationController.text.trim().isEmpty
         ? selected.destination
         : destinationController.text.trim();
@@ -256,7 +309,6 @@ class _PlanTripPageState extends State<PlanTripPage> {
         hotelRecommendations: List<HotelStay>.of(hotelRecommendations),
         selectedHotel: selectedHotel,
         placeDataSource: placeDataSource,
-        scheduleSaved: selected.scheduleSaved,
         planGenerated: true,
       );
     } else {
@@ -277,11 +329,15 @@ class _PlanTripPageState extends State<PlanTripPage> {
       budgetAllocation: BudgetAllocation(
         total: selected.budget,
         accommodation: 0,
-        food: days.fold(0, (total, day) => total + day.estimatedFoodCost),
+        // Day totals are per person; the allocation is the party's money.
+        food: days.fold(
+          0,
+          (total, day) => total + day.estimatedFoodCostFor(travelers),
+        ),
         transportation: 0,
         activities: days.fold(
           0,
-          (total, day) => total + day.estimatedActivityCost,
+          (total, day) => total + day.estimatedActivityCostFor(travelers),
         ),
         buffer: 0,
       ),
@@ -290,6 +346,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
       rankedPlaces: days.expand((day) => day.places).toList(),
       days: days,
       startTimeOverrides: selected.startTimeOverrides,
+      travelers: travelers,
+      currencyCode: selected.currencyCode,
+      priceDisplayMode: priceDisplayMode,
     );
   }
 
@@ -316,11 +375,14 @@ class _PlanTripPageState extends State<PlanTripPage> {
         : await _estimateIncomingTravel(
             previous.destination,
             value.destination,
+            originPlaceId: previous.placeId,
+            destinationPlaceId: value.placeId,
           );
     if (!mounted) return;
     final destination = DestinationDraft(
       id: 'destination-${DateTime.now().microsecondsSinceEpoch}',
       destination: value.destination,
+      placeId: value.placeId,
       dates: null,
       budget: previous == null
           ? double.tryParse(budgetController.text.trim()) ?? 0
@@ -411,12 +473,12 @@ class _PlanTripPageState extends State<PlanTripPage> {
     if (nextName == destination.destination) return;
     setState(() {
       destination.destination = nextName;
+      destination.placeId = value.placeId;
       destination.plannerResult = null;
       destination.savedDays = const [];
       destination.selectedHotel = null;
       destination.hotelRecommendations = const [];
       destination.mapSearchArea = null;
-      destination.scheduleSaved = false;
       if (destination.id == _selectedDestinationId) {
         _loadDestination(destination);
       }
@@ -427,14 +489,18 @@ class _PlanTripPageState extends State<PlanTripPage> {
 
   Future<TravelEstimate?> _estimateIncomingTravel(
     String origin,
-    String destination,
-  ) async {
+    String destination, {
+    String? originPlaceId,
+    String? destinationPlaceId,
+  }) async {
     if (!AppConfig.hasGoogleMapsApiKey) return null;
     try {
       return await _travelTimeEstimator.estimate(
         mapService: MapService(apiKey: AppConfig.googleMapsApiKey),
         origin: origin,
         destination: destination,
+        originPlaceId: originPlaceId,
+        destinationPlaceId: destinationPlaceId,
       );
     } catch (_) {
       return null;
@@ -455,6 +521,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
       final estimate = await _estimateIncomingTravel(
         origin.destination,
         target.destination,
+        originPlaceId: origin.placeId,
+        destinationPlaceId: target.placeId,
       );
       if (estimate == null) {
         if (old != null) rebuilt.add(old);
@@ -557,7 +625,6 @@ class _PlanTripPageState extends State<PlanTripPage> {
           transit != null &&
           dateRangeOverlaps(target!.dates!, [transit])) {
         target.dates = null;
-        target.scheduleSaved = false;
         target.plannerResult = null;
         datesCleared = true;
         if (target.id == _selectedDestinationId) {
@@ -593,27 +660,19 @@ class _PlanTripPageState extends State<PlanTripPage> {
     return ranges;
   }
 
-  void _saveDestinationSchedule() {
-    if (plannerResult == null) return;
-    setState(() {
-      _persistSelectedDestination();
-      _selectedDestination.scheduleSaved = true;
-      _syncDraftToViewModel(_selectedDestination);
-      _tripViewModel.markSegmentSaved(_selectedDestination.id);
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${_selectedDestination.destination} schedule saved.'),
-      ),
-    );
-  }
-
   @override
   void dispose() {
+    budgetController.removeListener(_onSetupFieldChanged);
+    destinationController.removeListener(_onSetupFieldChanged);
     destinationController.dispose();
     tripTitleController.dispose();
     budgetController.dispose();
+    _currencyRates.dispose();
     super.dispose();
+  }
+
+  void _onSetupFieldChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _pickDates() async {
@@ -641,9 +700,13 @@ class _PlanTripPageState extends State<PlanTripPage> {
       }
       setState(() {
         dates = selected;
-        _selectedDestination.dates = selected;
-        _selectedDestination.scheduleSaved = false;
-        _syncDraftToViewModel(_selectedDestination);
+        // Dates can be chosen before any destination exists; they are applied
+        // to the destination when one is added.
+        final destination = _selectedDestinationOrNull;
+        if (destination != null) {
+          destination.dates = selected;
+          _syncDraftToViewModel(destination);
+        }
       });
       await _reorderDestinationsAndTravelLegs();
     }
@@ -665,7 +728,10 @@ class _PlanTripPageState extends State<PlanTripPage> {
     try {
       final current = _selectedDestination.mapSearchArea;
       final center = current == null
-          ? await service.geocodeAddress(destination)
+          ? await service.resolveDestinationCenter(
+              destination,
+              placeId: _selectedDestination.placeId,
+            )
           : Coordinates(
               latitude: current.latitude,
               longitude: current.longitude,
@@ -684,7 +750,6 @@ class _PlanTripPageState extends State<PlanTripPage> {
         _selectedDestination.mapSearchArea = selected;
         _selectedDestination.plannerResult = null;
         _selectedDestination.savedDays = const [];
-        _selectedDestination.scheduleSaved = false;
         plannerResult = null;
         planGenerated = false;
         placeDataSource =
@@ -703,7 +768,6 @@ class _PlanTripPageState extends State<PlanTripPage> {
       _selectedDestination.mapSearchArea = null;
       _selectedDestination.plannerResult = null;
       _selectedDestination.savedDays = const [];
-      _selectedDestination.scheduleSaved = false;
       plannerResult = null;
       planGenerated = false;
       placeDataSource = 'Google Places ready';
@@ -822,19 +886,34 @@ class _PlanTripPageState extends State<PlanTripPage> {
       var nextPlaceDataSource =
           'Mock Tokyo data • Google API key not configured';
       var nextHotels = <HotelStay>[];
+      String? nextCalibrationNote;
 
       final destinationPlaceService = _destinationPlaceService;
       if (destinationPlaceService != null) {
         try {
           final selectedArea = _selectedDestination.mapSearchArea;
+          final priceContext = PriceContext(
+            currencyCode: currencyCode,
+            totalBudget: budget,
+            spendingStyle: preference.spendingStyle,
+            days: dates == null
+                ? 3
+                : dates!.end.difference(dates!.start).inDays + 1,
+            travelers: travelers,
+          );
           final destinationCandidates = selectedArea == null
-              ? await destinationPlaceService.loadForDestination(destination)
+              ? await destinationPlaceService.loadForDestination(
+                  destination,
+                  placeId: _selectedDestination.placeId,
+                  priceContext: priceContext,
+                )
               : await destinationPlaceService.loadForArea(
                   center: Coordinates(
                     latitude: selectedArea.latitude,
                     longitude: selectedArea.longitude,
                   ),
                   radiusMeters: selectedArea.radiusMeters,
+                  priceContext: priceContext,
                 );
           if (destinationCandidates.places.isNotEmpty) {
             candidatePlaces = destinationCandidates.places;
@@ -845,6 +924,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                 : 'Custom ${selectedArea.radiusLabel} map area • '
                       '${candidatePlaces.length} candidates';
             nextHotels = destinationCandidates.hotels;
+            nextCalibrationNote = destinationCandidates.calibration.explanation;
           } else {
             nextPlaceDataSource =
                 'Google Places returned no candidates in this area';
@@ -877,15 +957,22 @@ class _PlanTripPageState extends State<PlanTripPage> {
         status: 'draft',
         startDate: dates?.start,
         endDate: dates?.end,
+        travelers: travelers,
+        currencyCode: currencyCode,
       );
 
-      final generatedResult = _planner.generatePlan(
-        trip: trip,
-        preference: preference,
-        candidatePlaces: candidatePlaces,
-        centerLatitude: centerLatitude,
-        centerLongitude: centerLongitude,
-      );
+      final generatedResult = _planner
+          .generatePlan(
+            trip: trip,
+            preference: preference,
+            candidatePlaces: candidatePlaces,
+            centerLatitude: centerLatitude,
+            centerLongitude: centerLongitude,
+          )
+          .copyWith(
+            calibrationNote: nextCalibrationNote,
+            priceDisplayMode: priceDisplayMode,
+          );
 
       final nightCount = dates == null
           ? (dayCount - 1).clamp(1, dayCount)
@@ -895,20 +982,20 @@ class _PlanTripPageState extends State<PlanTripPage> {
         nights: nightCount,
         rooms: roomCount,
       );
-      if (nextHotel == null && nextHotels.isNotEmpty) {
-        nextHotel = nextHotels.first.copyWith(
-          nights: nightCount,
-          rooms: roomCount,
-        );
-      }
+      nextHotel ??= _pickHotelWithinBudget(
+        nextHotels,
+        nights: nightCount,
+        rooms: roomCount,
+        accommodationBudget: generatedResult.budgetAllocation.accommodation,
+      );
       final result = _resultWithHotel(generatedResult, nextHotel);
 
       if (!mounted) return;
 
       setState(() {
         plannerResult = result;
+        _selectedDestination.currencyCode = currencyCode;
         planGenerated = true;
-        _selectedDestination.scheduleSaved = false;
         placeDataSource = nextPlaceDataSource;
         hotelRecommendations = nextHotels
             .map(
@@ -945,12 +1032,16 @@ class _PlanTripPageState extends State<PlanTripPage> {
           code: PlannerValidationCode.accommodationCostExceeded,
           severity: PlannerValidationSeverity.warning,
           message:
-              'Your hotel estimate of \$${hotel.totalCost.toStringAsFixed(0)} exceeds the \$${result.budgetAllocation.accommodation.toStringAsFixed(0)} accommodation allocation.',
+              'Your hotel estimate of '
+              '${Money.format(hotel.totalCost, result.currencyCode)} exceeds '
+              'the '
+              '${Money.format(result.budgetAllocation.accommodation, result.currencyCode)} '
+              'accommodation allocation.',
         ),
       );
     }
     if (hotel != null &&
-        result.totalEstimatedCost + hotel.totalCost >
+        result.partyEstimatedCost + hotel.totalCost >
             result.budgetAllocation.total + 0.001) {
       issues.add(
         const PlannerValidationIssue(
@@ -969,7 +1060,42 @@ class _PlanTripPageState extends State<PlanTripPage> {
       days: result.days,
       hotel: hotel,
       startTimeOverrides: result.startTimeOverrides,
+      travelers: result.travelers,
+      currencyCode: result.currencyCode,
+      calibrationNote: result.calibrationNote,
+      priceDisplayMode: result.priceDisplayMode,
     );
+  }
+
+  /// The best-rated hotel the accommodation allocation can actually cover.
+  ///
+  /// The recommendation list is sorted by rating, so taking the first one
+  /// picked the most highly reviewed hotel regardless of price and reliably
+  /// blew the allocation. When nothing fits, the cheapest is chosen so the
+  /// warning the user sees is about a genuine shortfall rather than an
+  /// arbitrary pick.
+  HotelStay? _pickHotelWithinBudget(
+    List<HotelStay> hotels, {
+    required int nights,
+    required int rooms,
+    required double accommodationBudget,
+  }) {
+    if (hotels.isEmpty) return null;
+
+    final sized = hotels
+        .map((hotel) => hotel.copyWith(nights: nights, rooms: rooms))
+        .toList();
+
+    final affordable = sized
+        .where((hotel) => hotel.totalCost <= accommodationBudget + 0.001)
+        .toList();
+    if (affordable.isNotEmpty) {
+      affordable.sort((left, right) => right.rating.compareTo(left.rating));
+      return affordable.first;
+    }
+
+    sized.sort((left, right) => left.totalCost.compareTo(right.totalCost));
+    return sized.first;
   }
 
   void _selectRecommendedHotel(HotelStay hotel) {
@@ -1002,6 +1128,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
         mapService: AppConfig.hasGoogleMapsApiKey
             ? MapService(apiKey: AppConfig.googleMapsApiKey)
             : null,
+        currencyCode: currencyCode,
       ),
     );
     if (!mounted || edited == null) return;
@@ -1042,6 +1169,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
       rankedPlaces: current.rankedPlaces,
       profile: current.profile,
       budgetAllocation: current.budgetAllocation,
+      travelers: current.partySize,
+      currencyCode: current.currencyCode,
       allowUserOverrides: true,
     );
     setState(() {
@@ -1053,9 +1182,125 @@ class _PlanTripPageState extends State<PlanTripPage> {
         days: editedDays,
         hotel: current.hotel,
         startTimeOverrides: current.startTimeOverrides,
+        travelers: current.travelers,
+        currencyCode: current.currencyCode,
+        calibrationNote: current.calibrationNote,
+        priceDisplayMode: current.priceDisplayMode,
       );
       planGenerated = true;
       _persistSelectedDestination();
+    });
+  }
+
+  /// Changing the currency invalidates every amount in the plan.
+  ///
+  /// Place costs, hotel rates and the whole price calibration are derived in
+  /// one currency, and nothing here is ever converted, so a currency change
+  /// has to rebuild the plan rather than relabel it. Estimated hotel rates are
+  /// dropped for the same reason; a rate the user typed themselves is kept,
+  /// because only they know whether the figure still means what they intended.
+  Future<void> _setCurrency(String code) async {
+    final next = Money.normalize(code);
+    if (next == currencyCode) return;
+    final previous = currencyCode;
+
+    // Persist whatever is in the budget field before touching anything, so the
+    // number being converted is the one the user can actually see.
+    _persistSelectedDestination();
+
+    final exchangeRate = await _currencyRates.rate(from: previous, to: next);
+    if (!mounted) return;
+
+    // Plans cached on the other destinations were priced in the old currency.
+    // Their per-stop amounts still carry their own currency, but their totals
+    // would be relabelled, so they are dropped and re-planned on demand.
+    final staleDestinations = _destinations
+        .where(
+          (destination) =>
+              destination.id != _selectedDestinationId &&
+              (destination.plannerResult != null ||
+                  destination.savedDays.isNotEmpty),
+        )
+        .length;
+
+    setState(() {
+      currencyCode = next;
+
+      for (final destination in _destinations) {
+        destination.currencyCode = next;
+
+        if (exchangeRate != null) {
+          destination.budget = Money.roundBudget(
+            exchangeRate.convert(destination.budget),
+          );
+        }
+
+        // An estimated rate was derived from the old currency's calibration
+        // and cannot be carried across. A rate the user typed is their own
+        // money and converts like the budget does.
+        final hotel = destination.selectedHotel;
+        if (hotel != null) {
+          if (hotel.nightlyRateEstimated) {
+            destination.selectedHotel = null;
+          } else if (exchangeRate != null) {
+            destination.selectedHotel = hotel.copyWith(
+              nightlyRate: exchangeRate.convert(hotel.nightlyRate),
+            );
+          }
+        }
+        destination.hotelRecommendations = const [];
+
+        if (destination.id != _selectedDestinationId) {
+          destination.plannerResult = null;
+          destination.savedDays = const [];
+        }
+      }
+
+      final selected = _selectedDestinationOrNull;
+      if (selected != null) {
+        // Match _loadDestination's formatting so an unconverted budget keeps
+        // any cents the user typed.
+        budgetController.text = selected.budget.toStringAsFixed(
+          selected.budget == selected.budget.roundToDouble() ? 0 : 2,
+        );
+        selectedHotel = selected.selectedHotel;
+      }
+      hotelRecommendations = const [];
+    });
+
+    if (mounted) {
+      final staleNote = staleDestinations == 0
+          ? ''
+          : ' $staleDestinations other '
+                '${staleDestinations == 1 ? 'destination needs' : 'destinations need'} '
+                'regenerating.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            exchangeRate == null
+                ? 'Could not reach an exchange rate service, so your budget '
+                      'was left as typed and is now read as $next. Edit it if '
+                      'that is not what you meant.$staleNote'
+                : 'Converted your budget from $previous to $next at '
+                      '${exchangeRate.description}, rounded to a whole '
+                      'amount.$staleNote',
+          ),
+        ),
+      );
+    }
+
+    if (planGenerated) await _generatePlan();
+  }
+
+  /// Switching between per-person and total changes presentation only, so the
+  /// plan is re-priced in place rather than regenerated.
+  void _setPriceDisplayMode(PriceDisplayMode mode) {
+    setState(() {
+      priceDisplayMode = mode;
+      final current = plannerResult;
+      if (current != null) {
+        plannerResult = current.copyWith(priceDisplayMode: mode);
+      }
     });
   }
 
@@ -1067,7 +1312,10 @@ class _PlanTripPageState extends State<PlanTripPage> {
     }
   }
 
-  Future<TripAiProposal> _proposeAiChange(String instruction) async {
+  Future<TripAiProposal> _proposeAiChange(
+    String instruction,
+    List<Map<String, String>> history,
+  ) async {
     if (_destinations.isEmpty || plannerResult == null) {
       return const TripAiProposal(
         command: TripAiCommand(
@@ -1091,6 +1339,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     final proposal = await _tripAiService.propose(
       instruction: instruction,
       idToken: token,
+      history: history,
       context: {
         'destinationId': selected.id,
         'destination': selected.destination,
@@ -1098,6 +1347,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
         'startDate': selected.dates?.start.toIso8601String(),
         'endDate': selected.dates?.end.toIso8601String(),
         'plannerStyle': selectedPlan,
+        'currency': currencyCode,
+        'travelers': travelers,
+        'costBreakdown': CostBreakdown.from(plannerResult!).toPlainText(),
         'hotel': selectedHotel?.name,
         'days': plannerResult!.days
             .map(
@@ -1126,6 +1378,15 @@ class _PlanTripPageState extends State<PlanTripPage> {
             .toList(),
       },
     );
+    if (proposal.command.type == TripAiCommandType.explainCost) {
+      // Answer from the plan rather than from whatever the model wrote, so
+      // the chat and the breakdown sheet can never quote different numbers.
+      final explanation = CostBreakdown.from(plannerResult!).toPlainText();
+      return TripAiProposal(
+        command: proposal.command.copyWith(message: explanation),
+        summary: explanation,
+      );
+    }
     if (proposal.command.type == TripAiCommandType.setDayStartTime &&
         proposal.command.dayNumber == null) {
       _pendingAiChoice = _PendingAiChoice(
@@ -1335,16 +1596,18 @@ class _PlanTripPageState extends State<PlanTripPage> {
         _restoreAiSnapshot(snapshot);
         return 'I could not create a valid plan at that budget.';
       }
-      if (regenerated.totalEstimatedTripCost > requestedBudget + 0.01) {
-        final attemptedTotal = regenerated.totalEstimatedTripCost;
+      if (regenerated.partyEstimatedTripCost > requestedBudget + 0.01) {
+        final attemptedTotal = regenerated.partyEstimatedTripCost;
         _restoreAiSnapshot(snapshot);
         return 'I could not create a complete plan under '
-            '\$${requestedBudget.toStringAsFixed(0)}. The lowest generated total was '
-            '\$${attemptedTotal.toStringAsFixed(0)}, so nothing was changed.';
+            '${Money.format(requestedBudget, currencyCode)}. The lowest '
+            'generated total was '
+            '${Money.format(attemptedTotal, currencyCode)}, so nothing was '
+            'changed.';
       }
       _rememberAiUndo(snapshot);
       return 'Regenerated the itinerary with a total budget of '
-          '\$${requestedBudget.toStringAsFixed(0)}. Validation passed.';
+          '${Money.format(requestedBudget, currencyCode)}. Validation passed.';
     }
     if (command.type == TripAiCommandType.changeStyle) {
       final style = command.style;
@@ -1446,7 +1709,6 @@ class _PlanTripPageState extends State<PlanTripPage> {
     if (refinement == null) return command.explanation;
     if (refinement.changed && refinement.plan.validation.isValid && mounted) {
       setState(() => plannerResult = refinement.plan);
-      _selectedDestination.scheduleSaved = false;
       _rememberAiUndo(snapshot);
     }
     return refinement.message;
@@ -1601,7 +1863,6 @@ class _PlanTripPageState extends State<PlanTripPage> {
       hotelRecommendations: List<HotelStay>.of(hotelRecommendations),
       selectedHotel: selectedHotel,
       placeDataSource: placeDataSource,
-      scheduleSaved: selected.scheduleSaved,
       planGenerated: planGenerated,
     );
   }
@@ -1628,7 +1889,6 @@ class _PlanTripPageState extends State<PlanTripPage> {
       selectedHotel = snapshot.selectedHotel;
       placeDataSource = snapshot.placeDataSource;
       planGenerated = snapshot.planGenerated;
-      _selectedDestination.scheduleSaved = snapshot.scheduleSaved;
       _persistSelectedDestination();
     });
   }
@@ -1745,7 +2005,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
           TextButton.icon(
             onPressed: _destinations.isEmpty ? null : _saveTripDraft,
             icon: const Icon(Icons.save_outlined),
-            label: const Text('Save draft'),
+            label: const Text('Save plan'),
           ),
           const SizedBox(width: 16),
         ],
@@ -1802,46 +2062,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
                               ),
                             ],
                         );
-                        final action = FilledButton.icon(
-                            onPressed:
-                                isGenerating ||
-                                    savedPreference == null ||
-                                    _destinations.isEmpty
-                                ? null
-                                : _generatePlan,
-                            icon: isGenerating
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.auto_awesome_rounded),
-                            label: Text(
-                              isGenerating
-                                  ? 'Generating...'
-                                  : planGenerated
-                                  ? 'Regenerate schedule'
-                                  : 'Generate schedule',
-                            ),
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 22,
-                                vertical: 18,
-                              ),
-                            ),
-                          );
-
-                        if (stackHeader || !desktop) return intro;
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(child: intro),
-                            const SizedBox(width: 32),
-                            action,
-                          ],
-                        );
+                        // The generate action now lives at the foot of the
+                        // setup card, next to the fields it depends on.
+                        return intro;
                       },
                     ),
                     const SizedBox(height: 24),
@@ -1868,7 +2091,6 @@ class _PlanTripPageState extends State<PlanTripPage> {
                     ),
                     const SizedBox(height: 20),
                     _TripSetupCard(
-                      hasDestination: _destinations.isNotEmpty,
                       destinationSelector: DestinationSelector(
                         destinations: _destinations,
                         selectedId: _selectedDestinationId,
@@ -1884,9 +2106,15 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       titleController: tripTitleController,
                       dateLabel: _dateLabel(),
                       travelers: travelers,
+                      currencyCode: currencyCode,
+                      onCurrencyChanged: _setCurrency,
                       onPickDates: _pickDates,
                       onTravelersChanged: (value) =>
                           setState(() => travelers = value),
+                      canGenerate: _isTripSetupComplete,
+                      isGenerating: isGenerating,
+                      planGenerated: planGenerated,
+                      onGenerate: _generatePlan,
                     ),
                     if (_destinations.isNotEmpty) ...[
                       const SizedBox(height: 20),
@@ -1903,37 +2131,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
                         selectedHotel: selectedHotel,
                         onSelected: _selectRecommendedHotel,
                         onEdit: _editHotel,
+                        currencyCode: currencyCode,
                       ),
-                      if (!desktop) ...[
-                        const SizedBox(height: 14),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed:
-                                isGenerating ||
-                                    savedPreference == null ||
-                                    _destinations.isEmpty
-                                ? null
-                                : _generatePlan,
-                            icon: isGenerating
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.auto_awesome_rounded),
-                            label: Text(
-                              isGenerating
-                                  ? 'Generating...'
-                                  : planGenerated
-                                  ? 'Regenerate schedule'
-                                  : 'Generate schedule',
-                            ),
-                          ),
-                        ),
-                      ],
                       const SizedBox(height: 20),
                       if (desktop)
                         Row(
@@ -1995,8 +2194,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
                             : destinationController.text.trim(),
                         result: plannerResult,
                         placeDataSource: placeDataSource,
-                        onGenerate: _generatePlan,
                         onManual: _openManualPlanner,
+                        onPriceDisplayModeChanged: _setPriceDisplayMode,
+                        currencyCode: currencyCode,
                         onReview: () {
                           _persistSelectedDestination();
                           Navigator.push(
@@ -2010,36 +2210,6 @@ class _PlanTripPageState extends State<PlanTripPage> {
                           );
                         },
                       ),
-                      if (plannerResult != null) ...[
-                        const SizedBox(height: 14),
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
-                          children: [
-                            FilledButton.icon(
-                              onPressed: _saveDestinationSchedule,
-                              icon: Icon(
-                                _selectedDestination.scheduleSaved
-                                    ? Icons.check_circle_rounded
-                                    : Icons.save_outlined,
-                              ),
-                              label: Text(
-                                _selectedDestination.scheduleSaved
-                                    ? '${_selectedDestination.destination} schedule saved'
-                                    : 'Save ${_selectedDestination.destination} Schedule',
-                              ),
-                            ),
-                            if (_selectedDestination.scheduleSaved)
-                              OutlinedButton.icon(
-                                onPressed: _addDestination,
-                                icon: const Icon(
-                                  Icons.add_location_alt_outlined,
-                                ),
-                                label: const Text('Add Another Destination'),
-                              ),
-                          ],
-                        ),
-                      ],
                       const SizedBox(height: 30),
                     ],
                   ],
@@ -2062,7 +2232,6 @@ class _AiUndoSnapshot {
     required this.hotelRecommendations,
     required this.selectedHotel,
     required this.placeDataSource,
-    required this.scheduleSaved,
     required this.planGenerated,
   });
 
@@ -2073,7 +2242,6 @@ class _AiUndoSnapshot {
   final List<HotelStay> hotelRecommendations;
   final HotelStay? selectedHotel;
   final String placeDataSource;
-  final bool scheduleSaved;
   final bool planGenerated;
 }
 
@@ -2149,10 +2317,7 @@ class _PreferenceStatusCard extends StatelessWidget {
       );
     }
 
-    final preferenceLabels = <String>{
-      ...preference!.experienceType,
-      ...preference!.interests,
-    };
+    final preferenceLabels = preference!.styleTags;
 
     return _Panel(
       child: Row(
@@ -2200,24 +2365,37 @@ class _PreferenceStatusCard extends StatelessWidget {
 }
 
 class _TripSetupCard extends StatelessWidget {
-  final bool hasDestination;
   final Widget destinationSelector;
   final TextEditingController budgetController;
   final TextEditingController titleController;
   final String dateLabel;
   final int travelers;
+  final String currencyCode;
+  final ValueChanged<String> onCurrencyChanged;
   final VoidCallback onPickDates;
   final ValueChanged<int> onTravelersChanged;
 
+  /// True once every field the planner needs has a value. The action is not
+  /// rendered at all until then.
+  final bool canGenerate;
+  final bool isGenerating;
+  final bool planGenerated;
+  final VoidCallback onGenerate;
+
   const _TripSetupCard({
-    required this.hasDestination,
     required this.destinationSelector,
     required this.budgetController,
     required this.titleController,
     required this.dateLabel,
     required this.travelers,
+    required this.currencyCode,
+    required this.onCurrencyChanged,
     required this.onPickDates,
     required this.onTravelersChanged,
+    required this.canGenerate,
+    required this.isGenerating,
+    required this.planGenerated,
+    required this.onGenerate,
   });
 
   @override
@@ -2226,12 +2404,38 @@ class _TripSetupCard extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= 900;
+          final theme = Theme.of(context);
+
+          // These controls are three different widget types - an
+          // OutlinedButton, a TextField and a bordered Container - so each one
+          // inherited its own shape: a stadium pill, an 18px input border and a
+          // 14px container, at two different heights. Nothing here decides
+          // that on its own any more.
+          const fieldHeight = 56.0;
+          final fieldRadius = BorderRadius.circular(18);
+          final fieldBorder = BorderSide(color: theme.dividerColor, width: 1.2);
+          final fieldFill =
+              theme.inputDecorationTheme.fillColor ?? theme.colorScheme.surface;
+          final fieldButtonStyle = OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, fieldHeight),
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            backgroundColor: fieldFill,
+            side: fieldBorder,
+            shape: RoundedRectangleBorder(borderRadius: fieldRadius),
+          );
+
+          /// A TextField grows with its content padding, so it has to be told
+          /// the height the buttons already have.
+          Widget boxedField(Widget child) =>
+              SizedBox(height: fieldHeight, child: child);
+
           final destinationField = _LabeledField(
             label: 'Destinations',
             child: destinationSelector,
           );
           final titleField = _LabeledField(
-            label: 'Trip name (optional)',
+            label: 'Trip name',
             child: TextField(
               controller: titleController,
               textCapitalization: TextCapitalization.words,
@@ -2244,40 +2448,83 @@ class _TripSetupCard extends StatelessWidget {
           final detailFields = [
             _LabeledField(
               label: 'Travel dates',
-              child: OutlinedButton.icon(
-                onPressed: onPickDates,
-                icon: const Icon(Icons.calendar_month_outlined),
-                label: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(dateLabel),
-                ),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 56),
-                  alignment: Alignment.centerLeft,
+              child: boxedField(
+                OutlinedButton.icon(
+                  onPressed: onPickDates,
+                  icon: const Icon(Icons.calendar_month_outlined),
+                  label: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(dateLabel),
+                  ),
+                  style: fieldButtonStyle,
                 ),
               ),
             ),
             _LabeledField(
-              label: 'Total budget',
-              child: TextField(
-                controller: budgetController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  hintText: '2,500',
-                  prefixText: '\$ ',
-                  prefixIcon: Icon(Icons.account_balance_wallet_outlined),
+              label: 'Total budget (all travelers)',
+              // Sized by the same Container as the Travelers field rather
+              // than by InputDecoration. Letting the decorator draw its own
+              // box put this control at a different height twice: it sizes to
+              // its content, and neither a SizedBox around the TextField nor
+              // InputDecoration.constraints reliably overrode that. The
+              // TextField here is stripped of every border and fill so the
+              // Container is the only thing painting.
+              child: _FieldBox(
+                height: fieldHeight,
+                radius: fieldRadius,
+                border: fieldBorder,
+                fill: fieldFill,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.account_balance_wallet_outlined,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: budgetController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          isCollapsed: true,
+                          filled: false,
+                          contentPadding: EdgeInsets.zero,
+                          // The theme sets these individually, so clearing
+                          // `border` alone would leave them drawing.
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          focusedErrorBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          hintText: '2,500',
+                          prefixText: '${Money.symbolFor(currencyCode)} ',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            _LabeledField(
+              label: 'Currency',
+              child: boxedField(
+                CurrencyField(
+                  code: currencyCode,
+                  onChanged: onCurrencyChanged,
+                  style: fieldButtonStyle,
                 ),
               ),
             ),
             _LabeledField(
               label: 'Travelers',
-              child: Container(
-                height: 56,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Theme.of(context).dividerColor),
-                  borderRadius: BorderRadius.circular(14),
-                ),
+              child: _FieldBox(
+                height: fieldHeight,
+                radius: fieldRadius,
+                border: fieldBorder,
+                fill: fieldFill,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Row(
                   children: [
                     IconButton(
@@ -2303,15 +2550,13 @@ class _TripSetupCard extends StatelessWidget {
             ),
           ];
 
-          if (!hasDestination) {
-            return Column(
-              children: [titleField, const SizedBox(height: 14), destinationField],
-            );
-          }
-
+          // Every field shows from the start. Hiding dates, budget, currency
+          // and travellers until a destination existed made the form look
+          // like it had two steps when it has one.
+          final Widget layout;
           if (!wide) {
-            return Column(
-              children: [destinationField, ...detailFields]
+            layout = Column(
+              children: [titleField, destinationField, ...detailFields]
                   .map(
                     (field) => Padding(
                       padding: const EdgeInsets.only(bottom: 14),
@@ -2320,25 +2565,125 @@ class _TripSetupCard extends StatelessWidget {
                   )
                   .toList(),
             );
+          } else {
+            layout = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                titleField,
+                const SizedBox(height: 14),
+                destinationField,
+                const SizedBox(height: 20),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (int i = 0; i < detailFields.length; i++) ...[
+                      Expanded(child: detailFields[i]),
+                      if (i != detailFields.length - 1)
+                        const SizedBox(width: 14),
+                    ],
+                  ],
+                ),
+              ],
+            );
           }
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              titleField,
-              const SizedBox(height: 14),
-              destinationField,
-              const SizedBox(height: 20),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  for (int i = 0; i < detailFields.length; i++) ...[
-                    Expanded(child: detailFields[i]),
-                    if (i != detailFields.length - 1) const SizedBox(width: 14),
-                  ],
-                ],
-              ),
+              layout,
+              if (canGenerate) ...[
+                const SizedBox(height: 20),
+                Align(
+                  alignment: wide
+                      ? Alignment.centerRight
+                      : Alignment.center,
+                  child: SizedBox(
+                    width: wide ? null : double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: isGenerating ? null : onGenerate,
+                      icon: isGenerating
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.auto_awesome_rounded),
+                      label: Text(
+                        isGenerating
+                            ? 'Generating...'
+                            : planGenerated
+                            ? 'Regenerate schedule'
+                            : 'Generate schedule',
+                      ),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 22,
+                          vertical: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// A form control drawn as a plain box, with the focus ring Material would
+/// normally give an input.
+///
+/// The setup row's controls share one Container-based box so they all match.
+/// That cost the TextField its focus highlight, which this puts back: while
+/// anything inside has focus the border thickens and takes the primary colour,
+/// matching the theme's own focusedBorder.
+class _FieldBox extends StatelessWidget {
+  final double height;
+  final BorderRadius radius;
+  final BorderSide border;
+  final Color fill;
+  final EdgeInsets padding;
+  final Widget child;
+
+  const _FieldBox({
+    required this.height,
+    required this.radius,
+    required this.border,
+    required this.fill,
+    required this.padding,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      // An observer, not a stop in the tab order - the controls inside keep
+      // their own place in it.
+      canRequestFocus: false,
+      skipTraversal: true,
+      child: Builder(
+        builder: (context) {
+          final focused = Focus.of(context).hasFocus;
+          final side = focused
+              ? BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2.2,
+                )
+              : border;
+
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            height: height,
+            padding: padding,
+            decoration: BoxDecoration(
+              color: fill,
+              border: Border.fromBorderSide(side),
+              borderRadius: radius,
+            ),
+            child: child,
           );
         },
       ),
@@ -2502,12 +2847,14 @@ class _HotelStayCard extends StatelessWidget {
   final HotelStay? selectedHotel;
   final ValueChanged<HotelStay> onSelected;
   final VoidCallback onEdit;
+  final String currencyCode;
 
   const _HotelStayCard({
     required this.recommendations,
     required this.selectedHotel,
     required this.onSelected,
     required this.onEdit,
+    required this.currencyCode,
   });
 
   @override
@@ -2583,12 +2930,12 @@ class _HotelStayCard extends StatelessWidget {
                 Text(
                   selected.nightlyRate > 0
                       ? '${selected.nightlyRateEstimated ? 'Estimated ' : ''}'
-                            '\$${selected.nightlyRate.toStringAsFixed(0)} / room / night'
+                            '${Money.format(selected.nightlyRate, currencyCode)} / room / night'
                       : 'Nightly price not entered',
                 ),
                 Text(
                   'Accommodation total: '
-                  '\$${selected.totalCost.toStringAsFixed(0)}',
+                  '${Money.format(selected.totalCost, currencyCode)}',
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
               ],
@@ -2612,12 +2959,14 @@ class _HotelEditorDialog extends StatefulWidget {
   final int defaultNights;
   final int defaultRooms;
   final MapService? mapService;
+  final String currencyCode;
 
   const _HotelEditorDialog({
     required this.initial,
     required this.defaultNights,
     required this.defaultRooms,
     required this.mapService,
+    required this.currencyCode,
   });
 
   @override
@@ -2740,9 +3089,9 @@ class _HotelEditorDialogState extends State<_HotelEditorDialog> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Price per room per night',
-                    prefixText: '\$ ',
+                    prefixText: '${Money.symbolFor(widget.currencyCode)} ',
                   ),
                   validator: (value) {
                     final amount = double.tryParse(value?.trim() ?? '');
@@ -3777,8 +4126,7 @@ class _AvailableManualPlaces extends StatelessWidget {
                         ),
                         subtitle: Text(
                           '${item.place.category} • '
-                          '${item.place.estimatedVisitMinutes} min • '
-                          '\$${item.place.estimatedCost.toStringAsFixed(0)}',
+                          '${item.place.estimatedVisitMinutes} min',
                         ),
                         trailing: PopupMenuButton<int>(
                           tooltip: 'Add to day',
@@ -3899,9 +4247,10 @@ class _PlanPreview extends StatelessWidget {
   final String destination;
   final PlannerResult? result;
   final String placeDataSource;
-  final VoidCallback onGenerate;
   final VoidCallback onManual;
   final VoidCallback onReview;
+  final ValueChanged<PriceDisplayMode> onPriceDisplayModeChanged;
+  final String currencyCode;
 
   const _PlanPreview({
     required this.generated,
@@ -3909,9 +4258,10 @@ class _PlanPreview extends StatelessWidget {
     required this.destination,
     required this.result,
     required this.placeDataSource,
-    required this.onGenerate,
     required this.onManual,
     required this.onReview,
+    required this.onPriceDisplayModeChanged,
+    required this.currencyCode,
   });
 
   @override
@@ -3971,27 +4321,17 @@ class _PlanPreview extends StatelessWidget {
                 ).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
-            const SizedBox(height: 18),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                FilledButton.icon(
-                  onPressed: onGenerate,
-                  icon: const Icon(Icons.auto_awesome_rounded),
-                  label: const Text('Generate algorithm plan'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: onManual,
-                  icon: const Icon(Icons.edit_calendar_outlined),
-                  label: const Text('Create manually'),
-                ),
-              ],
-            ),
+            // No action here. This button called onManual, which generates
+            // a plan and then opens the manual editor - the same two steps as
+            // generating from the setup card and then using the button below,
+            // which already reads "Create manually" for an empty plan.
           ] else ...[
             _RankingSummary(result: result!),
             const SizedBox(height: 18),
-            _BudgetAllocationSummary(result: result!),
+            _BudgetAllocationSummary(
+              result: result!,
+              currencyCode: currencyCode,
+            ),
             const SizedBox(height: 12),
             _PlannerValidationSummary(validation: result!.validation),
             const Divider(height: 32),
@@ -4011,7 +4351,10 @@ class _PlanPreview extends StatelessWidget {
                 if (i != result!.days.length - 1) const Divider(height: 32),
               ],
             const Divider(height: 32),
-            _TotalExpenseSummary(result: result!),
+            _TotalExpenseSummary(
+              result: result!,
+              onPriceDisplayModeChanged: onPriceDisplayModeChanged,
+            ),
             const SizedBox(height: 18),
             Align(
               alignment: Alignment.centerRight,
@@ -4216,7 +4559,15 @@ class _ValidationIssueGroup extends StatelessWidget {
 class _BudgetAllocationSummary extends StatelessWidget {
   final PlannerResult result;
 
-  const _BudgetAllocationSummary({required this.result});
+  /// The currency currently selected in the form. The budget is the number the
+  /// user typed, and that number is always denominated in whatever currency is
+  /// selected now - so it must not be rendered with a stale plan's symbol.
+  final String currencyCode;
+
+  const _BudgetAllocationSummary({
+    required this.result,
+    required this.currencyCode,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -4248,7 +4599,8 @@ class _BudgetAllocationSummary extends StatelessWidget {
               const Icon(Icons.account_balance_wallet_outlined),
               const SizedBox(width: 10),
               Text(
-                'Budget allocation • \$${allocation.total.toStringAsFixed(0)} total',
+                'Budget allocation • '
+                '${Money.format(allocation.total, currencyCode)} total',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
@@ -4265,7 +4617,8 @@ class _BudgetAllocationSummary extends StatelessWidget {
                   (category) => Chip(
                     avatar: Icon(category.$3, size: 18),
                     label: Text(
-                      '${category.$1}: \$${category.$2.toStringAsFixed(0)}',
+                      '${category.$1}: '
+                      '${Money.format(category.$2, currencyCode)}',
                     ),
                   ),
                 )
@@ -4274,9 +4627,9 @@ class _BudgetAllocationSummary extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Meals use the food allocation '
-            '(\$${allocation.dailyFoodBudget(result.days.length).toStringAsFixed(0)} per day); '
+            '(${Money.format(allocation.dailyFoodBudget(result.days.length), currencyCode)} per day); '
             'attractions use the activities allocation '
-            '(\$${allocation.dailyActivitiesBudget(result.days.length).toStringAsFixed(0)} per day).',
+            '(${Money.format(allocation.dailyActivitiesBudget(result.days.length), currencyCode)} per day).',
             style: TextStyle(
               color: Theme.of(
                 context,
@@ -4291,18 +4644,81 @@ class _BudgetAllocationSummary extends StatelessWidget {
 
 class _TotalExpenseSummary extends StatelessWidget {
   final PlannerResult result;
+  final ValueChanged<PriceDisplayMode> onPriceDisplayModeChanged;
 
-  const _TotalExpenseSummary({required this.result});
+  const _TotalExpenseSummary({
+    required this.result,
+    required this.onPriceDisplayModeChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final onContainer = Theme.of(context).colorScheme.onPrimaryContainer;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.primaryContainer,
         borderRadius: BorderRadius.circular(16),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Only the headline row opens the breakdown. The toggle sits outside
+          // that tap target so choosing a mode never opens the page by
+          // accident.
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
+              onTap: () => showCostBreakdown(context, result),
+              child: _headline(context),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Show as',
+                    style: TextStyle(
+                      color: onContainer,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                SegmentedButton<PriceDisplayMode>(
+                  segments: const [
+                    ButtonSegment(
+                      value: PriceDisplayMode.perPerson,
+                      label: Text('Per person'),
+                      icon: Icon(Icons.person_outline_rounded),
+                    ),
+                    ButtonSegment(
+                      value: PriceDisplayMode.total,
+                      label: Text('Total'),
+                      icon: Icon(Icons.groups_outlined),
+                    ),
+                  ],
+                  selected: {result.priceDisplayMode},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (selection) =>
+                      onPriceDisplayModeChanged(selection.first),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _headline(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
       child: Row(
         children: [
           Icon(
@@ -4311,21 +4727,45 @@ class _TotalExpenseSummary extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              'Total estimated trip expense',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-                fontWeight: FontWeight.w800,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Total estimated trip expense • ${result.priceModeSuffix}',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Tap to see how this is calculated',
+                    style: TextStyle(
+                      fontSize: 12,
+                      decoration: TextDecoration.underline,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onPrimaryContainer
+                          .withValues(alpha: 0.8),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           Text(
-            '\$${result.totalEstimatedTripCost.toStringAsFixed(0)}',
+            Money.format(result.totalEstimatedTripCost, result.currencyCode),
             style: TextStyle(
               color: Theme.of(context).colorScheme.onPrimaryContainer,
               fontSize: 20,
               fontWeight: FontWeight.w900,
             ),
+          ),
+          const SizedBox(width: 6),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
           ),
         ],
       ),
@@ -4375,7 +4815,6 @@ class _GeneratedDayPreview extends StatelessWidget {
   final int restMinutes;
   final HotelStay? hotel;
   final Map<String, int> startTimeOverrides;
-
   const _GeneratedDayPreview({
     required this.day,
     required this.targetMinutes,
@@ -4500,13 +4939,9 @@ class _GeneratedDayPreview extends StatelessWidget {
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            Text(
-                              '\$${day.places[stopIndex].place.estimatedCost.toStringAsFixed(0)}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
+                            // No per-stop price. One total for the trip, with
+                            // the full derivation a tap away, beats a column of
+                            // figures that are mostly estimates anyway.
                           ],
                         ),
                       );
@@ -4533,12 +4968,6 @@ class _GeneratedDayPreview extends StatelessWidget {
                 const SizedBox(height: 12),
               ],
               const SizedBox(height: 4),
-              Text(
-                'Estimated cost: '
-                '\$${day.estimatedFoodCost.toStringAsFixed(0)} meals + '
-                '\$${day.estimatedActivityCost.toStringAsFixed(0)} activities',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
               const SizedBox(height: 4),
               Text(
                 'Planned activity time: '

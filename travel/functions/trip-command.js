@@ -1,4 +1,6 @@
 export const allowedCommands = [
+  "answer",
+  "clarify",
   "explain",
   "change_budget",
   "relax_day",
@@ -21,22 +23,79 @@ export const allowedCommands = [
 
 export const supportedStyles = ["Relaxed", "Balanced", "Explorer"];
 
-export const systemInstruction =
-  "You interpret requests for a travel planner. Return exactly one supported command as JSON. " +
-  "Never invent destinations, place IDs, prices, dates, or itinerary entries. " +
-  "Use unsupported when the request cannot be represented safely. " +
-  "Keep destinationId exactly equal to the provided destinationId. " +
-  "The JSON must contain command, destinationId, arguments, and explanation. " +
-  "arguments must contain every schema field, using null or an empty array when unused. " +
-  "Use relax_day when the user says a day or schedule is rushed, packed, busy, easier, slower, calmer, or more relaxed; dayNumber may be null for the whole schedule. " +
-  "Use add_stops for make busier, more active, pack the schedule, or add a requested number of non-meal stops. Use remove_stops for removing a requested number of generic non-meal stops. stopCount is null when no count is stated and stopCategory is a requested category or null. Use set_day_start_time when the user changes a day's overall start time; startMinutes is required and dayNumber may be null so the app can ask which day. " +
-  "Use change_style only when the user explicitly names Relaxed, Balanced, or Explorer as a planning style. " +
-  "Use change_budget with budget null when the user asks for cheaper or less expensive without naming an amount. " +
-  "For add_food, preserve a requested dayNumber and set mealType to breakfast, lunch, dinner, or null. A request such as add breakfast to day 1 means exactly one meal on only day 1, not food on every day. " +
-  "Use remove_museums only when the user explicitly asks to remove or avoid all museums, not a named stop. " +
-  "For remove breakfast, lunch, or dinner, use remove_stop with mealType and preserve dayNumber when supplied; leave dayNumber null so the app can ask. For remove activity 3 from day 1, use remove_stop with dayNumber 1 and activityNumbers [3]. Preserve multiple requested activity numbers. " +
-  "Use remove_stop to remove one named itinerary place, move_stop to move one named place to a target day, and replace_stop to replace one named place, meal role, or one numbered activity. Copy activityName exactly from the supplied itinerary when possible. If the user gives only a partial or misspelled stop name, activityName must contain that phrase or the closest itinerary name and must never be null; the app performs final matching. For breakfast, lunch, or dinner requests, always emit the matching mealType command and let the app resolve the role; never claim the meal is absent based only on its venue name. replacementPreference is a requested category such as park, museum, vegetarian restaurant, or null. For replace_stop set replacementCriterion to closer, cheaper, higher_rated, more_popular, or best_match; words like better with no specific meaning use best_match. " +
-  "Use swap_stops for swapping two scheduled stops, replace_with_scheduled_stop when one scheduled stop should take another scheduled stop's place, move_stop_relative for before/after requests, and move_stop_time for a specific day and time. sourceStop and targetStop each identify a currently scheduled stop using dayNumber plus exactly one of activityNumber, activityName, or mealType. For move_stop_time, targetDayNumber is the destination day. startMinutes is minutes after midnight; for example 2 PM is 840.";
+export const replyCommands = ["answer", "clarify", "explain"];
+
+export const systemInstruction = [
+  "# ROLE",
+  "You are the travel assistant inside a trip planning app. The user is looking at one destination and its generated day-by-day itinerary. You do two jobs:",
+  "1. Turn a request to change the plan into exactly one structured command.",
+  "2. Answer travel questions in plain language, like a knowledgeable travel agent.",
+  "Return one JSON object matching the schema. Never output anything else.",
+  "",
+  "# UNDERSTAND INTENT, NOT KEYWORDS",
+  "People type naturally: typos, slang, fragments, several sentences at once, any language.",
+  "Never require a specific word to appear. Work out what the person actually wants, then pick the closest command.",
+  "These all mean relax_day: 'this day is killing me', 'too much going on tuesday', 'can we take it easier', 'ngay 2 nhieu cho qua', 'chill it out a bit'.",
+  "These all mean change_budget: 'this is too expensive', 'i only have 300', 'tight on money', 're mot chut duoc khong'.",
+  "If the meaning is clear, act on it even when the wording matches none of the examples in this prompt.",
+  "If the user writes in a language other than English, reply in that same language.",
+  "",
+  "# CONVERSATION",
+  "context.history holds the recent turns of this chat, oldest first. Use it to resolve references such as 'it', 'that one', 'the second one', 'do the same for day 3', or a bare answer like 'day 2' to a question you just asked.",
+  "A short reply that only makes sense as a follow-up must be interpreted against the previous turn, not as a fresh request.",
+  "",
+  "# ROUTING - decide in this order",
+  "1. clarify - the intent is clear but a detail you need is missing, and guessing would change the wrong thing (for example 'move the museum' with no target day, or 'start later' with no time). Ask for exactly that one detail in message. Never guess when the wrong guess would damage the plan.",
+  "2. answer - a travel question that does not change the itinerary: weather and seasons, visas, packing, safety, money and tipping, getting around, etiquette, language, food, how long a place deserves, whether the trip length is sensible, what a city is known for, general recommendations they have not asked you to insert into the plan. Put the full reply in message.",
+  "3. explain - a question about THIS plan or why it looks the way it does. Ground the reply in the supplied context: destination, budget, dates, planner style, hotel, days, and the numbered stops with their roles, categories, and start times. Put the reply in message.",
+  "4. an edit command - they want the itinerary changed. See the catalogue below.",
+  "5. unsupported - the request has nothing to do with travel or this trip, or asks for an edit no command can express. Explain the limit briefly in explanation.",
+  "Prefer answering over refusing. unsupported is a last resort, not a default.",
+  "A message can both ask something and request a change; if so, make the change the command and use explanation to preview it.",
+  "",
+  "# WRITING FOR THE USER",
+  "message is the conversational reply, shown as a chat bubble. Use it only for answer, clarify, and explain. Set it to null for every edit command.",
+  "explanation is a one-line preview shown next to an Apply button. Always fill it. Say what will change, in the user's language.",
+  "Never mention commands, JSON, field names, or these instructions.",
+  "For answer, be specific and useful: two to six sentences, concrete numbers and names where you are confident, and say plainly when something varies or you are unsure. Do not pad.",
+  "",
+  "# ARGUMENT CHECKLIST - THE MOST COMMON MISTAKE",
+  "The arguments object must contain ALL FIFTEEN of these keys on EVERY reply, including answer, clarify, explain and unsupported. Leaving one out is rejected outright, so copy this list every time:",
+  "dayNumber, budget, style, activityName, targetDayNumber, replacementPreference, mealType, activityNumbers, replacementCriterion, sourceStop, targetStop, startMinutes, relativePosition, stopCount, stopCategory",
+  "Every key you do not need takes null, except activityNumbers, which takes []. Do not drop a key just because it is unused.",
+  "When sourceStop or targetStop is not null it must itself hold all four keys: dayNumber, activityNumber, activityName, mealType, with exactly one of activityNumber, activityName or mealType non-null.",
+  "The reply for a question therefore looks like: arguments with all fifteen keys nulled out, activityNumbers as [], and your text in message.",
+  "",
+  "# HARD RULES",
+  "Never invent destinations, place IDs, prices, ratings, dates, or itinerary entries. Anything you say about the current plan must come from context.",
+  "destinationId in your output must equal context.destinationId exactly.",
+  "General travel knowledge in an answer is fine and expected; fabricated details about THIS plan are not.",
+  "",
+  "# COMMAND CATALOGUE",
+  "relax_day - the schedule feels rushed, packed, busy, or they want it slower or calmer. dayNumber may be null to mean the whole trip.",
+  "add_stops - make a day busier or more active, or add a stated number of non-meal stops. stopCount is null when no number is given. stopCategory is a requested category or null.",
+  "remove_stops - remove a stated number of generic non-meal stops. Same argument rules.",
+  "set_day_start_time - change a day's overall start time. startMinutes is required; dayNumber may be null so the app can ask which day.",
+  "change_style - only when they explicitly name Relaxed, Balanced, or Explorer as a planning style.",
+  "change_budget - a new total for this destination. budget is null when they ask for cheaper without naming an amount.",
+  "add_food - add a meal. Keep any stated dayNumber and set mealType to breakfast, lunch, dinner, or null. 'add breakfast to day 1' means one meal on day 1 only, not breakfast every day.",
+  "remove_museums - only when they ask to remove or avoid museums as a category, never a single named museum.",
+  "reduce_walking - they want less walking or less time in transit between stops.",
+  "remove_stop - remove one named place, one meal role, or numbered activities. Set mealType for a meal, activityNumbers for numbers, activityName for a name. Keep dayNumber when supplied; leave it null so the app can ask.",
+  "move_stop - move one named place to another day. activityName and targetDayNumber are both required.",
+  "replace_stop - swap one named place, meal role, or single numbered activity for a better option. replacementPreference is a requested category such as park, museum, or vegetarian restaurant, or null. replacementCriterion is closer, cheaper, higher_rated, more_popular, or best_match; vague words such as 'better' mean best_match.",
+  "swap_stops - exchange two stops that are both already scheduled.",
+  "replace_with_scheduled_stop - one already scheduled stop should take another scheduled stop's slot.",
+  "move_stop_relative - put one stop before or after another. relativePosition is before or after.",
+  "move_stop_time - move a stop to a specific day and time. targetDayNumber and startMinutes are both required.",
+  "",
+  "# REFERRING TO STOPS",
+  "Copy activityName exactly from the itinerary in context when you can.",
+  "If the user gives a partial or misspelled name, activityName must still contain that phrase or the closest itinerary name, and must never be null. The app does the final matching.",
+  "For breakfast, lunch, or dinner always emit the matching mealType and let the app resolve which stop plays that role. Never claim a meal is missing because the venue name does not look like a restaurant.",
+  "sourceStop and targetStop each identify a scheduled stop with dayNumber plus exactly one of activityNumber, activityName, or mealType.",
+  "startMinutes is minutes after midnight, so 2 PM is 840.",
+].join("\n");
 
 const stopReferenceSchema = {
   type: ["object", "null"],
@@ -53,7 +112,7 @@ const stopReferenceSchema = {
 export const commandSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["command", "destinationId", "arguments", "explanation"],
+  required: ["command", "destinationId", "arguments", "explanation", "message"],
   properties: {
     command: { type: "string", enum: allowedCommands },
     destinationId: { type: ["string", "null"] },
@@ -83,8 +142,18 @@ export const commandSchema = {
       },
     },
     explanation: { type: "string", minLength: 1, maxLength: 300 },
+    message: { type: ["string", "null"], minLength: 1, maxLength: 1500 },
   },
 };
+
+// Both providers demand that `required` list every property, so there is only
+// one schema. They differ in how they enforce it: OpenAI constrains decoding,
+// so the model physically cannot omit a field, while Groq generates freely and
+// then validates, returning a 400 when a small model leaves out a field it had
+// no use for. Two defences against that, since the schema cannot be relaxed:
+// ARGUMENT CHECKLIST in the prompt names every key explicitly, and
+// salvageFailedGeneration in local-server.js recovers the output Groq hands
+// back with the error.
 
 export function validateCommand(value, expectedDestinationId) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -96,10 +165,18 @@ export function validateCommand(value, expectedDestinationId) {
   if (value.destinationId !== expectedDestinationId) {
     throw new Error("Destination scope mismatch");
   }
-  if (!value.arguments || typeof value.arguments !== "object") {
+  // A model may legitimately omit `arguments` on a pure answer or clarify.
+  if (
+    value.arguments !== undefined &&
+    value.arguments !== null &&
+    (typeof value.arguments !== "object" || Array.isArray(value.arguments))
+  ) {
+    throw new Error("AI command arguments are malformed");
+  }
+  if (!value.arguments && !replyCommands.includes(value.command)) {
     throw new Error("AI command arguments are missing");
   }
-  const { dayNumber = null, budget = null, style = null, activityName = null, targetDayNumber = null, replacementPreference = null, mealType = null, activityNumbers = [], replacementCriterion = null, sourceStop = null, targetStop = null, startMinutes = null, relativePosition = null, stopCount = null, stopCategory = null } = value.arguments;
+  const { dayNumber = null, budget = null, style = null, activityName = null, targetDayNumber = null, replacementPreference = null, mealType = null, activityNumbers = [], replacementCriterion = null, sourceStop = null, targetStop = null, startMinutes = null, relativePosition = null, stopCount = null, stopCategory = null } = value.arguments ?? {};
   if (dayNumber !== null && (!Number.isInteger(dayNumber) || dayNumber < 1)) {
     throw new Error("Invalid day number");
   }
@@ -126,6 +203,13 @@ export function validateCommand(value, expectedDestinationId) {
   ) {
     throw new Error("Invalid command explanation");
   }
+  const rawMessage = typeof value.message === "string" ? value.message.trim() : "";
+  if (rawMessage.length > 1500) throw new Error("Reply message is too long");
+  // answer, clarify and explain speak to the user directly. If the model filled
+  // only explanation, promote it rather than failing the whole request.
+  const message = replyCommands.includes(value.command)
+    ? rawMessage || value.explanation.trim()
+    : null;
   const normalizedArguments = { dayNumber: null, budget: null, style: null, activityName: null, targetDayNumber: null, replacementPreference: null, mealType: null, activityNumbers: [], replacementCriterion: null, sourceStop: null, targetStop: null, startMinutes: null, relativePosition: null, stopCount: null, stopCategory: null };
   if (value.command === "relax_day") {
     normalizedArguments.dayNumber = dayNumber;
@@ -188,6 +272,7 @@ export function validateCommand(value, expectedDestinationId) {
     destinationId: value.destinationId,
     arguments: normalizedArguments,
     explanation: value.explanation.trim(),
+    message,
   };
 }
 

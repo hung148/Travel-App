@@ -75,11 +75,24 @@ class TripViewModel extends ChangeNotifier {
 
   final List<TripSegment> _draftSegments = [];
   final List<TravelLegDraft> _draftTravelLegs = [];
+
+  /// Party size for the whole trip. Segment schedule costs are per person, so
+  /// every total below has to scale by this.
+  int _travelers = 1;
   String? _selectedSegmentId;
 
   List<TripSegment> get draftSegments => List.unmodifiable(_draftSegments);
   List<TravelLegDraft> get draftTravelLegs =>
       List.unmodifiable(_draftTravelLegs);
+
+  int get travelers => _travelers;
+
+  set travelers(int value) {
+    final next = value < 1 ? 1 : value;
+    if (next == _travelers) return;
+    _travelers = next;
+    notifyListeners();
+  }
 
   void replaceTravelLegs(List<TravelLegDraft> legs) {
     _draftTravelLegs
@@ -114,22 +127,29 @@ class TripViewModel extends ChangeNotifier {
   double get totalHotelCost =>
       _draftSegments.fold(0, (total, segment) => total + segment.hotelCost);
 
-  double get totalFoodCost =>
-      _draftSegments.fold(0, (total, segment) => total + segment.foodCost);
+  // Segment schedule costs are per person; the hotel is already a party
+  // total. The ...For() methods on TripSegment handle that distinction.
 
-  double get totalActivityCost =>
-      _draftSegments.fold(0, (total, segment) => total + segment.activityCost);
+  double get totalFoodCost => _draftSegments.fold(
+    0,
+    (total, segment) => total + segment.foodCostFor(_travelers),
+  );
+
+  double get totalActivityCost => _draftSegments.fold(
+    0,
+    (total, segment) => total + segment.activityCostFor(_travelers),
+  );
 
   double get estimatedTripCost => _draftSegments.fold(
     0,
-    (total, segment) => total + segment.estimatedTotalCost,
+    (total, segment) => total + segment.estimatedTotalCostFor(_travelers),
   );
 
   int get totalTripDays =>
       _draftSegments.fold(0, (total, segment) => total + segment.numberOfDays);
 
   double segmentTotal(String segmentId) {
-    return _findSegment(segmentId)?.estimatedTotalCost ?? 0;
+    return _findSegment(segmentId)?.estimatedTotalCostFor(_travelers) ?? 0;
   }
 
   void loadSegmentsFromTrip(Trip trip) {
@@ -230,7 +250,6 @@ class TripViewModel extends ChangeNotifier {
 
     final updated = segment.copyWith(
       days: List<PlannerDay>.unmodifiable(days),
-      scheduleSaved: false,
     );
 
     _replaceSegment(segmentId, updated);
@@ -241,17 +260,6 @@ class TripViewModel extends ChangeNotifier {
     PlannerResult plannerResult,
   ) {
     updateSegmentPlan(segmentId, plannerResult.days);
-  }
-
-  void markSegmentSaved(String segmentId) {
-    final segment = _findSegment(segmentId);
-
-    if (segment == null) {
-      return;
-    }
-
-    final updated = segment.copyWith(scheduleSaved: true);
-    _replaceSegment(segmentId, updated);
   }
 
   void removeSegment(String segmentId) {
@@ -487,9 +495,16 @@ class TripViewModel extends ChangeNotifier {
             id: '${trip.id}_day_$i',
             tripId: trip.id,
             dayNumber: i,
-            places:
-                '${preference.experienceType} places in ${trip.destination}',
-            meals: '${preference.interests.join(", ")} meal plan',
+            // Interpolating the raw list printed Dart's "[Nature, Coffee]"
+            // brackets, and interests holds the same tags as experienceType,
+            // so the old meals line just repeated them.
+            places: preference.styleTags.isEmpty
+                ? 'Places in ${trip.destination}'
+                : '${preference.styleTags.join(', ')} places in '
+                      '${trip.destination}',
+            meals: preference.spendingStyle.trim().isEmpty
+                ? 'Meal plan'
+                : '${preference.spendingStyle} meal plan',
             estimatedCost: trip.budget / trip.days,
           ),
         );

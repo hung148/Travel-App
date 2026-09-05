@@ -1,4 +1,6 @@
+import '../core/utils/money.dart';
 import 'budget_allocation.dart';
+import 'cost_estimate.dart';
 import 'planner_profile.dart';
 import 'planner_validation.dart';
 import 'score_place.dart';
@@ -10,9 +12,13 @@ class PlannerDay {
 
   const PlannerDay({required this.dayNumber, required this.places});
 
-  double get estimatedCost {
-    return places.fold(0, (total, item) => total + item.place.estimatedCost);
-  }
+  // --- Per-person totals --------------------------------------------------
+  // These are what the planner and the validator compare, because every place
+  // cost is per person. Never show one of these to a user directly: use the
+  // ...For(travelers) methods below.
+
+  double get estimatedCost =>
+      places.fold(0, (total, item) => total + item.place.estimatedCost);
 
   double get estimatedFoodCost => places
       .where((item) => item.place.isDining)
@@ -22,12 +28,31 @@ class PlannerDay {
       .where((item) => !item.place.isDining)
       .fold(0, (total, item) => total + item.place.estimatedCost);
 
-  int get estimatedVisitMinutes {
-    return places.fold(
-      0,
-      (total, item) => total + item.place.estimatedVisitMinutes,
-    );
-  }
+  // --- Party totals -------------------------------------------------------
+  // These are what the user is shown.
+
+  double estimatedCostFor(int travelers) => places.fold(
+        0,
+        (total, item) => total + item.place.estimatedCostFor(travelers),
+      );
+
+  double estimatedFoodCostFor(int travelers) => places
+      .where((item) => item.place.isDining)
+      .fold(0, (total, item) => total + item.place.estimatedCostFor(travelers));
+
+  double estimatedActivityCostFor(int travelers) => places
+      .where((item) => !item.place.isDining)
+      .fold(0, (total, item) => total + item.place.estimatedCostFor(travelers));
+
+  /// True when at least one stop is priced from a guess rather than published
+  /// data. Drives the "estimated" marker on the day total.
+  bool get hasEstimatedCosts =>
+      places.any((item) => item.place.cost.isEstimated);
+
+  int get estimatedVisitMinutes => places.fold(
+        0,
+        (total, item) => total + item.place.estimatedVisitMinutes,
+      );
 
   int get estimatedActivityMinutes => places
       .where((item) => !item.place.isDining)
@@ -66,6 +91,21 @@ class PlannerResult {
   final HotelStay? hotel;
   final Map<String, int> startTimeOverrides;
 
+  /// Party size every displayed total is computed for.
+  final int travelers;
+
+  /// Currency every amount in this result is denominated in. All amounts in a
+  /// single result share one currency - nothing is ever converted.
+  final String currencyCode;
+
+  /// One line explaining where the price numbers came from, surfaced in the UI
+  /// so the user is never guessing how much to trust them.
+  final String? calibrationNote;
+
+  /// Whether displayed amounts are per traveler or for the whole party. This
+  /// is presentation only: the planner always works per person internally.
+  final PriceDisplayMode priceDisplayMode;
+
   const PlannerResult({
     required this.budgetAllocation,
     required this.validation,
@@ -74,6 +114,10 @@ class PlannerResult {
     required this.days,
     this.hotel,
     this.startTimeOverrides = const {},
+    this.travelers = 1,
+    this.currencyCode = Money.defaultCurrencyCode,
+    this.calibrationNote,
+    this.priceDisplayMode = PriceDisplayMode.total,
   });
 
   PlannerResult copyWith({
@@ -84,26 +128,79 @@ class PlannerResult {
     List<PlannerDay>? days,
     HotelStay? hotel,
     Map<String, int>? startTimeOverrides,
-  }) => PlannerResult(
-    budgetAllocation: budgetAllocation ?? this.budgetAllocation,
-    validation: validation ?? this.validation,
-    profile: profile ?? this.profile,
-    rankedPlaces: rankedPlaces ?? this.rankedPlaces,
-    days: days ?? this.days,
-    hotel: hotel ?? this.hotel,
-    startTimeOverrides: startTimeOverrides ?? this.startTimeOverrides,
-  );
+    int? travelers,
+    String? currencyCode,
+    String? calibrationNote,
+    PriceDisplayMode? priceDisplayMode,
+  }) =>
+      PlannerResult(
+        budgetAllocation: budgetAllocation ?? this.budgetAllocation,
+        validation: validation ?? this.validation,
+        profile: profile ?? this.profile,
+        rankedPlaces: rankedPlaces ?? this.rankedPlaces,
+        days: days ?? this.days,
+        hotel: hotel ?? this.hotel,
+        startTimeOverrides: startTimeOverrides ?? this.startTimeOverrides,
+        travelers: travelers ?? this.travelers,
+        currencyCode: currencyCode ?? this.currencyCode,
+        calibrationNote: calibrationNote ?? this.calibrationNote,
+        priceDisplayMode: priceDisplayMode ?? this.priceDisplayMode,
+      );
 
-  double get totalEstimatedCost {
-    return days.fold(0, (total, day) => total + day.estimatedCost);
+  /// Party size, guaranteed to be at least one.
+  int get partySize => travelers < 1 ? 1 : travelers;
+
+  /// How many people a displayed amount covers under the current mode.
+  /// Pass this to the ...For() methods so every visible figure agrees with the
+  /// per-person / total toggle.
+  int get priceMultiplier => priceDisplayMode.multiplierFor(partySize);
+
+  /// Suffix for a heading, e.g. "for 2 travelers" or "per person".
+  String get priceModeSuffix =>
+      priceDisplayMode == PriceDisplayMode.perPerson
+          ? 'per person'
+          : '$partySize ${partySize == 1 ? 'traveler' : 'travelers'}';
+
+  /// Food and activities under the current display mode.
+  double get totalEstimatedCost => days.fold(
+        0,
+        (total, day) => total + day.estimatedCostFor(priceMultiplier),
+      );
+
+  /// Food and activities for the WHOLE party, whatever the display mode. Use
+  /// this wherever the figure is compared against the budget, which is always
+  /// the party's money.
+  double get partyEstimatedCost =>
+      days.fold(0, (total, day) => total + day.estimatedCostFor(partySize));
+
+  double get totalEstimatedFoodCost => days.fold(
+        0,
+        (total, day) => total + day.estimatedFoodCostFor(priceMultiplier),
+      );
+
+  double get totalEstimatedActivityCost => days.fold(
+        0,
+        (total, day) => total + day.estimatedActivityCostFor(priceMultiplier),
+      );
+
+  /// The hotel is already a party total (nightlyRate * nights * rooms), so
+  /// under "per person" it is divided rather than multiplied.
+  double get totalEstimatedTripCost {
+    final hotelTotal = hotel?.totalCost ?? 0;
+    final hotelShare = priceDisplayMode == PriceDisplayMode.perPerson
+        ? hotelTotal / partySize
+        : hotelTotal;
+    return totalEstimatedCost + hotelShare;
   }
 
-  double get totalEstimatedFoodCost =>
-      days.fold(0, (total, day) => total + day.estimatedFoodCost);
+  /// The whole party's trip cost, for budget comparisons.
+  double get partyEstimatedTripCost =>
+      partyEstimatedCost + (hotel?.totalCost ?? 0);
 
-  double get totalEstimatedActivityCost =>
-      days.fold(0, (total, day) => total + day.estimatedActivityCost);
+  bool get hasEstimatedCosts =>
+      days.any((day) => day.hasEstimatedCosts) ||
+      (hotel?.nightlyRateEstimated ?? false);
 
-  double get totalEstimatedTripCost =>
-      totalEstimatedCost + (hotel?.totalCost ?? 0);
+  /// Convenience for the UI, which formats a lot of amounts.
+  String money(double amount) => Money.format(amount, currencyCode);
 }

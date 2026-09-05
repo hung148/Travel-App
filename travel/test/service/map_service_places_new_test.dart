@@ -256,4 +256,141 @@ void main() {
     expect(estimate.distanceKm, 94);
     expect(estimate.durationHours, 2.5);
   });
+
+  test(
+    'resolveDestinationCenter uses the picked placeId instead of geocoding',
+    () async {
+      var geocodeCalls = 0;
+      final client = MockClient((request) async {
+        if (request.url.host == 'maps.googleapis.com') {
+          geocodeCalls++;
+          return http.Response('{}', 500);
+        }
+        expect(request.method, 'GET');
+        expect(
+          request.url.toString(),
+          'https://places.googleapis.com/v1/places/da-lat-id',
+        );
+        return http.Response(
+          jsonEncode({
+            'id': 'da-lat-id',
+            'displayName': {'text': 'Đà Lạt'},
+            'location': {'latitude': 11.9404, 'longitude': 108.4583},
+            'types': ['locality', 'political'],
+          }),
+          200,
+        );
+      });
+      final service = MapService(apiKey: 'test-key', client: client);
+
+      final center = await service.resolveDestinationCenter(
+        'Đà Lạt, Lâm Đồng, Việt Nam',
+        placeId: 'da-lat-id',
+      );
+
+      expect(center.latitude, closeTo(11.9404, 0.0001));
+      expect(center.longitude, closeTo(108.4583, 0.0001));
+      expect(geocodeCalls, 0);
+    },
+  );
+
+  test(
+    'resolveDestinationCenter falls back to Text Search and prefers the city',
+    () async {
+      final client = MockClient((request) async {
+        expect(
+          request.url.toString(),
+          'https://places.googleapis.com/v1/places:searchText',
+        );
+        expect(jsonDecode(request.body)['textQuery'], 'Da Lat');
+        return http.Response(
+          jsonEncode({
+            'places': [
+              {
+                'id': 'lam-dong',
+                'displayName': {'text': 'Lâm Đồng'},
+                'location': {'latitude': 11.5753, 'longitude': 108.1429},
+                'types': ['administrative_area_level_1', 'political'],
+              },
+              {
+                'id': 'da-lat',
+                'displayName': {'text': 'Đà Lạt'},
+                'location': {'latitude': 11.9404, 'longitude': 108.4583},
+                'types': ['locality', 'political'],
+              },
+            ],
+          }),
+          200,
+        );
+      });
+      final service = MapService(apiKey: 'test-key', client: client);
+
+      final center = await service.resolveDestinationCenter('Da Lat');
+
+      expect(center.latitude, closeTo(11.9404, 0.0001));
+      expect(center.longitude, closeTo(108.4583, 0.0001));
+    },
+  );
+
+  test('destination geocoding prefers the city over its province', () async {
+    final client = MockClient((request) async {
+      if (request.url.host == 'places.googleapis.com') {
+        return http.Response(jsonEncode({'places': []}), 200);
+      }
+      return http.Response(
+        jsonEncode({
+          'status': 'OK',
+          'results': [
+            {
+              'types': ['administrative_area_level_1', 'political'],
+              'geometry': {
+                'location': {'lat': 11.5753, 'lng': 108.1429},
+              },
+            },
+            {
+              'types': ['locality', 'political'],
+              'geometry': {
+                'location': {'lat': 11.9404, 'lng': 108.4583},
+              },
+            },
+          ],
+        }),
+        200,
+      );
+    });
+    final service = MapService(apiKey: 'test-key', client: client);
+
+    final center = await service.resolveDestinationCenter('Da Lat');
+
+    expect(center.latitude, closeTo(11.9404, 0.0001));
+  });
+
+  test('hotel geocoding still keeps the first Google result', () async {
+    final client = MockClient((request) async => http.Response(
+          jsonEncode({
+            'status': 'OK',
+            'results': [
+              {
+                'types': ['street_address'],
+                'geometry': {
+                  'location': {'lat': 1.0, 'lng': 2.0},
+                },
+              },
+              {
+                'types': ['locality', 'political'],
+                'geometry': {
+                  'location': {'lat': 9.0, 'lng': 9.0},
+                },
+              },
+            ],
+          }),
+          200,
+        ));
+    final service = MapService(apiKey: 'test-key', client: client);
+
+    final center = await service.geocodeAddress('1 Test Street');
+
+    expect(center.latitude, 1.0);
+    expect(center.longitude, 2.0);
+  });
 }

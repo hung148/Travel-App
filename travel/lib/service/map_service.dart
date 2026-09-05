@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 ///
 /// Main responsibilities:
 /// - Search destination suggestions
+/// - Resolve a destination to an exact map center
 /// - Get place details
 /// - Find nearby hotels / restaurants / attractions
 /// - Calculate distance between 2 coordinates
@@ -94,9 +95,9 @@ class MapService {
         .toList();
 
     // Google's autocomplete sometimes resolves Đà Lạt to its parent province
-    // (Lâm Đồng) and omits the city itself. Trip planning only needs the
-    // canonical destination text—the selected value is geocoded afterwards—so
-    // guarantee the city result for all common accented/unaccented spellings.
+    // (Lâm Đồng) and omits the city itself. The fallback entry deliberately
+    // carries no placeId: resolveDestinationCenter then falls through to
+    // Places Text Search, which returns the city instead of the province.
     if (_isDaLatQuery(input)) {
       geographic.removeWhere(
         (suggestion) => _isLamDongWithoutDaLat(suggestion.description),
@@ -107,7 +108,7 @@ class MapService {
         geographic.insert(
           0,
           const PlaceSuggestion(
-            placeId: 'canonical-da-lat-vn',
+            placeId: '',
             description: 'Đà Lạt, Lâm Đồng, Việt Nam',
             types: ['locality', 'political'],
           ),
@@ -115,6 +116,82 @@ class MapService {
       }
     }
     return geographic;
+  }
+
+  /// ==============================
+  /// Resolve a destination to its map center
+  /// ==============================
+  ///
+  /// Every planning feature should go through this, so typing a destination
+  /// lands on exactly the same point as picking it on the map.
+  ///
+  /// Resolution order:
+  /// 1. The placeId of the suggestion the user actually picked. Exact.
+  /// 2. Places Text Search, which resolves city names far better than the
+  ///    Geocoding API (Đà Lạt returns the city, not Lâm Đồng province).
+  /// 3. Geocoding, preferring a city-level result over a province one.
+  Future<Coordinates> resolveDestinationCenter(
+    String destination, {
+    String? placeId,
+  }) async {
+    final id = placeId?.trim() ?? '';
+    if (id.isNotEmpty) {
+      try {
+        final details = await getPlaceDetails(id);
+        if (details.latitude != 0 || details.longitude != 0) {
+          return Coordinates(
+            latitude: details.latitude,
+            longitude: details.longitude,
+          );
+        }
+      } catch (_) {
+        // A stale or synthetic id must never break planning. Fall through.
+      }
+    }
+
+    try {
+      final searched = await searchDestinationByText(destination);
+      if (searched != null) return searched;
+    } catch (_) {
+      // Fall through to geocoding.
+    }
+
+    return geocodeAddress(destination, preferAreaResult: true);
+  }
+
+  /// Places Text Search lookup for a destination name.
+  ///
+  /// Returns the most city-like match, or null when Google has nothing usable.
+  Future<Coordinates?> searchDestinationByText(String destination) async {
+    final query = destination.trim();
+    if (query.isEmpty) return null;
+
+    final response = await _client.post(
+      Uri.parse('https://places.googleapis.com/v1/places:searchText'),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask':
+            'places.id,places.displayName,places.location,places.types',
+      },
+      body: jsonEncode({'textQuery': query, 'maxResultCount': 5}),
+    );
+
+    if (response.statusCode != 200) return null;
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final places = (data['places'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .where((place) => place['location'] != null)
+        .toList();
+    if (places.isEmpty) return null;
+
+    final best = _bestAreaMatch(places) ?? places.first;
+    final location = best['location'] as Map<String, dynamic>?;
+    final latitude = (location?['latitude'] as num?)?.toDouble();
+    final longitude = (location?['longitude'] as num?)?.toDouble();
+    if (latitude == null || longitude == null) return null;
+    return Coordinates(latitude: latitude, longitude: longitude);
   }
 
   /// ==============================
@@ -191,7 +268,7 @@ class MapService {
         'X-Goog-FieldMask':
             'places.id,places.displayName,places.formattedAddress,'
             'places.location,places.rating,places.userRatingCount,'
-            'places.types,places.priceLevel,places.photos',
+            'places.types,places.priceLevel,places.priceRange,places.photos',
       },
       body: jsonEncode({
         'includedTypes': [type],
@@ -224,6 +301,7 @@ class MapService {
         userRatingsTotal: item['userRatingCount'] ?? 0,
         types: List<String>.from(item['types'] ?? []),
         priceLevel: _priceLevelFromGoogle(item['priceLevel']),
+        priceRange: _priceRangeFromGoogle(item['priceRange']),
         photoUrl: _photoUrl(item['photos']),
       );
     }).toList();
@@ -252,6 +330,49 @@ class MapService {
         !_isDaLatQuery(value);
   }
 
+  /// Most specific geographic types first, so a city always beats the
+  /// province that contains it.
+  static const _areaTypeRanking = <String>[
+    'locality',
+    'postal_town',
+    'sublocality',
+    'sublocality_level_1',
+    'administrative_area_level_3',
+    'administrative_area_level_2',
+    'administrative_area_level_1',
+    'colloquial_area',
+    'country',
+  ];
+
+  static int _areaRank(Set<String> types) {
+    for (var index = 0; index < _areaTypeRanking.length; index++) {
+      if (types.contains(_areaTypeRanking[index])) return index;
+    }
+    return _areaTypeRanking.length;
+  }
+
+  static Set<String> _typesOf(Map<String, dynamic> value) {
+    return (value['types'] as List<dynamic>? ?? const [])
+        .map((type) => type.toString().toLowerCase().trim())
+        .toSet();
+  }
+
+  /// Picks the most city-like entry. Ties keep Google's original order.
+  static Map<String, dynamic>? _bestAreaMatch(
+    Iterable<Map<String, dynamic>> candidates,
+  ) {
+    Map<String, dynamic>? best;
+    var bestRank = _areaTypeRanking.length + 1;
+    for (final candidate in candidates) {
+      final rank = _areaRank(_typesOf(candidate));
+      if (best == null || rank < bestRank) {
+        best = candidate;
+        bestRank = rank;
+      }
+    }
+    return best;
+  }
+
   /// ==============================
   /// Geocode a text address into coordinates
   /// ==============================
@@ -259,8 +380,15 @@ class MapService {
   /// Example:
   /// "Ho Chi Minh City"
   ///
-  /// Returns coordinates of the searched location
-  Future<Coordinates> geocodeAddress(String address) async {
+  /// Returns coordinates of the searched location.
+  ///
+  /// [preferAreaResult] is for destination lookups: it picks the city-level
+  /// result instead of Google's first result, which is often the province.
+  /// Leave it false for street addresses such as a hotel.
+  Future<Coordinates> geocodeAddress(
+    String address, {
+    bool preferAreaResult = false,
+  }) async {
     final uri = Uri.parse(
       'https://maps.googleapis.com/maps/api/geocode/json'
       '?address=${Uri.encodeComponent(address.trim())}'
@@ -279,7 +407,15 @@ class MapService {
       throw Exception(data['error_message'] ?? 'Geocoding error.');
     }
 
-    final result = data['results'][0];
+    final results = data['results'] as List<dynamic>? ?? const [];
+    if (results.isEmpty) {
+      throw Exception('Geocoding returned no results.');
+    }
+
+    final result = preferAreaResult
+        ? (_bestAreaMatch(results.whereType<Map<String, dynamic>>()) ??
+              results.first)
+        : results.first;
     final location = result['geometry']['location'];
 
     return Coordinates(
@@ -502,6 +638,45 @@ class MapService {
     return degrees * pi / 180;
   }
 
+  /// Google returns Money as { currencyCode, units, nanos }.
+  /// $1.75 arrives as units: 1, nanos: 750000000.
+  double? _moneyAmount(Object? value) {
+    if (value is! Map) return null;
+    final rawUnits = value['units'];
+    final units = rawUnits is num
+        ? rawUnits.toDouble()
+        : double.tryParse(rawUnits?.toString() ?? '');
+    final nanos = (value['nanos'] as num?)?.toDouble() ?? 0;
+    if (units == null && nanos == 0) return null;
+    return (units ?? 0) + nanos / 1000000000;
+  }
+
+  /// The published price band for a place, in whatever currency the country
+  /// uses. Never converted - the planner keeps one currency per trip.
+  GooglePriceRange? _priceRangeFromGoogle(Object? value) {
+    if (value is! Map) return null;
+    final start = _moneyAmount(value['startPrice']);
+    final end = _moneyAmount(value['endPrice']);
+    if (start == null && end == null) return null;
+
+    final startCurrency = value['startPrice'] is Map
+        ? (value['startPrice'] as Map)['currencyCode'] as String?
+        : null;
+    final endCurrency = value['endPrice'] is Map
+        ? (value['endPrice'] as Map)['currencyCode'] as String?
+        : null;
+    final currency = startCurrency ?? endCurrency;
+    if (currency == null || currency.trim().isEmpty) return null;
+
+    final low = start ?? end!;
+    final high = end ?? start!;
+    return GooglePriceRange(
+      low: low <= high ? low : high,
+      high: high >= low ? high : low,
+      currencyCode: currency.trim().toUpperCase(),
+    );
+  }
+
   int? _priceLevelFromGoogle(Object? value) {
     return switch (value) {
       'PRICE_LEVEL_FREE' => 0,
@@ -600,6 +775,24 @@ class PlaceDetails {
 /// ==============================
 /// Helper model: nearby place
 /// ==============================
+/// A price band Google publishes for a place, in the place's own currency.
+/// Amounts are never converted: a trip is planned in exactly one currency.
+class GooglePriceRange {
+  final double low;
+  final double high;
+  final String currencyCode;
+
+  const GooglePriceRange({
+    required this.low,
+    required this.high,
+    required this.currencyCode,
+  });
+
+  @override
+  String toString() =>
+      'GooglePriceRange($low-$high $currencyCode)';
+}
+
 class NearbyPlace {
   final String placeId;
   final String name;
@@ -610,6 +803,9 @@ class NearbyPlace {
   final int userRatingsTotal;
   final List<String> types;
   final int? priceLevel;
+
+  /// Published price band, when Google has one for this place.
+  final GooglePriceRange? priceRange;
   final String? photoUrl;
 
   NearbyPlace({
@@ -622,6 +818,7 @@ class NearbyPlace {
     required this.userRatingsTotal,
     required this.types,
     this.priceLevel,
+    this.priceRange,
     this.photoUrl,
   });
 

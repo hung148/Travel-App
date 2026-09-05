@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:travel/models/hotel_selections.dart';
+import 'package:travel/models/planner_result.dart';
 import 'package:travel/models/trip/trip_segment.dart';
 import 'package:travel/models/trip/travel_leg.dart';
 import 'package:travel/viewmodels/trip_viewmodel.dart';
@@ -88,7 +89,7 @@ void main() {
       expect(vm.selectedSegment?.hotel?.name, 'HCM Hotel');
     });
 
-    test('saved state belongs to only one destination', () {
+    test('plan state belongs to only one destination', () {
       final vm = TripViewModel.forSegmentTesting();
 
       vm.addSegment(
@@ -111,7 +112,9 @@ void main() {
         ),
       );
 
-      vm.markSegmentSaved('da-nang');
+      vm.updateSegmentPlan('da-nang', const [
+        PlannerDay(dayNumber: 1, places: []),
+      ]);
 
       final daNang = vm.draftSegments.firstWhere(
         (segment) => segment.id == 'da-nang',
@@ -119,8 +122,8 @@ void main() {
 
       final hcm = vm.draftSegments.firstWhere((segment) => segment.id == 'hcm');
 
-      expect(daNang.scheduleSaved, true);
-      expect(hcm.scheduleSaved, false);
+      expect(daNang.days, hasLength(1));
+      expect(hcm.days, isEmpty);
     });
 
     test('keeps travel legs and user overrides while the page is closed', () {

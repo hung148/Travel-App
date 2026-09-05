@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:travel/service/map_service.dart';
 import 'package:travel/service/planner/destination_place_service.dart';
+import 'package:travel/service/map_service.dart';
 
 void main() {
   test(
@@ -8,8 +8,18 @@ void main() {
     () async {
       final mapService = _FakeMapService();
       final service = DestinationPlaceService(mapService: mapService);
+      const priceContext = PriceContext(
+        currencyCode: 'USD',
+        totalBudget: 1000,
+        spendingStyle: 'Normal',
+        days: 3,
+        travelers: 1,
+      );
 
-      final result = await service.loadForDestination('Test City');
+      final result = await service.loadForDestination(
+        'Test City',
+        priceContext: priceContext,
+      );
 
       expect(result.center.latitude, 10);
       expect(result.center.longitude, 20);
@@ -37,6 +47,26 @@ void main() {
       );
     },
   );
+
+  test('forwards the picked placeId so the center is not guessed', () async {
+    final mapService = _FakeMapService();
+    final service = DestinationPlaceService(mapService: mapService);
+    const priceContext = PriceContext(
+      currencyCode: 'USD',
+      totalBudget: 1000,
+      spendingStyle: 'Normal',
+      days: 3,
+      travelers: 1,
+    );
+
+    await service.loadForDestination(
+      'Test City',
+      placeId: 'da-lat-place-id',
+      priceContext: priceContext,
+    );
+
+    expect(mapService.resolvedPlaceId, 'da-lat-place-id');
+  });
 }
 
 class _FakeMapService extends MapService {
@@ -44,9 +74,15 @@ class _FakeMapService extends MapService {
 
   _FakeMapService() : super(apiKey: 'test-key');
 
+  String? resolvedPlaceId;
+
   @override
-  Future<Coordinates> geocodeAddress(String address) async {
-    expect(address, 'Test City');
+  Future<Coordinates> resolveDestinationCenter(
+    String destination, {
+    String? placeId,
+  }) async {
+    expect(destination, 'Test City');
+    resolvedPlaceId = placeId;
     return Coordinates(latitude: 10, longitude: 20);
   }
 

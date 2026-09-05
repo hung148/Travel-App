@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/money.dart';
+import '../../widgets/cost_breakdown_page.dart';
 import '../../models/planner_result.dart';
 import '../../models/hotel_stay.dart';
 import '../../service/planner/daily_time_schedule_service.dart';
@@ -60,10 +62,23 @@ class SummaryPage extends StatelessWidget {
                       ),
                       if (plan.hotel != null) ...[
                         const SizedBox(height: 18),
-                        _HotelReview(hotel: plan.hotel!),
+                        _HotelReview(
+                          hotel: plan.hotel!,
+                          currencyCode: plan.currencyCode,
+                        ),
                       ],
                       const SizedBox(height: 18),
                       _Metrics(result: plan),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () =>
+                              showCostBreakdown(context, plan),
+                          icon: const Icon(Icons.receipt_long_outlined),
+                          label: const Text('How this total is calculated'),
+                        ),
+                      ),
                       const SizedBox(height: 18),
                       LayoutBuilder(
                         builder: (context, constraints) {
@@ -214,12 +229,12 @@ class _Metrics extends StatelessWidget {
     final items = [
       (
         'Total budget',
-        '\$${result.budgetAllocation.total.toStringAsFixed(0)}',
+        Money.format(result.budgetAllocation.total, result.currencyCode),
         Icons.account_balance_wallet_outlined,
       ),
       (
-        'Planned expense',
-        '\$${result.totalEstimatedTripCost.toStringAsFixed(0)}',
+        'Planned expense (${result.priceModeSuffix})',
+        Money.format(result.totalEstimatedTripCost, result.currencyCode),
         Icons.local_activity_outlined,
       ),
       ('Planned stops', '$stopCount', Icons.place_outlined),
@@ -289,8 +304,9 @@ class _Metrics extends StatelessWidget {
 
 class _HotelReview extends StatelessWidget {
   final HotelStay hotel;
+  final String currencyCode;
 
-  const _HotelReview({required this.hotel});
+  const _HotelReview({required this.hotel, required this.currencyCode});
 
   @override
   Widget build(BuildContext context) {
@@ -316,10 +332,13 @@ class _HotelReview extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   '${hotel.nights} nights • ${hotel.rooms} rooms • '
-                  '\$${hotel.nightlyRate.toStringAsFixed(0)} per room/night',
+                  '${Money.format(hotel.nightlyRate, currencyCode)} '
+                  'per room/night'
+                  '${hotel.nightlyRateEstimated ? ' (estimated)' : ''}',
                 ),
                 Text(
-                  'Accommodation total: \$${hotel.totalCost.toStringAsFixed(0)}',
+                  'Accommodation total: '
+                  '${Money.format(hotel.totalCost, currencyCode)}',
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
               ],
@@ -363,7 +382,7 @@ class _BudgetBreakdown extends StatelessWidget {
                   const SizedBox(width: 9),
                   Expanded(child: Text(row.$1)),
                   Text(
-                    '\$${row.$2.toStringAsFixed(0)}',
+                    Money.format(row.$2, result.currencyCode),
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                 ],
@@ -422,7 +441,6 @@ class _DayReview extends StatelessWidget {
   final PlannerDay day;
   final int restMinutes;
   final HotelStay? hotel;
-
   const _DayReview({
     required this.day,
     required this.restMinutes,
@@ -442,10 +460,6 @@ class _DayReview extends StatelessWidget {
           _SmallBadge(
             icon: Icons.schedule_outlined,
             text: _minutes(day.estimatedVisitMinutes),
-          ),
-          _SmallBadge(
-            icon: Icons.payments_outlined,
-            text: '\$${day.estimatedCost.toStringAsFixed(0)}',
           ),
         ],
       ),
@@ -469,7 +483,6 @@ class _DayReview extends StatelessWidget {
                         role: scheduled.roleLabel,
                         category: item.place.category,
                         minutes: item.place.estimatedVisitMinutes,
-                        cost: item.place.estimatedCost,
                         photoUrl: item.place.photoUrl,
                       );
                     },
@@ -538,7 +551,6 @@ class _StopRow extends StatelessWidget {
   final String role;
   final String category;
   final int minutes;
-  final double cost;
   final String? photoUrl;
 
   const _StopRow({
@@ -548,7 +560,6 @@ class _StopRow extends StatelessWidget {
     required this.role,
     required this.category,
     required this.minutes,
-    required this.cost,
     required this.photoUrl,
   });
 
@@ -609,11 +620,6 @@ class _StopRow extends StatelessWidget {
               ),
             ],
           ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          '\$${cost.toStringAsFixed(0)}',
-          style: const TextStyle(fontWeight: FontWeight.w900),
         ),
       ],
     );

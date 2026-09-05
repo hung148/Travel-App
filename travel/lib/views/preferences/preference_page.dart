@@ -97,10 +97,7 @@ class _PreferencePageState extends State<PreferencePage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() {
-        _experienceType = {
-          ...preference.experienceType,
-          ...preference.interests,
-        };
+        _experienceType = {...preference.styleTags};
         _activityLevel = preference.activityLevel.isEmpty
             ? null
             : preference.activityLevel;

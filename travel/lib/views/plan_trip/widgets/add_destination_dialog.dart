@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../../service/map_service.dart';
 import 'destination_autocomplete_field.dart';
 
 class AddDestinationValue {
-  const AddDestinationValue({required this.destination});
+  const AddDestinationValue({required this.destination, this.placeId});
 
   final String destination;
+
+  /// Google placeId of the picked suggestion, when the user chose one.
+  /// Null means the destination was typed by hand and has to be resolved
+  /// from its text.
+  final String? placeId;
 }
 
 class AddDestinationDialog extends StatefulWidget {
@@ -25,6 +31,7 @@ class AddDestinationDialog extends StatefulWidget {
 class _AddDestinationDialogState extends State<AddDestinationDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _destinationController;
+  PlaceSuggestion? _selectedSuggestion;
 
   @override
   void initState() {
@@ -42,9 +49,19 @@ class _AddDestinationDialogState extends State<AddDestinationDialog> {
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
+    final text = _destinationController.text.trim();
+    final suggestion = _selectedSuggestion;
+    // Only trust the id while it still describes the text in the field.
+    final matchesText =
+        suggestion != null &&
+        suggestion.placeId.isNotEmpty &&
+        suggestion.description.trim() == text;
     Navigator.pop(
       context,
-      AddDestinationValue(destination: _destinationController.text.trim()),
+      AddDestinationValue(
+        destination: text,
+        placeId: matchesText ? suggestion.placeId : null,
+      ),
     );
   }
 
@@ -60,6 +77,8 @@ class _AddDestinationDialogState extends State<AddDestinationDialog> {
             controller: _destinationController,
             autofocus: true,
             onChanged: () {},
+            onSuggestionSelected: (suggestion) =>
+                _selectedSuggestion = suggestion,
             validator: (value) => value == null || value.trim().isEmpty
                 ? 'Enter a destination.'
                 : null,

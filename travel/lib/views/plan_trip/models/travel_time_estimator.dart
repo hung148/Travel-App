@@ -12,10 +12,15 @@ class TravelTimeEstimator {
     required MapService mapService,
     required String origin,
     required String destination,
+    String? originPlaceId,
+    String? destinationPlaceId,
   }) async {
     final points = await Future.wait([
-      mapService.geocodeAddress(origin),
-      mapService.geocodeAddress(destination),
+      mapService.resolveDestinationCenter(origin, placeId: originPlaceId),
+      mapService.resolveDestinationCenter(
+        destination,
+        placeId: destinationPlaceId,
+      ),
     ]);
     final distance = mapService.calculateDistanceKm(
       startLat: points[0].latitude,

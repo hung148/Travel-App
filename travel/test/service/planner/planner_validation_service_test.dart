@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travel/models/budget_allocation.dart';
+import 'package:travel/models/cost_estimate.dart';
 import 'package:travel/models/planner_profile.dart';
 import 'package:travel/models/planner_result.dart';
 import 'package:travel/models/planner_validation.dart';
@@ -197,7 +198,12 @@ ScoredPlace _scoredPlace(
       tags: [category],
       rating: 4,
       reviewCount: 100,
-      estimatedCost: cost,
+      cost: CostEstimate(
+        low: cost,
+        high: cost,
+        currencyCode: 'USD',
+        source: CostSource.userProvided,
+      ),
       latitude: 0,
       longitude: 0,
       estimatedVisitMinutes: minutes,
