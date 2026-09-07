@@ -415,6 +415,28 @@ class TripViewModel extends ChangeNotifier {
     }
   }
 
+  /// Drops the trips listener and clears what it loaded.
+  ///
+  /// Called before an account is deleted: the snapshot listener would
+  /// otherwise keep running against documents being removed, then report
+  /// permission-denied once the account is gone - painting an error over a
+  /// flow that actually succeeded.
+  /// Deliberately synchronous, and deliberately does NOT await the cancel.
+  ///
+  /// Tearing down a Firestore snapshot subscription is housekeeping - nothing
+  /// downstream depends on it having finished. Awaiting it made account
+  /// deletion hostage to a platform channel completing, and if that cancel
+  /// never returns the caller waits forever with no way to tell why.
+  /// Detaching the field is what actually stops the callbacks reaching this
+  /// view model; the cancel itself can land whenever it likes.
+  void stopListeningToTripHistory() {
+    final subscription = _tripSubscription;
+    _tripSubscription = null;
+    unawaited(subscription?.cancel() ?? Future<void>.value());
+    _tripHistory = [];
+    notifyListeners();
+  }
+
   Future<void> listenToTripHistory(String ownerId) async {
     _startOperation();
     await _tripSubscription?.cancel();

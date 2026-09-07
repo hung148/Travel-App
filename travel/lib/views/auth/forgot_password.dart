@@ -5,7 +5,11 @@ import 'package:travel/widgets/auth_error_banner.dart';
 import 'package:travel/widgets/auth_layout.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
-  const ForgotPasswordPage({super.key});
+  /// Email the user already typed on the sign-in screen, so they do not have
+  /// to type it again. Null when this page is opened from a named route.
+  final String? initialEmail;
+
+  const ForgotPasswordPage({super.key, this.initialEmail});
 
   @override
   State<ForgotPasswordPage> createState() => _ForgotPasswordPageState();
@@ -13,8 +17,21 @@ class ForgotPasswordPage extends StatefulWidget {
 
 class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   final _formKey = GlobalKey<FormState>();
-  final emailController = TextEditingController();
+  late final TextEditingController emailController;
   bool sent = false;
+
+  @override
+  void initState() {
+    super.initState();
+    emailController = TextEditingController(
+      text: widget.initialEmail?.trim() ?? '',
+    );
+    // Don't inherit an error message from the sign-in screen.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AuthViewModel>().clearError();
+    });
+  }
 
   @override
   void dispose() {
@@ -23,23 +40,26 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   }
 
   Future<void> resetPassword() async {
+    final authViewModel = context.read<AuthViewModel>();
+
+    // Enter in the email field calls this directly, around the button's
+    // disabled state. Without the guard a double press sends two emails and
+    // can trip Firebase's rate limit.
+    if (authViewModel.isLoading) return;
+
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final authViewModel = context.read<AuthViewModel>();
     final success = await authViewModel.resetPassword(
       emailController.text.trim(),
     );
 
     if (!mounted) return;
 
-    if (!success) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(authViewModel.errorMessage!)));
-      return;
+    // On failure AuthErrorBanner shows the reason above the form; there is no
+    // second message and nothing to null-assert.
+    if (success) {
+      setState(() => sent = true);
     }
-
-    setState(() => sent = true);
   }
 
   @override

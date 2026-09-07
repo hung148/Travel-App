@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travel/viewmodels/auth_viewmodel.dart';
 import 'package:travel/views/auth/login.dart';
+import 'package:travel/views/auth/verify_email.dart';
 import 'package:travel/views/preferences/preference_page.dart';
 import 'package:travel/views/profile/profile_page.dart';
 
@@ -17,6 +18,12 @@ class AuthGate extends StatelessWidget {
     }
 
     if (authViewModel.user != null) {
+      // Verification comes before everything else, including onboarding: an
+      // unconfirmed address means we cannot reach this person again, and a
+      // password reset is the only account recovery there is.
+      if (!authViewModel.isEmailVerified) {
+        return const VerifyEmailPage();
+      }
       if (authViewModel.isNewUser) {
         return PreferencePage(ownerId: authViewModel.user!.uid);
       }

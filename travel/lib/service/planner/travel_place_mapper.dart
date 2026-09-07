@@ -135,6 +135,7 @@ class TravelPlaceMapper {
       'museum' || 'art_gallery' => 120,
       'park' || 'beach' || 'tourist_attraction' => 90,
       'shopping_mall' => 120,
+      'market' => 90,
       'zoo' || 'amusement_park' || 'aquarium' => 180,
       _ => 90,
     };

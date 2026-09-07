@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travel/viewmodels/auth_viewmodel.dart';
+import 'package:travel/views/auth/forgot_password.dart';
 import 'package:travel/widgets/auth_error_banner.dart';
 import 'package:travel/widgets/auth_layout.dart';
 
@@ -18,6 +19,18 @@ class _LoginPageState extends State<LoginPage> {
   bool hidePassword = true;
 
   @override
+  void initState() {
+    super.initState();
+    // Clear any error left over from another auth screen. Done after the
+    // first frame because clearError() notifies listeners, which cannot
+    // happen while this widget is still building.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AuthViewModel>().clearError();
+    });
+  }
+
+  @override
   void dispose() {
     emailController.dispose();
     passwordController.dispose();
@@ -25,21 +38,31 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> login() async {
+    final authViewModel = context.read<AuthViewModel>();
+
+    // Pressing Enter in the password field calls this directly, around the
+    // button's disabled state, so the in-flight check belongs here too.
+    if (authViewModel.isLoading) return;
+
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final authViewModel = context.read<AuthViewModel>();
-    final success = await authViewModel.login(
+    // A failure lands in AuthViewModel.errorMessage, which AuthErrorBanner
+    // renders above the form. No SnackBar here, so the same message is not
+    // shown to the user twice.
+    await authViewModel.login(
       emailController.text.trim(),
       passwordController.text,
     );
+  }
 
-    if (!mounted || success) return;
-
-    if (authViewModel.errorMessage != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(authViewModel.errorMessage!)));
-    }
+  void openForgotPassword() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            ForgotPasswordPage(initialEmail: emailController.text.trim()),
+      ),
+    );
   }
 
   @override
@@ -101,8 +124,7 @@ class _LoginPageState extends State<LoginPage> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
-                onPressed: () =>
-                    Navigator.pushNamed(context, '/forgot-password'),
+                onPressed: openForgotPassword,
                 child: const Text('Forgot password?'),
               ),
             ),

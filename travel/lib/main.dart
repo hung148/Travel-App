@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:travel/core/theme/app_theme.dart';
 
+import 'package:travel/service/account_deletion_service.dart';
 import 'package:travel/service/auth_service.dart';
 import 'package:travel/service/preference_service.dart';
 import 'package:travel/service/trip_service.dart';
@@ -14,7 +15,6 @@ import 'package:travel/viewmodels/trip_viewmodel.dart';
 import 'package:travel/views/auth/auth_gate.dart';
 import 'package:travel/views/auth/forgot_password.dart';
 import 'package:travel/views/auth/sign_up.dart';
-import 'package:travel/views/profile/profile_page.dart';
 import 'package:travel/views/plan_trip/plan_trip_page.dart';
 import 'package:travel/views/summary/summary_page.dart';
 
@@ -41,6 +41,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final authService = AuthService();
+    final accountDeletionService = AccountDeletionService();
     final preferenceService = PreferenceService();
     final tripService = TripService();
     final itineraryService = ItineraryService();
@@ -48,7 +49,9 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthViewModel(authService)),
+        ChangeNotifierProvider(
+          create: (_) => AuthViewModel(authService, accountDeletionService),
+        ),
         ChangeNotifierProvider(
           create: (_) => PreferenceViewmodel(preferenceService),
         ),
@@ -71,7 +74,10 @@ class MyApp extends StatelessWidget {
         routes: {
           '/signup': (_) => const SignupPage(),
           '/forgot-password': (_) => const ForgotPasswordPage(),
-          '/profile': (_) => const ProfilePage(),
+          // No '/profile' route on purpose. ProfilePage is rendered by
+          // AuthGate, never pushed: a pushed copy would sit above AuthGate
+          // (or replace it) and keep showing after sign-out, because it is
+          // AuthGate alone that reacts to the user going away.
           '/plan-trip': (_) => const PlanTripPage(),
           '/summary': (_) => const SummaryPage(),
         },

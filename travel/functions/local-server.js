@@ -3,10 +3,18 @@ import { fileURLToPath } from "node:url";
 
 import {
   commandSchema,
+  contextError,
   recoverExplicitArguments,
   systemInstruction,
   validateCommand,
 } from "./trip-command.js";
+import {
+  normalizeCandidates,
+  providerInput,
+  systemInstruction as vettingInstruction,
+  validateVerdicts,
+  verdictSchema,
+} from "./place-vetting.js";
 
 const host = "127.0.0.1";
 const port = Number.parseInt(process.env.AI_GATEWAY_PORT || "8787", 10);
@@ -68,8 +76,15 @@ export async function interpretWithGroq({ instruction, context, apiKey }) {
   if (instruction.length > 1000) {
     throw new GatewayError("Instruction is too long", 400);
   }
-  if (!context || typeof context !== "object") {
+  if (!context) {
     throw new GatewayError("Trip context is required", 400);
+  }
+  // Same bound as the deployed function - see contextError in
+  // trip-command.js. Two doors into the same model call, so a limit only one
+  // of them enforces is not a limit.
+  const contextProblem = contextError(context);
+  if (contextProblem) {
+    throw new GatewayError(contextProblem, 400);
   }
   const providerResponse = await fetch(
     "https://api.groq.com/openai/v1/chat/completions",
@@ -128,9 +143,85 @@ export async function interpretWithGroq({ instruction, context, apiKey }) {
   return validateCommand(parsed, context.destinationId);
 }
 
+/// Development-only verdict cache.
+///
+/// Production caches in Firestore so a place is judged once for everybody.
+/// Here a process-lifetime Map is enough, and it keeps local iteration from
+/// spending tokens on the same shophouse over and over.
+const localVerdictCache = new Map();
+
+export function clearLocalVerdictCache() {
+  localVerdictCache.clear();
+}
+
+export async function vetWithGroq({ places, apiKey }) {
+  if (!apiKey) throw new GatewayError("GROQ_API_KEY is not configured", 503);
+  const candidates = normalizeCandidates(places);
+
+  const verdicts = {};
+  const unjudged = [];
+  for (const candidate of candidates) {
+    if (localVerdictCache.has(candidate.placeId)) {
+      verdicts[candidate.placeId] = localVerdictCache.get(candidate.placeId);
+    } else {
+      unjudged.push(candidate);
+    }
+  }
+  if (unjudged.length === 0) return { verdicts };
+
+  const providerResponse = await fetch(
+    "https://api.groq.com/openai/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        include_reasoning: false,
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "shopping_place_verdicts",
+            strict: true,
+            schema: verdictSchema,
+          },
+        },
+        messages: [
+          { role: "system", content: vettingInstruction },
+          { role: "user", content: providerInput(unjudged) },
+        ],
+      }),
+    },
+  );
+  if (!providerResponse.ok) {
+    const providerError = await providerResponse.text();
+    console.error(
+      "Groq vetting failed",
+      providerResponse.status,
+      providerError,
+    );
+    // Fail open, exactly as production does.
+    return { verdicts };
+  }
+  const result = await providerResponse.json();
+  const content = result.choices?.[0]?.message?.content;
+  if (!content) return { verdicts };
+
+  const judged = validateVerdicts(JSON.parse(content), unjudged);
+  for (const [placeId, verdict] of Object.entries(judged)) {
+    localVerdictCache.set(placeId, verdict.isShoppingDestination);
+    verdicts[placeId] = verdict.isShoppingDestination;
+  }
+  return { verdicts };
+}
+
 export function createLocalServer(
   apiKey = groqApiKey,
   interpreter = interpretWithGroq,
+  vetter = vetWithGroq,
 ) {
   return http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -144,6 +235,19 @@ export function createLocalServer(
         model,
         configured: Boolean(apiKey),
       });
+      return;
+    }
+    if (request.method === "POST" && request.url === "/vetShoppingPlaces") {
+      try {
+        const body = await readJson(request);
+        send(response, 200, await vetter({ places: body.places, apiKey }));
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : error);
+        send(response, error instanceof GatewayError ? error.status : 400, {
+          error: "Unable to vet places",
+          detail: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
       return;
     }
     if (request.method !== "POST" || request.url !== "/interpretTripRequest") {

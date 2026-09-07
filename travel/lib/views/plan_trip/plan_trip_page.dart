@@ -22,6 +22,7 @@ import '../../models/travel_place.dart';
 import '../../models/trip/trip.dart';
 import '../../models/trip/trip_segment.dart';
 import '../../service/map_service.dart';
+import '../../service/ai/shopping_vetting_service.dart';
 import '../../service/ai/trip_ai_service.dart';
 import '../../service/ai/stop_name_matcher.dart';
 import '../../service/planner/destination_place_service.dart';
@@ -70,9 +71,20 @@ class _PlanTripPageState extends State<PlanTripPage> {
   late final MapService? _mapService = AppConfig.hasGoogleMapsApiKey
       ? MapService(apiKey: AppConfig.googleMapsApiKey)
       : null;
+  /// Reads a candidate's NAME, which no type or review rule can. Without a
+  /// configured endpoint it approves everything, so the app still works with
+  /// only the Google key set.
+  late final ShoppingVettingService _shoppingVetter = ShoppingVettingService(
+    endpoint: AppConfig.placeVettingUrl,
+    idTokenProvider: () async =>
+        await FirebaseAuth.instance.currentUser?.getIdToken(),
+  );
   late final DestinationPlaceService? _destinationPlaceService =
       _mapService != null
-      ? DestinationPlaceService(mapService: _mapService)
+      ? DestinationPlaceService(
+          mapService: _mapService,
+          shoppingVetter: _shoppingVetter,
+        )
       : null;
 
   DateTimeRange? dates;
@@ -998,6 +1010,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                   destination,
                   placeId: _selectedDestination.placeId,
                   priceContext: priceContext,
+                  styleTags: preference.styleTags,
                 )
               : await destinationPlaceService.loadForArea(
                   center: Coordinates(
@@ -1006,6 +1019,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                   ),
                   radiusMeters: selectedArea.radiusMeters,
                   priceContext: priceContext,
+                  styleTags: preference.styleTags,
                 );
           if (destinationCandidates.places.isNotEmpty) {
             candidatePlaces = destinationCandidates.places;

@@ -1,10 +1,15 @@
+import 'dart:math';
+
 import '../../core/utils/money.dart';
+import '../../models/place_role.dart';
 import '../../models/travel_place.dart';
 import '../../models/hotel_stay.dart';
 import '../../models/price_calibration.dart';
 import '../budget_service.dart';
 import '../map_service.dart';
+import 'preference_normalizer.dart';
 import 'price_calibration_service.dart';
+import 'shopping_vetter.dart';
 import 'travel_place_mapper.dart';
 
 /// What the caller knows before any place has been fetched. Used to fall back
@@ -52,11 +57,17 @@ class DestinationPlaceService {
   final PriceCalibrationService calibrationService;
   final BudgetService budgetService;
 
+  /// [shoppingVetter] is the only thing here that can read a place's NAME.
+  /// Optional: with none supplied the type and review rules stand alone, which
+  /// is what every test and the mock-data path rely on.
+  final ShoppingVetter? shoppingVetter;
+
   const DestinationPlaceService({
     required this.mapService,
     this.mapper = const TravelPlaceMapper(),
     this.calibrationService = const PriceCalibrationService(),
     this.budgetService = const BudgetService(),
+    this.shoppingVetter,
   });
 
   static const _candidateTypes = [
@@ -67,8 +78,37 @@ class DestinationPlaceService {
     'restaurant',
     'bakery',
     'meal_takeaway',
-    'shopping_mall',
   ];
+
+  /// Shopping is found by Text Search, not Nearby Search.
+  ///
+  /// Nearby Search caps at 20 results ranked within the circle, which in a
+  /// real city fills up with neighbourhood arcades before it ever reaches
+  /// Vincom. Text Search ranks by prominence - the big ones first, which is
+  /// the whole point.
+  static const _shoppingQueries = ['shopping mall', 'market'];
+
+  /// How many shopping stops enter the pool when the traveler did NOT ask for
+  /// shopping. A couple of malls is plenty of texture for a normal trip.
+  static const maxShoppingCandidates = 3;
+
+  /// How many enter when shopping IS the stated preference. A city has only a
+  /// handful of real malls and markets, so this is high enough to take all of
+  /// them and let scoring decide.
+  static const maxPreferredShoppingCandidates = 12;
+
+  /// The absolute floor for calling something a shopping destination.
+  ///
+  /// Google's place types are filled in by the business owner, so a shophouse
+  /// selling robot vacuums can and does register itself as `shopping_mall`
+  /// with no other type to give it away. No type rule can catch that. Review
+  /// count can: a real mall is in the thousands, a single shop is not.
+  static const minShoppingReviewCount = 1000;
+
+  /// A shopping stop also has to be in the same league as the busiest one in
+  /// this destination. A 300-review shophouse is not a mall in a city whose
+  /// real mall has 30,000 reviews, and this scales without a per-city table.
+  static const shoppingReviewShareOfBusiest = 0.05;
 
   static const _accommodationTypes = {
     'lodging',
@@ -81,11 +121,46 @@ class DestinationPlaceService {
     'extended_stay_hotel',
   };
 
-  static bool _isInvalidRetailCandidate(NearbyPlace place) {
-    final types = place.types.map((type) => type.toLowerCase().trim()).toSet();
-    final isRetail =
-        types.contains('store') || types.any((type) => type.endsWith('_store'));
-    return isRetail && !place.isActualShoppingMall;
+  /// The last filter, and the only one that can read a name.
+  ///
+  /// Types and review counts cannot tell a mall from a shophouse that
+  /// registered itself as one. This asks something that can. It fails open by
+  /// contract: no vetter, or a vetter that could not reach its judge, and
+  /// every candidate survives.
+  Future<List<NearbyPlace>> _vetted(List<NearbyPlace> candidates) async {
+    final vetter = shoppingVetter;
+    if (vetter == null || candidates.isEmpty) return candidates;
+
+    final approved = await vetter.approve([
+      for (final place in candidates)
+        ShoppingCandidate(
+          placeId: place.placeId,
+          name: place.name,
+          address: place.address,
+          primaryType: place.primaryType,
+          types: place.types,
+          reviewCount: place.userRatingsTotal,
+        ),
+    ]);
+    return candidates
+        .where((place) => approved.contains(place.placeId))
+        .toList();
+  }
+
+  /// Biggest first. Review count is the closest thing Google gives us to a
+  /// measure of how major a mall is - a landmark mall has tens of thousands of
+  /// reviews, a neighbourhood one a few hundred.
+  static List<NearbyPlace> _biggestShoppingFirst(
+    Iterable<NearbyPlace> places,
+  ) {
+    return places.toList()
+      ..sort((left, right) {
+        final byReviews = right.userRatingsTotal.compareTo(
+          left.userRatingsTotal,
+        );
+        if (byReviews != 0) return byReviews;
+        return right.rating.compareTo(left.rating);
+      });
   }
 
   /// [placeId] is the Google id of the suggestion the user picked. When it is
@@ -97,6 +172,7 @@ class DestinationPlaceService {
     required PriceContext priceContext,
     String? placeId,
     int radiusMeters = 15000,
+    Set<String> styleTags = const {},
   }) async {
     final center = await mapService.resolveDestinationCenter(
       destination,
@@ -106,13 +182,18 @@ class DestinationPlaceService {
       center: center,
       radiusMeters: radiusMeters,
       priceContext: priceContext,
+      styleTags: styleTags,
     );
   }
 
+  /// [styleTags] is the traveler's own preference wording. A trip that asked
+  /// for shopping gets a much bigger share of the pool spent on malls and
+  /// markets, which is what lets the plan actually come out shopping-heavy.
   Future<DestinationCandidates> loadForArea({
     required Coordinates center,
     required int radiusMeters,
     required PriceContext priceContext,
+    Set<String> styleTags = const {},
   }) async {
     final searches = await Future.wait(
       _candidateTypes.map(
@@ -130,18 +211,67 @@ class DestinationPlaceService {
       radius: radiusMeters,
       type: 'hotel',
     );
+    final shoppingSearches = await Future.wait(
+      _shoppingQueries.map(
+        (query) => mapService.searchShoppingDestinations(
+          latitude: center.latitude,
+          longitude: center.longitude,
+          radius: radiusMeters,
+          query: query,
+        ),
+      ),
+    );
 
     final uniquePlaces = <String, NearbyPlace>{};
-    for (final nearbyPlace in searches.expand((places) => places)) {
+    final shoppingCandidates = <String, NearbyPlace>{};
+
+    for (final nearbyPlace in [
+      ...searches.expand((places) => places),
+      ...shoppingSearches.expand((places) => places),
+    ]) {
       if (nearbyPlace.placeId.isEmpty || nearbyPlace.name.trim().isEmpty) {
         continue;
       }
       if (nearbyPlace.types.any(_accommodationTypes.contains)) {
         continue;
       }
-      if (_isInvalidRetailCandidate(nearbyPlace)) continue;
+      // A post office or a bank is an errand, not a stop - even when Google
+      // returns it from a tourist_attraction search, which it does.
+      if (isNonItineraryPlace(nearbyPlace.types)) continue;
       if (_distanceMeters(center, nearbyPlace) > radiusMeters) continue;
+
+      // Retail is judged separately: a mall is a stop, a single shop is not.
+      if (isRetailPlace(nearbyPlace.types)) {
+        if (!nearbyPlace.isMajorShoppingDestination) continue;
+        shoppingCandidates.putIfAbsent(
+          nearbyPlace.placeId,
+          () => nearbyPlace,
+        );
+        continue;
+      }
+
       uniquePlaces.putIfAbsent(nearbyPlace.placeId, () => nearbyPlace);
+    }
+
+    const normalizer = PreferenceNormalizer();
+    final shoppingQuota = wantsShopping(styleTags.expand(normalizer.expand))
+        ? maxPreferredShoppingCandidates
+        : maxShoppingCandidates;
+    final rankedShopping = _biggestShoppingFirst(shoppingCandidates.values);
+    final busiest = rankedShopping.isEmpty
+        ? 0
+        : rankedShopping.first.userRatingsTotal;
+    final reviewFloor = max(
+      minShoppingReviewCount,
+      (busiest * shoppingReviewShareOfBusiest).round(),
+    );
+    final shoppingStops = rankedShopping
+        .where((place) => place.userRatingsTotal >= reviewFloor)
+        .take(shoppingQuota)
+        .toList();
+
+    for (final stop in await _vetted(shoppingStops)) {
+      uniquePlaces.putIfAbsent(stop.placeId, () => stop);
     }
 
     // Hotels carry price data too, and there are usually plenty of them, so

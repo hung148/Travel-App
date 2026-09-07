@@ -308,3 +308,32 @@ function validateStopReference(reference, label) {
   if ([activityNumber, activityName, mealType].filter((item) => item !== null).length !== 1) throw new Error(`${label} must use exactly one reference`);
   return { dayNumber, activityNumber, activityName: activityName?.trim() ?? null, mealType };
 }
+
+/// Ceiling on the serialized planner context sent to the model.
+///
+/// Measured, not guessed: a 30-day plan at 10 stops a day, with the cost
+/// breakdown and eight turns of chat, serializes to about 53,000 characters,
+/// and a 60-day plan to about 117,000. This leaves real headroom on an
+/// already-extreme case, because the job is to stop a hand-crafted megabyte
+/// payload from running up the model bill - not to police long trips. A
+/// genuine plan should never see this error; if one does, raise the number
+/// rather than trimming the plan.
+export const MAX_CONTEXT_CHARS = 120000;
+
+/// Validates the planner context sent alongside an instruction.
+///
+/// Lives here so the deployed function and the local dev gateway enforce the
+/// same limit - they are two doors into the same model call, and a bound that
+/// only one of them applies is not a bound.
+///
+/// Returns an error message, or null when the context is acceptable.
+export function contextError(context) {
+  if (context === null || typeof context !== "object" || Array.isArray(context)) {
+    return "Invalid context";
+  }
+  const serialized = JSON.stringify(context) ?? "";
+  if (serialized.length > MAX_CONTEXT_CHARS) {
+    return "Context too large";
+  }
+  return null;
+}

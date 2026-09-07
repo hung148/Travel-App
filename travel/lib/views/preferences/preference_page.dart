@@ -176,10 +176,16 @@ class _PreferencePageState extends State<PreferencePage> {
                     Navigator.pop(this.context, true);
                     return;
                   }
-                  final authViewModel = context.read<AuthViewModel>();
-                  await authViewModel.completeOnboarding();
-                  if (!mounted) return;
-                  Navigator.pushReplacementNamed(this.context, '/profile');
+                  // completeOnboarding() clears isNewUser and notifies, which
+                  // is enough on its own: this page is being shown BY
+                  // AuthGate, so AuthGate rebuilds itself into ProfilePage.
+                  //
+                  // Do not navigate here. AuthGate is the root route, so a
+                  // pushReplacementNamed('/profile') replaces it - taking the
+                  // one widget that watches auth state out of the tree, and
+                  // leaving sign-out stuck on ProfilePage's loading spinner
+                  // with nothing left to route back to the login screen.
+                  await context.read<AuthViewModel>().completeOnboarding();
                 });
               }
 

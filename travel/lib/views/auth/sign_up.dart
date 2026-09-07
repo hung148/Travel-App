@@ -22,6 +22,16 @@ class _SignupPageState extends State<SignupPage> {
   bool hideConfirmPassword = true;
 
   @override
+  void initState() {
+    super.initState();
+    // A failed sign-in must not greet the user with a red banner here.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AuthViewModel>().clearError();
+    });
+  }
+
+  @override
   void dispose() {
     nameController.dispose();
     emailController.dispose();
@@ -31,9 +41,16 @@ class _SignupPageState extends State<SignupPage> {
   }
 
   Future<void> signup() async {
+    final authViewModel = context.read<AuthViewModel>();
+
+    // The button disables itself while a request is in flight, but pressing
+    // Enter in the confirm-password field calls this method directly and
+    // would sail past that. A second registration answers
+    // email-already-in-use and paints an error over a signup that worked.
+    if (authViewModel.isLoading) return;
+
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final authViewModel = context.read<AuthViewModel>();
     final success = await authViewModel.register(
       nameController.text.trim(),
       emailController.text.trim(),
@@ -43,15 +60,14 @@ class _SignupPageState extends State<SignupPage> {
     if (!mounted) return;
 
     if (success) {
+      // Popping reveals AuthGate, which sends a brand new account straight to
+      // VerifyEmailPage. That screen names the address and explains the next
+      // step, so there is no SnackBar here saying the same thing twice.
       Navigator.pop(context);
-      return;
     }
 
-    if (authViewModel.errorMessage != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(authViewModel.errorMessage!)));
-    }
+    // A failure needs no SnackBar - AuthErrorBanner already shows it above
+    // the form.
   }
 
   @override

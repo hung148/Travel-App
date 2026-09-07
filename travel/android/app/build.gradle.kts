@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.travel"
+    namespace = "com.hungson.travelapp"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -23,8 +23,9 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.travel"
+        // Permanent once published to either store - do not change it again.
+        // The dev flavor appends ".dev" so both builds can sit on one device.
+        applicationId = "com.hungson.travelapp"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

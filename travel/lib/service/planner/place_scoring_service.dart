@@ -118,18 +118,18 @@ class PlaceScoringService {
     return score.clamp(0, 100).toDouble();
   }
 
-  double _preferenceScore({
+  /// How many of the traveler's style tags this place satisfies.
+  ///
+  /// The planner uses this to fill a plan with what was actually asked for
+  /// before it considers anything else, so it has to be the same test that
+  /// scoring uses - two different definitions of "matches" would put a place
+  /// at the top of the ranking and then not recognise it.
+  int preferenceMatchCount({
     required TravelPlace place,
     required Preference preference,
   }) {
-    final userPreferences = preference.styleTags
-        .map(preferenceNormalizer.normalize)
-        .where((item) => item.isNotEmpty)
-        .toSet();
-
-    if (userPreferences.isEmpty) {
-      return 50;
-    }
+    final userPreferences = _userPreferences(preference);
+    if (userPreferences.isEmpty) return 0;
 
     final role = roleClassifier.classify(place);
     final placeTags = preferenceNormalizer.expandAll([
@@ -138,14 +138,45 @@ class PlaceScoringService {
       ...roleClassifier.preferenceTerms(role),
     ]);
 
-    int matches = 0;
-
+    var matches = 0;
     for (final userPreference in userPreferences) {
       final preferenceTerms = preferenceNormalizer.expand(userPreference);
       if (preferenceTerms.any(placeTags.contains)) {
         matches++;
       }
     }
+    return matches;
+  }
+
+  /// Whether this place is one of the things the traveler asked for.
+  bool matchesPreference({
+    required TravelPlace place,
+    required Preference preference,
+  }) {
+    return preferenceMatchCount(place: place, preference: preference) > 0;
+  }
+
+  Set<String> _userPreferences(Preference preference) {
+    return preference.styleTags
+        .map(preferenceNormalizer.normalize)
+        .where((item) => item.isNotEmpty)
+        .toSet();
+  }
+
+  double _preferenceScore({
+    required TravelPlace place,
+    required Preference preference,
+  }) {
+    final userPreferences = _userPreferences(preference);
+
+    if (userPreferences.isEmpty) {
+      return 50;
+    }
+
+    final matches = preferenceMatchCount(
+      place: place,
+      preference: preference,
+    );
 
     if (matches == 0) {
       return 20;

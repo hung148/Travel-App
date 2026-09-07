@@ -1,29 +1,199 @@
 rules_version = '2';
+
+// Firestore security rules for the Travel App.
+//
+// Two jobs here:
+//   1. Access control - who may read or write a document. This was already
+//      correct; ownership is still the backbone of every rule below.
+//   2. Shape validation - WHAT may be written. This was missing entirely. A
+//      signed-in user could previously store any field, of any type, at any
+//      size in their own documents. Rules are the only place that can be
+//      enforced, because anyone with an account can call the Firestore REST
+//      API directly and skip the app.
+//
+// Collections not matched below (for example placeVerdicts) are denied to all
+// clients by default. The Cloud Functions admin SDK bypasses these rules, so
+// server-written collections need no match block.
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function owns(data) { return signedIn() && data.ownerId == request.auth.uid; }
-    function ownsTrip(tripId) { return signedIn() && get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid; }
-    match /users/{userId} { allow read, create, update, delete: if signedIn() && request.auth.uid == userId; }
+
+    // ---------------------------------------------------------------------
+    // Identity helpers
+    // ---------------------------------------------------------------------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    // Owner check that tolerates a missing field. Reading data.ownerId
+    // directly on a document that lacks the key raises an error, so every
+    // ownership test goes through get(key, default).
+    function owns(data) {
+      return signedIn() && data.get('ownerId', '') == uid();
+    }
+
+    function ownedBy(data, field) {
+      return signedIn() && data.get(field, '') == uid();
+    }
+
+    // Costs one document read per rule evaluation, so it is used only where
+    // no owner field is available on the document itself.
+    function ownsTrip(tripId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/trips/$(tripId)).data.get('ownerId', '') == uid();
+    }
+
+    // ---------------------------------------------------------------------
+    // Shape validation
+    //
+    // Every function uses keys().hasOnly(...) to reject unknown fields. That
+    // is the part that stops junk-field stuffing - and the part that will
+    // reject writes if you add a field to a model and forget to add it here.
+    // When a write starts failing with permission-denied after a model
+    // change, this is why.
+    // ---------------------------------------------------------------------
+
+    function validUser(data, userId) {
+      return data.keys().hasOnly([
+               'uid', 'name', 'email', 'profileImage',
+               'onboardingCompleted', 'createdAt', 'updatedAt'
+             ])
+        // Written as a partial merge by completeOnboarding(), so each field
+        // is checked only when it is actually present.
+        && (!('uid' in data) || data.uid == userId)
+        && (!('name' in data) || (data.name is string && data.name.size() <= 100))
+        && (!('email' in data) || (data.email is string && data.email.size() <= 320))
+        && (!('profileImage' in data) || data.profileImage == null
+            || (data.profileImage is string && data.profileImage.size() <= 2000))
+        && (!('onboardingCompleted' in data) || data.onboardingCompleted is bool);
+    }
+
+    function validPreference(data) {
+      return data.keys().hasOnly([
+               'ownerId', 'experienceType', 'activityLevel',
+               'spendingStyle', 'interests'
+             ])
+        && data.ownerId is string
+        && data.experienceType is list && data.experienceType.size() <= 50
+        && data.interests is list && data.interests.size() <= 50
+        && data.activityLevel is string && data.activityLevel.size() <= 60
+        && data.spendingStyle is string && data.spendingStyle.size() <= 60;
+    }
+
+    function validTrip(data, tripId) {
+      return data.keys().hasOnly([
+               'id', 'ownerId', 'title', 'destination', 'budget', 'days',
+               'status', 'travelers', 'currencyCode', 'startDate', 'endDate',
+               'rating', 'createdAt', 'updatedAt', 'segments'
+             ])
+        && data.id == tripId
+        && data.ownerId is string
+        && data.destination is string && data.destination.size() <= 200
+        && (data.title == null || (data.title is string && data.title.size() <= 200))
+        && data.budget is number && data.budget >= 0 && data.budget <= 1000000000
+        && data.days is int && data.days >= 0 && data.days <= 365
+        && data.status is string && data.status.size() <= 40
+        && data.travelers is int && data.travelers >= 1 && data.travelers <= 100
+        && data.currencyCode is string && data.currencyCode.size() <= 8
+        && (data.rating == null
+            || (data.rating is int && data.rating >= 0 && data.rating <= 5))
+        // The contents of each segment are not validated here - rules cannot
+        // walk nested maps usefully. Capping the list is what keeps a single
+        // trip document from growing without limit.
+        && data.segments is list && data.segments.size() <= 40;
+    }
+
+    function validItinerary(data, docId) {
+      return data.keys().hasOnly([
+               'id', 'ownerId', 'tripId', 'dayNumber',
+               'places', 'meals', 'estimatedCost'
+             ])
+        && data.tripId is string && data.tripId.size() <= 200
+        && data.dayNumber is int && data.dayNumber >= 1 && data.dayNumber <= 365
+        // The document id is derived from the trip and the day, so pin it.
+        // Without this a user could write a valid document of their own into
+        // the id slot belonging to somebody else's itinerary.
+        && docId == data.tripId + '_day_' + string(data.dayNumber)
+        && data.places is string && data.places.size() <= 20000
+        && data.meals is string && data.meals.size() <= 20000
+        && data.estimatedCost is number && data.estimatedCost >= 0;
+    }
+
+    function validFeedback(data) {
+      return data.keys().hasOnly(['userId', 'tripId', 'rating', 'best', 'worst'])
+        && data.userId is string
+        && data.tripId is string && data.tripId.size() <= 200
+        && data.rating is number && data.rating >= 0 && data.rating <= 5
+        && data.best is string && data.best.size() <= 5000
+        && data.worst is string && data.worst.size() <= 5000;
+    }
+
+    // ---------------------------------------------------------------------
+    // Collections
+    // ---------------------------------------------------------------------
+
+    match /users/{userId} {
+      allow read, delete: if signedIn() && uid() == userId;
+      allow create, update: if signedIn()
+        && uid() == userId
+        && validUser(request.resource.data, userId);
+    }
+
     match /preferences/{id} {
-      allow create: if owns(request.resource.data);
       allow read, delete: if owns(resource.data);
-      allow update: if owns(resource.data) && owns(request.resource.data);
+      allow create: if owns(request.resource.data)
+        && validPreference(request.resource.data);
+      allow update: if owns(resource.data)
+        && owns(request.resource.data)
+        && validPreference(request.resource.data);
     }
+
     match /trips/{id} {
-      allow create: if owns(request.resource.data);
       allow read, delete: if owns(resource.data);
-      allow update: if owns(resource.data) && owns(request.resource.data);
+      allow create: if owns(request.resource.data)
+        && validTrip(request.resource.data, id);
+      allow update: if owns(resource.data)
+        && owns(request.resource.data)
+        && validTrip(request.resource.data, id);
     }
+
     match /itineraries/{id} {
-      allow create: if ownsTrip(request.resource.data.tripId);
-      allow read, delete: if ownsTrip(resource.data.tripId);
-      allow update: if ownsTrip(resource.data.tripId) && ownsTrip(request.resource.data.tripId);
+      // New documents carry ownerId, so this branch answers without reading
+      // the trip. The ownsTrip fallback exists only for documents written
+      // before ownerId was added; drop it once those are migrated.
+      allow read, delete: if owns(resource.data)
+        || ownsTrip(resource.data.get('tripId', ''));
+
+      // Creating still checks the trip, so an itinerary cannot be attached to
+      // a trip the caller does not own.
+      allow create: if owns(request.resource.data)
+        && ownsTrip(request.resource.data.tripId)
+        && validItinerary(request.resource.data, id);
+
+      allow update: if (owns(resource.data)
+                        || ownsTrip(resource.data.get('tripId', '')))
+        && owns(request.resource.data)
+        && validItinerary(request.resource.data, id);
     }
+
     match /feedbacks/{id} {
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid && ownsTrip(request.resource.data.tripId);
-      allow read, delete: if signedIn() && resource.data.userId == request.auth.uid;
-      allow update: if signedIn() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid && ownsTrip(request.resource.data.tripId);
+      // Feedback already carries userId, so reads and deletes need no
+      // document read of the trip.
+      allow read, delete: if ownedBy(resource.data, 'userId');
+
+      allow create: if ownedBy(request.resource.data, 'userId')
+        && ownsTrip(request.resource.data.tripId)
+        && validFeedback(request.resource.data);
+
+      allow update: if ownedBy(resource.data, 'userId')
+        && ownedBy(request.resource.data, 'userId')
+        && ownsTrip(request.resource.data.tripId)
+        && validFeedback(request.resource.data);
     }
   }
 }

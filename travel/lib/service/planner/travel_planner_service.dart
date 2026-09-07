@@ -2,6 +2,7 @@ import '../../core/utils/money.dart';
 import '../../models/planner_profile.dart';
 import '../../models/planner_result.dart';
 import '../../models/planner_validation.dart';
+import '../../models/place_role.dart';
 import '../../models/budget_allocation.dart';
 import '../../models/preference/preferences.dart';
 import '../../models/score_place.dart';
@@ -186,6 +187,7 @@ class TravelPlannerService {
       profile: profile,
       dailyActivityBudget: dailyActivityBudget,
       diningPlan: diningPlan,
+      preference: preference,
     );
 
     _optimizeDailyRoutes(
@@ -218,16 +220,20 @@ class TravelPlannerService {
     );
   }
 
-  /// Individual retail businesses are not itinerary attractions. Actual malls
-  /// remain eligible even when Google also attaches one or more store types.
+  /// Individual retail businesses are not itinerary attractions. Malls and
+  /// department stores are - and a shop that tags itself a mall is still a
+  /// shop, which is what [isMajorShoppingPlace] checks.
+  ///
+  /// A [TravelPlace] carries no primaryType, so this is the weaker type-list
+  /// test. It is a second line of defence: the real filtering happens in
+  /// DestinationPlaceService, where the Google response is still intact.
   bool _isInvalidRetailCandidate(TravelPlace place) {
     final types = {
       place.category,
       ...place.tags,
     }.map((value) => value.toLowerCase().trim()).toSet();
-    final isRetail = types.contains('store') ||
-        types.any((type) => type.endsWith('_store'));
-    return isRetail && !types.contains('shopping_mall');
+    if (!isRetailPlace(types)) return false;
+    return !isMajorShoppingPlace(types);
   }
 
   PlannerValidationResult _requireWarningFree(
@@ -352,14 +358,29 @@ class TravelPlannerService {
     required PlannerProfile profile,
     required double dailyActivityBudget,
     required _DiningPlan diningPlan,
+    required Preference preference,
   }) {
     for (var dayIndex = 0; dayIndex < days.length; dayIndex++) {
       days[dayIndex].places.addAll(diningPlan.byDay[dayIndex]);
     }
 
-    final activityPlaces = rankedPlaces
-        .where((item) => !item.place.isDining)
-        .toList();
+    // What the traveler actually asked for goes in first. Scoring alone is not
+    // enough: preference is one weighted factor among five, so a shopping trip
+    // could fill its days with high-scoring museums before reaching the first
+    // mall. Both halves stay in score order, so ranking still decides within
+    // each.
+    final activityPlaces = <ScoredPlace>[];
+    final otherPlaces = <ScoredPlace>[];
+    for (final item in rankedPlaces) {
+      if (item.place.isDining) continue;
+      final wanted = placeScoringService.matchesPreference(
+        place: item.place,
+        preference: preference,
+      );
+      (wanted ? activityPlaces : otherPlaces).add(item);
+    }
+    activityPlaces.addAll(otherPlaces);
+
     final dayCosts = List<double>.filled(days.length, 0);
     final dayMinutes = List<int>.filled(days.length, 0);
     int dayIndex = 0;

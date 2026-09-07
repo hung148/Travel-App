@@ -170,11 +170,21 @@ void main() {
                 'id': 'vincom',
                 'displayName': {'text': 'Vincom Plaza'},
                 'types': ['shopping_mall', 'point_of_interest'],
+                'primaryType': 'shopping_mall',
               },
               {
                 'id': 'sportswear',
                 'displayName': {'text': 'Sportswear Shop'},
                 'types': ['sporting_goods_store', 'store'],
+                'primaryType': 'sporting_goods_store',
+              },
+              // The case that put shoe shops in the shopping plan: a single
+              // shop that also carries shopping_mall in its type list.
+              {
+                'id': 'shoe-shop',
+                'displayName': {'text': 'Giày Việt'},
+                'types': ['shoe_store', 'shopping_mall', 'store'],
+                'primaryType': 'shoe_store',
               },
             ],
           }),
@@ -190,6 +200,150 @@ void main() {
     );
 
     expect(result.map((place) => place.placeId), ['vincom']);
+  });
+
+  test('Mall search asks Google for the primary type', () async {
+    late String fieldMask;
+    final client = MockClient((request) async {
+      fieldMask = request.headers['X-Goog-FieldMask'] ?? '';
+      return http.Response(jsonEncode({'places': []}), 200);
+    });
+    final service = MapService(apiKey: 'test-key', client: client);
+
+    await service.getNearbyPlaces(
+      latitude: 11.94,
+      longitude: 108.44,
+      radius: 15000,
+      type: 'shopping_mall',
+    );
+
+    expect(fieldMask, contains('places.primaryType'));
+  });
+
+  test('Mall search returns the biggest malls first', () async {
+    final client = MockClient((request) async => http.Response(
+          jsonEncode({
+            'places': [
+              {
+                'id': 'small-mall',
+                'displayName': {'text': 'Neighbourhood Mall'},
+                'types': ['shopping_mall'],
+                'primaryType': 'shopping_mall',
+                'rating': 4.8,
+                'userRatingCount': 300,
+              },
+              {
+                'id': 'landmark-mall',
+                'displayName': {'text': 'Landmark Mall'},
+                'types': ['shopping_mall'],
+                'primaryType': 'shopping_mall',
+                'rating': 4.4,
+                'userRatingCount': 42000,
+              },
+              // An electronics chain: Google files these under
+              // department_store, which is why department_store is not a
+              // shopping type.
+              {
+                'id': 'appliance-chain',
+                'displayName': {'text': 'Điện Máy Xanh'},
+                'types': ['department_store', 'store'],
+                'primaryType': 'department_store',
+                'rating': 4.5,
+                'userRatingCount': 9000,
+              },
+              {
+                'id': 'mid-mall',
+                'displayName': {'text': 'Central Mall'},
+                'types': ['shopping_mall'],
+                'primaryType': 'shopping_mall',
+                'rating': 4.5,
+                'userRatingCount': 9000,
+              },
+            ],
+          }),
+          200,
+        ));
+    final service = MapService(apiKey: 'test-key', client: client);
+
+    final result = await service.getNearbyPlaces(
+      latitude: 11.94,
+      longitude: 108.44,
+      radius: 15000,
+      type: 'shopping_mall',
+    );
+
+    expect(
+      result.map((place) => place.placeId),
+      ['landmark-mall', 'mid-mall', 'small-mall'],
+    );
+  });
+
+  test('shopping uses Text Search, so prominence decides', () async {
+    late Uri requestedUrl;
+    late Map<String, dynamic> requestedBody;
+    final client = MockClient((request) async {
+      requestedUrl = request.url;
+      requestedBody = jsonDecode(request.body) as Map<String, dynamic>;
+      return http.Response(
+        jsonEncode({
+          'places': [
+            // A real mall carries half the retail catalogue among its
+            // secondary types. Only the primary type decides.
+            {
+              'id': 'vincom',
+              'displayName': {'text': 'Vincom Plaza Đà Nẵng'},
+              'types': [
+                'shopping_mall',
+                'department_store',
+                'supermarket',
+                'store',
+                'point_of_interest',
+              ],
+              'primaryType': 'shopping_mall',
+              'rating': 4.4,
+              'userRatingCount': 32000,
+            },
+            {
+              'id': 'vacuum-shop',
+              'displayName': {'text': 'Mi Việt Nam - 312 Điện Biên Phủ'},
+              'types': ['shopping_mall', 'point_of_interest'],
+              'primaryType': 'shopping_mall',
+              'rating': 4.9,
+              'userRatingCount': 300,
+            },
+            {
+              'id': 'shoe-shop',
+              'displayName': {'text': 'Giày Việt'},
+              'types': ['shopping_mall', 'shoe_store'],
+              'primaryType': 'shoe_store',
+              'rating': 4.8,
+              'userRatingCount': 900,
+            },
+          ],
+        }),
+        200,
+      );
+    });
+    final service = MapService(apiKey: 'test-key', client: client);
+
+    final result = await service.searchShoppingDestinations(
+      latitude: 16.05,
+      longitude: 108.21,
+      radius: 15000,
+      query: 'shopping mall',
+    );
+
+    expect(
+      requestedUrl.toString(),
+      'https://places.googleapis.com/v1/places:searchText',
+    );
+    expect(requestedBody['textQuery'], 'shopping mall');
+    expect(requestedBody['locationBias'], isNotNull);
+
+    // The mall survives its own secondary store types; the shoe shop does not
+    // survive its primary one. The vacuum shop is a review-count problem, not
+    // a type problem, so it is still here - the pool applies that floor.
+    expect(result.map((place) => place.placeId), ['vincom', 'vacuum-shop']);
   });
 
   test('walking route uses Routes API and decodes its polyline', () async {

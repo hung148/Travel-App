@@ -597,6 +597,25 @@ class PlanRefinementService {
     return '$hour:${minute.toString().padLeft(2, '0')} $period';
   }
 
+  /// Whether a candidate satisfies a category the user asked for by name
+  /// ("replace it with something shopping").
+  ///
+  /// Shopping is special-cased: a plain substring match let anything whose
+  /// name or tags happened to contain "shopping" through, so the request has
+  /// to go through the same mall test the candidate pool uses.
+  bool _matchesPreference(ScoredPlace candidate, String preference) {
+    final types = {candidate.place.category, ...candidate.place.tags};
+
+    if (const {'shopping', 'mall', 'shopping_mall'}.contains(preference)) {
+      return isMajorShoppingPlace(types);
+    }
+
+    return <String>[
+      candidate.place.name,
+      ...types,
+    ].any((value) => value.toLowerCase().contains(preference));
+  }
+
   PlanRefinementResult replaceStop(
     PlannerResult plan,
     String activityName, {
@@ -616,11 +635,7 @@ class PlanRefinementService {
       if (scheduledIds.contains(candidate.place.id)) return false;
       if (candidate.place.isDining != match.place.place.isDining) return false;
       if (preference == null || preference.isEmpty) return true;
-      return <String>[
-        candidate.place.name,
-        candidate.place.category,
-        ...candidate.place.tags,
-      ].any((value) => value.toLowerCase().contains(preference));
+      return _matchesPreference(candidate, preference);
     }).toList();
     if (candidates.isEmpty) {
       return PlanRefinementResult(
@@ -679,11 +694,7 @@ class PlanRefinementService {
       if (scheduledIds.contains(candidate.place.id)) return false;
       if (candidate.place.isDining != match.place.place.isDining) return false;
       if (preference == null || preference.isEmpty) return true;
-      return <String>[
-        candidate.place.name,
-        candidate.place.category,
-        ...candidate.place.tags,
-      ].any((value) => value.toLowerCase().contains(preference));
+      return _matchesPreference(candidate, preference);
     }).toList()..sort((a, b) => b.distanceScore.compareTo(a.distanceScore));
     if (candidates.isEmpty) {
       return replaceStop(

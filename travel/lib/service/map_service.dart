@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:http/http.dart' as http;
 
+import '../models/place_role.dart';
+
 /// MapService
 ///
 /// This service handles map-related logic for the travel app.
@@ -265,10 +267,7 @@ class MapService {
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask':
-            'places.id,places.displayName,places.formattedAddress,'
-            'places.location,places.rating,places.userRatingCount,'
-            'places.types,places.priceLevel,places.priceRange,places.photos',
+        'X-Goog-FieldMask': _placeFieldMask,
       },
       body: jsonEncode({
         'includedTypes': [type],
@@ -286,11 +285,74 @@ class MapService {
       throw Exception('Failed to fetch nearby places.');
     }
 
-    final data = jsonDecode(response.body);
+    final places = _placesFromResponse(jsonDecode(response.body));
 
+    // A shopping search has to come back with places worth an afternoon, not
+    // the shoe shop next door that also tagged itself a mall. Anything selling
+    // one category of goods is dropped, and what survives is ordered biggest
+    // first - review count is the only size signal Google gives us.
+    if (majorShoppingTypes.contains(type)) {
+      return places.where((place) => place.isMajorShoppingDestination).toList()
+        ..sort(_biggestShoppingFirst);
+    }
+    return places;
+  }
+
+  /// ==============================
+  /// Search shopping destinations in an area
+  /// ==============================
+  ///
+  /// Deliberately Text Search and NOT searchNearby.
+  ///
+  /// Nearby Search ranks within the circle and stops at 20 results, so in a
+  /// city the size of Da Nang it can come back with twenty neighbourhood
+  /// arcades and never mention Vincom. Text Search ranks by prominence, which
+  /// is what "the big mall" means. `locationBias` is a bias and not a fence,
+  /// so the caller still has to check the distance itself.
+  Future<List<NearbyPlace>> searchShoppingDestinations({
+    required double latitude,
+    required double longitude,
+    required int radius,
+    required String query,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('https://places.googleapis.com/v1/places:searchText'),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': _placeFieldMask,
+      },
+      body: jsonEncode({
+        'textQuery': query,
+        'maxResultCount': 20,
+        'locationBias': {
+          'circle': {
+            'center': {'latitude': latitude, 'longitude': longitude},
+            'radius': radius.toDouble(),
+          },
+        },
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to search shopping destinations.');
+    }
+
+    return _placesFromResponse(jsonDecode(response.body))
+        .where((place) => place.isMajorShoppingDestination)
+        .toList()
+      ..sort(_biggestShoppingFirst);
+  }
+
+  static const _placeFieldMask =
+      'places.id,places.displayName,places.formattedAddress,'
+      'places.location,places.rating,places.userRatingCount,'
+      'places.types,places.primaryType,places.priceLevel,'
+      'places.priceRange,places.photos';
+
+  List<NearbyPlace> _placesFromResponse(dynamic data) {
     final results = data['places'] as List<dynamic>? ?? const [];
-
-    final places = results.map((item) {
+    return results.map((item) {
       return NearbyPlace(
         placeId: item['id'] ?? '',
         name: item['displayName']?['text'] ?? '',
@@ -300,18 +362,18 @@ class MapService {
         rating: (item['rating'] ?? 0).toDouble(),
         userRatingsTotal: item['userRatingCount'] ?? 0,
         types: List<String>.from(item['types'] ?? []),
+        primaryType: item['primaryType'] as String? ?? '',
         priceLevel: _priceLevelFromGoogle(item['priceLevel']),
         priceRange: _priceRangeFromGoogle(item['priceRange']),
         photoUrls: _photoUrls(item['photos']),
       );
     }).toList();
+  }
 
-    // The nearby endpoint can occasionally return related retail businesses
-    // for a mall search. Never allow those results to enter the candidate pool.
-    if (type == 'shopping_mall') {
-      return places.where((place) => place.isActualShoppingMall).toList();
-    }
-    return places;
+  static int _biggestShoppingFirst(NearbyPlace left, NearbyPlace right) {
+    final byReviews = right.userRatingsTotal.compareTo(left.userRatingsTotal);
+    if (byReviews != 0) return byReviews;
+    return right.rating.compareTo(left.rating);
   }
 
   static bool _isDaLatQuery(String value) {
@@ -817,6 +879,11 @@ class NearbyPlace {
   final double rating;
   final int userRatingsTotal;
   final List<String> types;
+
+  /// What Google says this business actually IS. A shoe shop stays
+  /// `shoe_store` here even when `shopping_mall` appears in [types].
+  final String primaryType;
+
   final int? priceLevel;
 
   /// Published price band, when Google has one for this place.
@@ -835,21 +902,19 @@ class NearbyPlace {
     required this.rating,
     required this.userRatingsTotal,
     required this.types,
+    this.primaryType = '',
     this.priceLevel,
     this.priceRange,
     this.photoUrls = const [],
   });
 
-  bool get isActualShoppingMall {
-    final normalizedTypes = types
-        .map((type) => type.toLowerCase().trim())
-        .toSet();
-    return normalizedTypes.contains('shopping_mall');
-  }
+  /// A mall or department store, not a shop that sells one kind of product.
+  bool get isMajorShoppingDestination =>
+      isMajorShoppingPlace(types, primaryType: primaryType);
 
   @override
   String toString() {
-    return 'NearbyPlace(placeId: $placeId, name: $name, address: $address, latitude: $latitude, longitude: $longitude, rating: $rating, userRatingsTotal: $userRatingsTotal, types: $types, priceLevel: $priceLevel)';
+    return 'NearbyPlace(placeId: $placeId, name: $name, address: $address, latitude: $latitude, longitude: $longitude, rating: $rating, userRatingsTotal: $userRatingsTotal, types: $types, primaryType: $primaryType, priceLevel: $priceLevel)';
   }
 }
 

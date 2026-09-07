@@ -1,6 +1,15 @@
 class PreferenceNormalizer {
   const PreferenceNormalizer();
 
+  /// A shopping preference means malls and large markets. Shops - specialty
+  /// or otherwise - never reach scoring, so they are deliberately absent.
+  static const Set<String> _shopping = {
+    'shopping',
+    'shopping_mall',
+    'market',
+    'mall',
+  };
+
   static const Map<String, Set<String>> _synonyms = {
     'food': {'food', 'local_food', 'restaurant', 'cafe', 'dining'},
     'local_food': {'food', 'local_food', 'restaurant', 'cafe', 'dining'},
@@ -27,9 +36,10 @@ class PreferenceNormalizer {
       'bowling_alley',
       'nightlife',
     },
-    'shopping': {'shopping', 'shopping_mall', 'mall'},
-    'shopping_mall': {'shopping', 'shopping_mall', 'mall'},
-    'mall': {'shopping', 'shopping_mall', 'mall'},
+    'shopping': _shopping,
+    'shopping_mall': _shopping,
+    'mall': _shopping,
+    'market': _shopping,
     'history': {'history', 'museum', 'shrine', 'temple', 'historic'},
     'historic': {'history', 'museum', 'shrine', 'temple', 'historic'},
     'shrine': {'history', 'shrine'},
