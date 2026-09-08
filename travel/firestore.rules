@@ -114,6 +114,53 @@ service cloud.firestore {
         && data.worst is string && data.worst.size() <= 5000;
     }
 
+    function validDestinationReview(data) {
+      return data.keys().hasOnly([
+               'ownerId', 'tripId', 'destinationName', 'destinationKey',
+               'destinationPlaceId', 'displayName', 'isAnonymous', 'rating',
+               'tripStyleTags', 'highlights', 'mustTryFoods',
+               'recommendedPlaces', 'body', 'status', 'createdAt', 'updatedAt'
+             ])
+        && data.ownerId is string
+        && data.tripId is string && data.tripId.size() <= 200
+        && data.destinationName is string && data.destinationName.size() >= 1
+        && data.destinationName.size() <= 200
+        && data.destinationKey is string && data.destinationKey.size() >= 1
+        && data.destinationKey.size() <= 220
+        && (data.destinationPlaceId == null
+            || (data.destinationPlaceId is string && data.destinationPlaceId.size() <= 300))
+        && data.displayName is string && data.displayName.size() <= 100
+        && data.isAnonymous is bool
+        && data.rating is int && data.rating >= 1 && data.rating <= 5
+        && data.tripStyleTags is list && data.tripStyleTags.size() <= 20
+        && data.highlights is list && data.highlights.size() <= 20
+        && data.mustTryFoods is list && data.mustTryFoods.size() <= 20
+        && data.recommendedPlaces is list && data.recommendedPlaces.size() <= 20
+        && data.body is string && data.body.size() >= 12 && data.body.size() <= 5000
+        && data.status in ['published', 'private'];
+    }
+
+    function validDestinationTip(data) {
+      return data.keys().hasOnly([
+               'ownerId', 'destinationName', 'destinationKey',
+               'destinationPlaceId', 'displayName', 'isAnonymous', 'category',
+               'text', 'status', 'likesCount', 'createdAt', 'updatedAt'
+             ])
+        && data.ownerId is string
+        && data.destinationName is string && data.destinationName.size() >= 1
+        && data.destinationName.size() <= 200
+        && data.destinationKey is string && data.destinationKey.size() >= 1
+        && data.destinationKey.size() <= 220
+        && (data.destinationPlaceId == null
+            || (data.destinationPlaceId is string && data.destinationPlaceId.size() <= 300))
+        && data.displayName is string && data.displayName.size() <= 100
+        && data.isAnonymous is bool
+        && data.category in ['food', 'place', 'warning', 'transport', 'general']
+        && data.text is string && data.text.size() >= 6 && data.text.size() <= 1000
+        && data.status in ['published', 'private']
+        && data.likesCount is int && data.likesCount >= 0 && data.likesCount <= 1000000;
+    }
+
     // ---------------------------------------------------------------------
     // Collections
     // ---------------------------------------------------------------------
@@ -168,6 +215,38 @@ service cloud.firestore {
         && ownedBy(request.resource.data, 'userId')
         && ownsTrip(request.resource.data.tripId)
         && validFeedback(request.resource.data);
+    }
+
+    match /publicDestinationReviews/{id} {
+      allow read: if signedIn()
+        && (resource.data.status == 'published'
+            || ownedBy(resource.data, 'ownerId'));
+
+      allow create: if ownedBy(request.resource.data, 'ownerId')
+        && ownsTrip(request.resource.data.tripId)
+        && validDestinationReview(request.resource.data);
+
+      allow update: if ownedBy(resource.data, 'ownerId')
+        && ownedBy(request.resource.data, 'ownerId')
+        && request.resource.data.tripId == resource.data.tripId
+        && validDestinationReview(request.resource.data);
+
+      allow delete: if ownedBy(resource.data, 'ownerId');
+    }
+
+    match /destinationTips/{id} {
+      allow read: if signedIn()
+        && (resource.data.status == 'published'
+            || ownedBy(resource.data, 'ownerId'));
+
+      allow create: if ownedBy(request.resource.data, 'ownerId')
+        && validDestinationTip(request.resource.data);
+
+      allow update: if ownedBy(resource.data, 'ownerId')
+        && ownedBy(request.resource.data, 'ownerId')
+        && validDestinationTip(request.resource.data);
+
+      allow delete: if ownedBy(resource.data, 'ownerId');
     }
   }
 }

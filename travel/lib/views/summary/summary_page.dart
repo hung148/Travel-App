@@ -4,9 +4,10 @@ import '../../core/utils/money.dart';
 import '../../widgets/cost_breakdown_page.dart';
 import '../../models/planner_result.dart';
 import '../../models/hotel_stay.dart';
+import '../../models/trip/trip.dart';
 import '../../service/planner/daily_time_schedule_service.dart';
 import '../../widgets/place_photo.dart';
-import 'review_widget.dart';
+import '../saved_trip/saved_trip_details_page.dart';
 import '../plan_trip/models/destination_draft.dart';
 import 'multi_destination_review.dart';
 
@@ -16,6 +17,7 @@ class SummaryPage extends StatelessWidget {
   final DateTimeRange? dates;
   final int travelers;
   final List<DestinationDraft>? destinations;
+  final Future<Trip?> Function()? onSaveFinalPlan;
 
   const SummaryPage({
     super.key,
@@ -24,6 +26,7 @@ class SummaryPage extends StatelessWidget {
     this.dates,
     this.travelers = 1,
     this.destinations,
+    this.onSaveFinalPlan,
   });
 
   @override
@@ -41,6 +44,7 @@ class SummaryPage extends StatelessWidget {
           ? MultiDestinationReview(
               destinations: destinations!,
               travelers: travelers,
+              onSaveFinalPlan: onSaveFinalPlan,
             )
           : plan == null
           ? _EmptyReview(
@@ -73,8 +77,7 @@ class SummaryPage extends StatelessWidget {
                       Align(
                         alignment: Alignment.centerLeft,
                         child: TextButton.icon(
-                          onPressed: () =>
-                              showCostBreakdown(context, plan),
+                          onPressed: () => showCostBreakdown(context, plan),
                           icon: const Icon(Icons.receipt_long_outlined),
                           label: const Text('How this total is calculated'),
                         ),
@@ -119,7 +122,7 @@ class SummaryPage extends StatelessWidget {
                         const SizedBox(height: 14),
                       ],
                       const SizedBox(height: 6),
-                      const ReviewWidget(),
+                      const _ReviewAfterSaveNotice(),
                       const SizedBox(height: 18),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
@@ -131,18 +134,13 @@ class SummaryPage extends StatelessWidget {
                           ),
                           const SizedBox(width: 12),
                           FilledButton.icon(
-                            onPressed: () =>
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Plan confirmed for this session.',
-                                    ),
-                                  ),
-                                ),
+                            onPressed: onSaveFinalPlan == null
+                                ? null
+                                : () => _saveAndReview(context),
                             icon: const Icon(
                               Icons.check_circle_outline_rounded,
                             ),
-                            label: const Text('Confirm plan'),
+                            label: const Text('Save final plan'),
                           ),
                         ],
                       ),
@@ -151,6 +149,64 @@ class SummaryPage extends StatelessWidget {
                 ),
               ),
             ),
+    );
+  }
+
+  Future<void> _saveAndReview(BuildContext context) async {
+    final trip = await onSaveFinalPlan?.call();
+    if (trip == null || !context.mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SavedTripDetailsPage(trip: trip, initialTab: 3),
+      ),
+    );
+  }
+}
+
+class _ReviewAfterSaveNotice extends StatelessWidget {
+  const _ReviewAfterSaveNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFB99A88), width: 1.35),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xFF6B4A3B),
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: const Icon(Icons.rate_review_outlined, color: Colors.white),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Review comes after saving',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Save the final plan first, then you can write feedback and choose whether it stays private or becomes public.',
+                  style: TextStyle(color: Color(0xFF6B5A52)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

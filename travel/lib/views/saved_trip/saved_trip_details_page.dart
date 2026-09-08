@@ -9,20 +9,26 @@ import '../../models/trip/trip_segment.dart';
 import '../../service/planner/daily_time_schedule_service.dart';
 import '../../viewmodels/trip_viewmodel.dart';
 import '../../widgets/place_photo.dart';
+import '../community/destination_community_panel.dart';
 import '../plan_trip/plan_trip_page.dart';
 import '../summary/review_widget.dart';
 
 class SavedTripDetailsPage extends StatefulWidget {
-  const SavedTripDetailsPage({super.key, required this.trip});
+  const SavedTripDetailsPage({
+    super.key,
+    required this.trip,
+    this.initialTab = 0,
+  });
 
   final Trip trip;
+  final int initialTab;
 
   @override
   State<SavedTripDetailsPage> createState() => _SavedTripDetailsPageState();
 }
 
 class _SavedTripDetailsPageState extends State<SavedTripDetailsPage> {
-  int _selectedTab = 0;
+  late int _selectedTab = widget.initialTab.clamp(0, 3);
 
   @override
   Widget build(BuildContext context) {
@@ -85,18 +91,10 @@ class _SavedTripDetailsPageState extends State<SavedTripDetailsPage> {
                               setState(() => _selectedTab = value),
                         ),
                         const SizedBox(height: 18),
-                        IndexedStack(
-                          index: _selectedTab,
-                          children: [
-                            _OverviewTab(trip: trip),
-                            _ItineraryTab(
-                              segments: segments,
-                              travelers: trip.partySize,
-                              currencyCode: trip.currencyCode,
-                            ),
-                            _MapTab(segments: segments),
-                            const _ReviewTab(),
-                          ],
+                        _SelectedTripTab(
+                          selected: _selectedTab,
+                          trip: trip,
+                          segments: segments,
                         ),
                       ],
                     ),
@@ -108,6 +106,32 @@ class _SavedTripDetailsPageState extends State<SavedTripDetailsPage> {
         ),
       ),
     );
+  }
+}
+
+class _SelectedTripTab extends StatelessWidget {
+  const _SelectedTripTab({
+    required this.selected,
+    required this.trip,
+    required this.segments,
+  });
+
+  final int selected;
+  final Trip trip;
+  final List<TripSegment> segments;
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (selected) {
+      0 => _OverviewTab(trip: trip),
+      1 => _ItineraryTab(
+        segments: segments,
+        travelers: trip.partySize,
+        currencyCode: trip.currencyCode,
+      ),
+      2 => _MapTab(segments: segments),
+      _ => _ReviewTab(trip: trip),
+    };
   }
 }
 
@@ -545,6 +569,42 @@ class _DestinationsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (trip.segments.isEmpty) {
+      return _Panel(
+        title: 'Destinations',
+        icon: Icons.location_city_outlined,
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFF6B4A3B),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                '1',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                trip.destination.trim().isEmpty
+                    ? 'Destination not saved'
+                    : trip.destination,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return _Panel(
       title: 'Destinations',
       icon: Icons.location_city_outlined,
@@ -992,19 +1052,23 @@ class _MapAreaRow extends StatelessWidget {
 }
 
 class _ReviewTab extends StatelessWidget {
-  const _ReviewTab();
+  const _ReviewTab({required this.trip});
+
+  final Trip trip;
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      children: const [
-        ReviewWidget(),
-        SizedBox(height: 14),
+      children: [
+        ReviewWidget(trip: trip),
+        const SizedBox(height: 14),
+        DestinationCommunityPanel(trip: trip, showComposer: false),
+        const SizedBox(height: 14),
         _EmptyState(
           icon: Icons.psychology_alt_outlined,
-          title: 'Smarter planning loop',
+          title: 'Community-powered planning loop',
           message:
-              'Your ratings, hidden places, and replacement requests can become personalization signals for the next algorithm pass.',
+              'Public reviews and destination tips turn real traveler experience into better recommendations for the next person.',
         ),
       ],
     );

@@ -72,6 +72,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
   late final MapService? _mapService = AppConfig.hasGoogleMapsApiKey
       ? MapService(apiKey: AppConfig.googleMapsApiKey)
       : null;
+
   /// Reads a candidate's NAME, which no type or review rule can. Without a
   /// configured endpoint it approves everything, so the app still works with
   /// only the Google key set.
@@ -2027,7 +2028,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
   bool _canUndoAiChange() =>
       _aiUndoSnapshot?.destinationId == _selectedDestinationId;
 
-  Future<void> _saveTripDraft() async {
+  Future<Trip?> _saveFinalPlan({bool openDetails = false}) async {
     _persistSelectedDestination();
     final viewModel = _tripViewModel;
     final segments = viewModel.draftSegments;
@@ -2038,15 +2039,15 @@ class _PlanTripPageState extends State<PlanTripPage> {
           content: Text('Add destination dates and sign in before saving.'),
         ),
       );
-      return;
+      return null;
     }
     if (viewModel.currentTrip != null) {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Update saved trip?'),
+          title: const Text('Save final plan?'),
           content: Text(
-            'Save these changes to ${viewModel.currentTrip!.title ?? viewModel.currentTrip!.destination}?',
+            'Save these final changes to ${viewModel.currentTrip!.title ?? viewModel.currentTrip!.destination}?',
           ),
           actions: [
             TextButton(
@@ -2055,12 +2056,12 @@ class _PlanTripPageState extends State<PlanTripPage> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Update trip'),
+              child: const Text('Save final'),
             ),
           ],
         ),
       );
-      if (confirmed != true || !mounted) return;
+      if (confirmed != true || !mounted) return null;
     }
     if (viewModel.currentTrip == null) {
       final first = segments.first;
@@ -2078,7 +2079,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
             (total, item) => total + item.allocatedBudget,
           ),
           days: segments.fold(0, (total, item) => total + item.numberOfDays),
-          status: 'draft',
+          status: 'confirmed',
           startDate: first.startDate,
           endDate: last.endDate,
           segments: segments,
@@ -2089,25 +2090,27 @@ class _PlanTripPageState extends State<PlanTripPage> {
         title: tripTitleController.text.trim().isEmpty
             ? null
             : tripTitleController.text.trim(),
+        status: 'confirmed',
       );
     }
-    if (!mounted) return;
+    if (!mounted) return null;
     final savedTrip = viewModel.currentTrip;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          viewModel.errorMessage ?? 'Trip draft saved to Firestore.',
+          viewModel.errorMessage ?? 'Final plan saved. Ready for review.',
         ),
       ),
     );
-    if (savedTrip != null && viewModel.errorMessage == null) {
+    if (openDetails && savedTrip != null && viewModel.errorMessage == null) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => SavedTripDetailsPage(trip: savedTrip),
+          builder: (_) => SavedTripDetailsPage(trip: savedTrip, initialTab: 3),
         ),
       );
     }
+    return viewModel.errorMessage == null ? savedTrip : null;
   }
 
   @override
@@ -2125,14 +2128,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
             Text('Plan a trip'),
           ],
         ),
-        actions: [
-          TextButton.icon(
-            onPressed: _destinations.isEmpty ? null : _saveTripDraft,
-            icon: const Icon(Icons.save_outlined),
-            label: const Text('Save plan'),
-          ),
-          const SizedBox(width: 16),
-        ],
+        actions: const [SizedBox(width: 16)],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
@@ -2329,6 +2325,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                               builder: (_) => SummaryPage(
                                 destinations: List.unmodifiable(_destinations),
                                 travelers: travelers,
+                                onSaveFinalPlan: _saveFinalPlan,
                               ),
                             ),
                           );

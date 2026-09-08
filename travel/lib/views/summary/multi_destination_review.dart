@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
 
 import '../../core/utils/money.dart';
+import '../../models/trip/trip.dart';
+import '../saved_trip/saved_trip_details_page.dart';
 import '../plan_trip/models/destination_draft.dart';
 import '../../widgets/place_photo.dart';
-import 'review_widget.dart';
 
 class MultiDestinationReview extends StatelessWidget {
   const MultiDestinationReview({
     super.key,
     required this.destinations,
     required this.travelers,
+    this.onSaveFinalPlan,
   });
 
   final List<DestinationDraft> destinations;
   final int travelers;
+  final Future<Trip?> Function()? onSaveFinalPlan;
 
   String _date(DateTime value) => '${value.month}/${value.day}/${value.year}';
 
@@ -53,7 +56,9 @@ class MultiDestinationReview extends StatelessWidget {
     final currencies = (planned.isEmpty ? destinations : planned)
         .map((item) => item.currencyCode)
         .toSet();
-    final currencyCode = currencies.isEmpty ? Money.defaultCurrencyCode : currencies.first;
+    final currencyCode = currencies.isEmpty
+        ? Money.defaultCurrencyCode
+        : currencies.first;
     final hasMixedCurrencies = currencies.length > 1;
     final firstDate = destinations
         .where((item) => item.dates != null)
@@ -272,10 +277,80 @@ class MultiDestinationReview extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 18),
-              const ReviewWidget(),
+              const _ReviewAfterSaveNotice(),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.maybePop(context),
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Back to edit'),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton.icon(
+                    onPressed: onSaveFinalPlan == null
+                        ? null
+                        : () => _saveAndReview(context),
+                    icon: const Icon(Icons.check_circle_outline_rounded),
+                    label: const Text('Save final plan'),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Future<void> _saveAndReview(BuildContext context) async {
+    final trip = await onSaveFinalPlan?.call();
+    if (trip == null || !context.mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SavedTripDetailsPage(trip: trip, initialTab: 3),
+      ),
+    );
+  }
+}
+
+class _ReviewAfterSaveNotice extends StatelessWidget {
+  const _ReviewAfterSaveNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return _ReviewCard(
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xFF6B4A3B),
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: const Icon(Icons.rate_review_outlined, color: Colors.white),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Review comes after saving',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Save the final plan first, then choose private feedback or publish a public destination review.',
+                  style: TextStyle(color: Color(0xFF6B5A52)),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

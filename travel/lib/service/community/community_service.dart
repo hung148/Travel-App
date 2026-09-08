@@ -5,7 +5,7 @@ import '../../models/community/destination_tip.dart';
 
 class CommunityService {
   CommunityService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -27,9 +27,10 @@ class CommunityService {
     required String destinationName,
     String? destinationPlaceId,
   }) {
+    final baseQuery = _reviews.where('status', isEqualTo: 'published');
     final query = destinationPlaceId?.trim().isNotEmpty == true
-        ? _reviews.where('destinationPlaceId', isEqualTo: destinationPlaceId)
-        : _reviews.where(
+        ? baseQuery.where('destinationPlaceId', isEqualTo: destinationPlaceId)
+        : baseQuery.where(
             'destinationKey',
             isEqualTo: DestinationReview.normalizeDestinationKey(
               destinationName,
@@ -56,9 +57,10 @@ class CommunityService {
     required String destinationName,
     String? destinationPlaceId,
   }) {
+    final baseQuery = _tips.where('status', isEqualTo: 'published');
     final query = destinationPlaceId?.trim().isNotEmpty == true
-        ? _tips.where('destinationPlaceId', isEqualTo: destinationPlaceId)
-        : _tips.where(
+        ? baseQuery.where('destinationPlaceId', isEqualTo: destinationPlaceId)
+        : baseQuery.where(
             'destinationKey',
             isEqualTo: DestinationTip.normalizeDestinationKey(destinationName),
           );
