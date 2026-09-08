@@ -211,17 +211,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     );
   }
 
-  /// Everything the planner needs before it can produce anything.
-  ///
-  /// The generate button appears only once this holds, rather than sitting
-  /// there greyed out - a disabled control tells you that you cannot proceed
-  /// but not why, and the fields it depends on are right above it.
-  /// What the form is still waiting for, named the way the fields are
-  /// labelled, in the order they appear.
-  ///
-  /// The generate button is hidden rather than disabled, so without this the
-  /// form gives no reason - you fill everything in and nothing appears, with
-  /// no way to tell which check is unhappy.
+  /// Missing requirements shared by the setup hint and generate action.
   List<String> get _missingTripSetup {
     final budget = double.tryParse(budgetController.text.trim());
 
@@ -230,7 +220,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
       if (_destinations.isEmpty || destinationController.text.trim().isEmpty)
         'a destination',
       if (dates == null) 'travel dates',
-      if (budget == null || budget <= 0) 'a total budget',
+      if (budget == null || !budget.isFinite || budget <= 0)
+        'a valid total budget greater than zero',
       if (!Money.isValidCode(currencyCode)) 'a currency',
       if (travelers < 1) 'at least one traveler',
     ];
@@ -949,35 +940,22 @@ class _PlanTripPageState extends State<PlanTripPage> {
   }
 
   Future<void> _generatePlan() async {
-    if (dates == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Choose travel dates before generating a plan.'),
-        ),
-      );
-      return;
-    }
-    final preference = _preferenceForSelectedPlan();
-    if (preference == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Load or save your travel preferences first.'),
-        ),
-      );
+    if (isGenerating) return;
+    final missing = _missingTripSetup;
+    if (missing.isNotEmpty) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Add ${_readableList(missing)} to generate a schedule.'),
+          ),
+        );
       return;
     }
 
+    final preference = _preferenceForSelectedPlan()!;
     final destination = destinationController.text.trim();
-    final budget = double.tryParse(budgetController.text.trim());
-
-    if (destination.isEmpty || budget == null || budget <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Enter a destination and valid budget first.'),
-        ),
-      );
-      return;
-    }
+    final budget = double.parse(budgetController.text.trim());
 
     setState(() => isGenerating = true);
 
@@ -2310,6 +2288,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                             context,
                             MaterialPageRoute(
                               builder: (_) => SummaryPage(
+                                tripId: _tripViewModel.currentTrip?.id,
                                 destinations: List.unmodifiable(_destinations),
                                 travelers: travelers,
                               ),
@@ -2700,7 +2679,6 @@ class _TripSetupCard extends StatelessWidget {
             children: [
               layout,
               const SizedBox(height: 20),
-              if (missingSetup.isEmpty)
                 Align(
                   alignment: wide
                       ? Alignment.centerRight
@@ -2731,8 +2709,9 @@ class _TripSetupCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                )
-              else
+                ),
+              if (missingSetup.isNotEmpty) ...[
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Icon(
@@ -2756,6 +2735,7 @@ class _TripSetupCard extends StatelessWidget {
                     ),
                   ],
                 ),
+              ],
             ],
           );
         },
@@ -4686,7 +4666,7 @@ class _PlannerValidationSummary extends StatelessWidget {
                 ] else ...[
                   const SizedBox(height: 4),
                   Text(
-                    'No duplicates or budget, time, place-count, empty-day, or total-cost problems found.',
+                    'No repeated activities or budget, time, place-count, empty-day, or total-cost problems found. Restaurants may repeat when needed.',
                     style: TextStyle(color: foregroundColor),
                   ),
                 ],

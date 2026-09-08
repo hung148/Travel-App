@@ -105,14 +105,6 @@ DO FIRST
       standing invitation to SMS toll fraud, and it bills you.
 
 SECURITY
-[] 1. Exercise the Firestore rules end to end. 
-      The rules are deployed to dev but only users and 
-      preferences have ever been written under them. 
-      Create a trip, save a plan, reopen it from history, 
-      submit feedback, then delete the trip. validTrip 
-      whitelists 15 exact field names and validItinerary pins 
-      the document id — if either is wrong, this is where it 
-      shows.
 [] 2. Move Cloud Functions off Node 20. Deprecated on 
       2026-04-30 and decommissioned on 2026-10-30 — roughly 
       seven weeks out. After that date you cannot deploy 

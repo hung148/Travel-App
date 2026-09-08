@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:travel/models/cost_estimate.dart';
 import 'package:travel/models/place_role.dart';
 import 'package:travel/models/planner_profile.dart';
+import 'package:travel/models/planner_validation.dart';
 import 'package:travel/models/preference/preferences.dart';
 import 'package:travel/models/score_place.dart';
 import 'package:travel/models/travel_place.dart';
@@ -13,6 +14,96 @@ import 'package:travel/service/planner/travel_planner_service.dart';
 
 void main() {
   const classifier = PlaceRoleClassifier();
+
+  for (final restaurantCount in [1, 2, 4, 9]) {
+    test('fills nine meals with $restaurantCount restaurants', () {
+      final planner = TravelPlannerService(
+        placeScoringService: PlaceScoringService(),
+      );
+      final result = planner.generatePlan(
+        trip: Trip(
+          id: 'repeat-trip',
+          ownerId: 'user',
+          destination: 'Small town',
+          budget: 10000,
+          days: 3,
+          status: 'draft',
+          travelers: 2,
+        ),
+        preference: Preference(
+          id: 'pref',
+          ownerId: 'user',
+          experienceType: const ['food'],
+          activityLevel: 'Relaxed',
+          spendingStyle: 'Normal',
+          interests: const ['food'],
+        ),
+        candidatePlaces: [
+          for (var index = 0; index < restaurantCount; index++)
+            _place('meal-$index', 'restaurant', rating: 5 - index * 0.1),
+          for (var index = 0; index < 6; index++) _place('park-$index', 'park'),
+        ],
+        centerLatitude: 0,
+        centerLongitude: 0,
+      );
+
+      expect(
+        result.validation.isValid,
+        isTrue,
+        reason: result.validation.issues
+            .map((issue) => issue.message)
+            .join('; '),
+      );
+      final allMeals = <String>[];
+      for (final day in result.days) {
+        final meals = day.places.where((item) => item.place.isDining).toList();
+        expect(meals, hasLength(3));
+        expect(day.estimatedFoodCostFor(2), 60);
+        if (restaurantCount >= 3) {
+          expect(meals.map((item) => item.place.id).toSet(), hasLength(3));
+        }
+        allMeals.addAll(meals.map((item) => item.place.id));
+      }
+      expect(allMeals.toSet(), hasLength(restaurantCount));
+      if (restaurantCount == 4) {
+        expect(
+          allMeals.where((id) => id == 'meal-0').length,
+          greaterThan(allMeals.where((id) => id == 'meal-3').length),
+        );
+      }
+    });
+  }
+
+  test('no restaurants still reports missing dining candidates', () {
+    final result =
+        TravelPlannerService(
+          placeScoringService: PlaceScoringService(),
+        ).generatePlan(
+          trip: Trip(
+            id: 'trip',
+            ownerId: 'user',
+            destination: 'Town',
+            budget: 10000,
+            days: 1,
+            status: 'draft',
+          ),
+          preference: Preference(
+            id: 'pref',
+            ownerId: 'user',
+            experienceType: const ['food'],
+            activityLevel: 'Relaxed',
+            spendingStyle: 'Normal',
+            interests: const ['food'],
+          ),
+          candidatePlaces: [_place('park', 'park')],
+          centerLatitude: 0,
+          centerLongitude: 0,
+        );
+    expect(
+      result.validation.issues.map((issue) => issue.code),
+      contains(PlannerValidationCode.insufficientDiningCandidates),
+    );
+  });
 
   test('classifies specific restaurant types as dining', () {
     expect(

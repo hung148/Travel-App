@@ -8,11 +8,13 @@ import 'review_widget.dart';
 class MultiDestinationReview extends StatelessWidget {
   const MultiDestinationReview({
     super.key,
+    this.tripId,
     required this.destinations,
     required this.travelers,
   });
 
   final List<DestinationDraft> destinations;
+  final String? tripId;
   final int travelers;
 
   String _date(DateTime value) => '${value.month}/${value.day}/${value.year}';
@@ -272,7 +274,7 @@ class MultiDestinationReview extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 18),
-              const ReviewWidget(),
+              SavedTripReview(tripId: tripId),
             ],
           ),
         ),

@@ -11,6 +11,7 @@ import '../plan_trip/models/destination_draft.dart';
 import 'multi_destination_review.dart';
 
 class SummaryPage extends StatelessWidget {
+  final String? tripId;
   final PlannerResult? result;
   final String? destination;
   final DateTimeRange? dates;
@@ -19,6 +20,7 @@ class SummaryPage extends StatelessWidget {
 
   const SummaryPage({
     super.key,
+    this.tripId,
     this.result,
     this.destination,
     this.dates,
@@ -39,6 +41,7 @@ class SummaryPage extends StatelessWidget {
       ),
       body: destinations != null && destinations!.isNotEmpty
           ? MultiDestinationReview(
+              tripId: tripId,
               destinations: destinations!,
               travelers: travelers,
             )
@@ -119,7 +122,7 @@ class SummaryPage extends StatelessWidget {
                         const SizedBox(height: 14),
                       ],
                       const SizedBox(height: 6),
-                      const ReviewWidget(),
+                      SavedTripReview(tripId: tripId),
                       const SizedBox(height: 18),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
