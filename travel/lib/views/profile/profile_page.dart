@@ -6,7 +6,7 @@ import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/preference_viewmodel.dart';
 import '../../viewmodels/trip_viewmodel.dart';
 import '../preferences/preference_page.dart';
-import '../plan_trip/plan_trip_page.dart';
+import '../saved_trip/saved_trip_details_page.dart';
 import '../../models/preference/preferences.dart';
 import '../../models/trip/trip.dart';
 import '../../models/user.dart';
@@ -97,7 +97,10 @@ class _ProfilePageState extends State<ProfilePage> {
                                   children: [
                                     _TravelStyleCard(preference: preference),
                                     const SizedBox(height: 16),
-                                    _UpcomingCard(trips: trips, onOpen: _openSavedTrip),
+                                    _UpcomingCard(
+                                      trips: trips,
+                                      onOpen: _openSavedTrip,
+                                    ),
                                   ],
                                 );
                               }
@@ -165,7 +168,8 @@ class _ProfilePageState extends State<ProfilePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            tripViewModel.errorMessage ?? 'This saved trip has no planner data yet.',
+            tripViewModel.errorMessage ??
+                'This saved trip has no planner data yet.',
           ),
         ),
       );
@@ -173,7 +177,7 @@ class _ProfilePageState extends State<ProfilePage> {
     }
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const PlanTripPage()),
+      MaterialPageRoute(builder: (_) => SavedTripDetailsPage(trip: trip)),
     );
   }
 
@@ -287,7 +291,9 @@ class _TopBar extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest,
           foregroundColor: Theme.of(context).colorScheme.onSurface,
           child: Text(_avatarInitial(user)),
         ),
@@ -483,7 +489,9 @@ class _Panel extends StatelessWidget {
           ),
           Text(
             subtitle,
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 18),
           child,

@@ -3,21 +3,16 @@ rules_version = '2';
 // Firestore security rules for the Travel App.
 //
 // Two jobs here:
-//   1. Access control - who may read or write a document. This was already
-//      correct; ownership is still the backbone of every rule below.
-//   2. Shape validation - WHAT may be written. This was missing entirely. A
-//      signed-in user could previously store any field, of any type, at any
-//      size in their own documents. Rules are the only place that can be
-//      enforced, because anyone with an account can call the Firestore REST
-//      API directly and skip the app.
+//   1. Access control - who may read or write a document. Ownership is the
+//      backbone of every rule below.
+//   2. Shape validation - what may be written. Anyone with an account can call
+//      Firestore directly, so model shape belongs here too.
 //
-// Collections not matched below (for example placeVerdicts) are denied to all
-// clients by default. The Cloud Functions admin SDK bypasses these rules, so
-// server-written collections need no match block.
+// Collections not matched below are denied to clients by default. Cloud
+// Functions using the admin SDK bypass these rules.
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
     // ---------------------------------------------------------------------
     // Identity helpers
     // ---------------------------------------------------------------------
@@ -30,9 +25,6 @@ service cloud.firestore {
       return request.auth.uid;
     }
 
-    // Owner check that tolerates a missing field. Reading data.ownerId
-    // directly on a document that lacks the key raises an error, so every
-    // ownership test goes through get(key, default).
     function owns(data) {
       return signedIn() && data.get('ownerId', '') == uid();
     }
@@ -41,8 +33,6 @@ service cloud.firestore {
       return signedIn() && data.get(field, '') == uid();
     }
 
-    // Costs one document read per rule evaluation, so it is used only where
-    // no owner field is available on the document itself.
     function ownsTrip(tripId) {
       return signedIn()
         && get(/databases/$(database)/documents/trips/$(tripId)).data.get('ownerId', '') == uid();
@@ -50,33 +40,30 @@ service cloud.firestore {
 
     // ---------------------------------------------------------------------
     // Shape validation
-    //
-    // Every function uses keys().hasOnly(...) to reject unknown fields. That
-    // is the part that stops junk-field stuffing - and the part that will
-    // reject writes if you add a field to a model and forget to add it here.
-    // When a write starts failing with permission-denied after a model
-    // change, this is why.
     // ---------------------------------------------------------------------
 
     function validUser(data, userId) {
       return data.keys().hasOnly([
-               'uid', 'name', 'email', 'profileImage',
-               'onboardingCompleted', 'createdAt', 'updatedAt'
+               'uid', 'name', 'displayName', 'email', 'profileImage',
+               'photoUrl', 'onboardingCompleted', 'authProvider',
+               'lastSignInAt', 'createdAt', 'updatedAt'
              ])
-        // Written as a partial merge by completeOnboarding(), so each field
-        // is checked only when it is actually present.
         && (!('uid' in data) || data.uid == userId)
         && (!('name' in data) || (data.name is string && data.name.size() <= 100))
+        && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100))
         && (!('email' in data) || (data.email is string && data.email.size() <= 320))
         && (!('profileImage' in data) || data.profileImage == null
             || (data.profileImage is string && data.profileImage.size() <= 2000))
+        && (!('photoUrl' in data) || data.photoUrl == null
+            || (data.photoUrl is string && data.photoUrl.size() <= 2000))
+        && (!('authProvider' in data) || (data.authProvider is string && data.authProvider.size() <= 80))
         && (!('onboardingCompleted' in data) || data.onboardingCompleted is bool);
     }
 
     function validPreference(data) {
       return data.keys().hasOnly([
                'ownerId', 'experienceType', 'activityLevel',
-               'spendingStyle', 'interests'
+               'spendingStyle', 'interests', 'updatedAt'
              ])
         && data.ownerId is string
         && data.experienceType is list && data.experienceType.size() <= 50
@@ -102,9 +89,6 @@ service cloud.firestore {
         && data.currencyCode is string && data.currencyCode.size() <= 8
         && (data.rating == null
             || (data.rating is int && data.rating >= 0 && data.rating <= 5))
-        // The contents of each segment are not validated here - rules cannot
-        // walk nested maps usefully. Capping the list is what keeps a single
-        // trip document from growing without limit.
         && data.segments is list && data.segments.size() <= 40;
     }
 
@@ -115,9 +99,6 @@ service cloud.firestore {
              ])
         && data.tripId is string && data.tripId.size() <= 200
         && data.dayNumber is int && data.dayNumber >= 1 && data.dayNumber <= 365
-        // The document id is derived from the trip and the day, so pin it.
-        // Without this a user could write a valid document of their own into
-        // the id slot belonging to somebody else's itinerary.
         && docId == data.tripId + '_day_' + string(data.dayNumber)
         && data.places is string && data.places.size() <= 20000
         && data.meals is string && data.meals.size() <= 20000
@@ -163,14 +144,9 @@ service cloud.firestore {
     }
 
     match /itineraries/{id} {
-      // New documents carry ownerId, so this branch answers without reading
-      // the trip. The ownsTrip fallback exists only for documents written
-      // before ownerId was added; drop it once those are migrated.
       allow read, delete: if owns(resource.data)
         || ownsTrip(resource.data.get('tripId', ''));
 
-      // Creating still checks the trip, so an itinerary cannot be attached to
-      // a trip the caller does not own.
       allow create: if owns(request.resource.data)
         && ownsTrip(request.resource.data.tripId)
         && validItinerary(request.resource.data, id);
@@ -182,8 +158,6 @@ service cloud.firestore {
     }
 
     match /feedbacks/{id} {
-      // Feedback already carries userId, so reads and deletes need no
-      // document read of the trip.
       allow read, delete: if ownedBy(resource.data, 'userId');
 
       allow create: if ownedBy(request.resource.data, 'userId')

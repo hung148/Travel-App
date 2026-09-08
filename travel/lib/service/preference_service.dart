@@ -11,7 +11,10 @@ class PreferenceService {
   // CREATE - add a new preference
   Future<PreferenceResult> addPreference(Preference preference) async {
     try {
-      await preferenceRef.doc(preference.id).set(preference.toMap());
+      await preferenceRef.doc(preference.id).set({
+        ...preference.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
       return const PreferenceResult(success: true, data: null, error: null);
     } catch (e) {
       return PreferenceResult(success: false, data: null, error: e.toString());

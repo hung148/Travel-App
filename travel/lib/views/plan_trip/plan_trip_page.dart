@@ -42,6 +42,7 @@ import '../../widgets/place_photo.dart';
 import 'ai_chat_widget.dart';
 import '../preferences/preference_page.dart';
 import '../summary/summary_page.dart';
+import '../saved_trip/saved_trip_details_page.dart';
 import 'models/destination_draft.dart';
 import 'models/destination_date_availability.dart';
 import 'models/map_search_area.dart';
@@ -258,7 +259,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
 
   DestinationDraft _draftFromSegment(TripSegment segment) {
     final hotel = segment.hotel;
-    final mapSearchArea = segment.searchCenterLatitude == null ||
+    final mapSearchArea =
+        segment.searchCenterLatitude == null ||
             segment.searchCenterLongitude == null ||
             segment.searchRadiusMeters == null
         ? null
@@ -386,8 +388,11 @@ class _PlanTripPageState extends State<PlanTripPage> {
     );
     dates = selected.dates;
     selectedPlan = selected.selectedPlan;
-    plannerResult = selected.plannerResult ??
-        (selected.savedDays.isEmpty ? null : _resultFromSavedDestination(selected));
+    plannerResult =
+        selected.plannerResult ??
+        (selected.savedDays.isEmpty
+            ? null
+            : _resultFromSavedDestination(selected));
     hotelRecommendations = selected.hotelRecommendations;
     selectedHotel = selected.selectedHotel;
     placeDataSource = selected.placeDataSource;
@@ -396,7 +401,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
       _aiUndoSnapshot = _AiUndoSnapshot(
         destinationId: selected.id,
         result: selected.plannerResult!.copyWith(days: selected.undoDays),
-        budgetText: selected.undoBudget?.toStringAsFixed(0) ?? budgetController.text,
+        budgetText:
+            selected.undoBudget?.toStringAsFixed(0) ?? budgetController.text,
         selectedPlan: selected.undoStyle ?? selectedPlan,
         hotelRecommendations: List<HotelStay>.of(hotelRecommendations),
         selectedHotel: selectedHotel,
@@ -856,7 +862,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open this destination on the map. $error')),
+        SnackBar(
+          content: Text('Could not open this destination on the map. $error'),
+        ),
       );
     }
   }
@@ -2084,6 +2092,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       );
     }
     if (!mounted) return;
+    final savedTrip = viewModel.currentTrip;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -2091,6 +2100,14 @@ class _PlanTripPageState extends State<PlanTripPage> {
         ),
       ),
     );
+    if (savedTrip != null && viewModel.errorMessage == null) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SavedTripDetailsPage(trip: savedTrip),
+        ),
+      );
+    }
   }
 
   @override
@@ -2133,41 +2150,41 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       builder: (context, headerConstraints) {
                         final stackHeader = headerConstraints.maxWidth < 760;
                         final intro = Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'PERSONAL TRIP STUDIO',
-                                style: Theme.of(context).textTheme.labelLarge
-                                    ?.copyWith(
-                                      color: Theme.of(context).colorScheme.primary,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 1.8,
-                                    ),
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Build your next trip',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineMedium
-                                    ?.copyWith(
-                                      fontSize: stackHeader ? 36 : 44,
-                                      height: 1.05,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Choose the basics, generate a plan, then negotiate changes with the AI planner.',
-                                style: Theme.of(context).textTheme.bodyLarge
-                                    ?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurface
-                                          .withValues(alpha: 0.62),
-                                    ),
-                              ),
-                            ],
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'PERSONAL TRIP STUDIO',
+                              style: Theme.of(context).textTheme.labelLarge
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.8,
+                                  ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Build your next trip',
+                              style: Theme.of(context).textTheme.headlineMedium
+                                  ?.copyWith(
+                                    fontSize: stackHeader ? 36 : 44,
+                                    height: 1.05,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Choose the basics, generate a plan, then negotiate changes with the AI planner.',
+                              style: Theme.of(context).textTheme.bodyLarge
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.62),
+                                  ),
+                            ),
+                          ],
                         );
                         // The generate action now lives at the foot of the
                         // setup card, next to the fields it depends on.
@@ -2585,10 +2602,7 @@ class _TripSetupCard extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.account_balance_wallet_outlined,
-                      size: 22,
-                    ),
+                    const Icon(Icons.account_balance_wallet_outlined, size: 22),
                     const SizedBox(width: 12),
                     Expanded(
                       child: TextField(
@@ -2702,9 +2716,7 @@ class _TripSetupCard extends StatelessWidget {
               const SizedBox(height: 20),
               if (missingSetup.isEmpty)
                 Align(
-                  alignment: wide
-                      ? Alignment.centerRight
-                      : Alignment.center,
+                  alignment: wide ? Alignment.centerRight : Alignment.center,
                   child: SizedBox(
                     width: wide ? null : double.infinity,
                     child: FilledButton.icon(
@@ -2897,9 +2909,9 @@ class _AreaPlanningCard extends StatelessWidget {
                 configured
                     ? 'The next schedule will use only verified places inside the ${area!.radiusLabel} circle.'
                     : 'Draw a circle around part of $destination. The planner will discover places inside it, rank them, and build an efficient route.',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant),
               ),
               if (configured) ...[
                 const SizedBox(height: 14),
@@ -3603,8 +3615,7 @@ class _DestinationMapState extends State<_DestinationMap> {
               options: mapOptions,
               children: [
                 TileLayer(
-                  urlTemplate:
-                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'com.travelplanner.travel',
                   maxNativeZoom: 19,
                 ),
@@ -3639,15 +3650,14 @@ class _DestinationMapState extends State<_DestinationMap> {
                                   if (hotel != null)
                                     LatLng(hotel.latitude, hotel.longitude),
                                 ],
-                            color: _dayColor(context, day.dayNumber)
-                                .withValues(
-                                  alpha:
-                                      _hotelHighlighted ||
-                                          _highlightedDay == null ||
-                                          _highlightedDay == day.dayNumber
-                                      ? 1
-                                      : 0.18,
-                                ),
+                            color: _dayColor(context, day.dayNumber).withValues(
+                              alpha:
+                                  _hotelHighlighted ||
+                                      _highlightedDay == null ||
+                                      _highlightedDay == day.dayNumber
+                                  ? 1
+                                  : 0.18,
+                            ),
                             strokeWidth: _hotelHighlighted
                                 ? 7
                                 : _highlightedDay == day.dayNumber
@@ -3684,10 +3694,7 @@ class _DestinationMapState extends State<_DestinationMap> {
                                 if (hotel != null)
                                   LatLng(hotel.latitude, hotel.longitude),
                               ],
-                          color: _dayColor(
-                            context,
-                            highlightedRoute.dayNumber,
-                          ),
+                          color: _dayColor(context, highlightedRoute.dayNumber),
                           strokeWidth: 9,
                           borderColor: Colors.white,
                           borderStrokeWidth: 4,
@@ -3733,23 +3740,17 @@ class _DestinationMapState extends State<_DestinationMap> {
                                     ? 1
                                     : 0.28,
                                 child: AnimatedScale(
-                                  duration: const Duration(
-                                    milliseconds: 140,
-                                  ),
+                                  duration: const Duration(milliseconds: 140),
                                   scale: _highlightedDay == day.dayNumber
                                       ? 1.25
                                       : 1,
                                   child: Container(
                                     decoration: BoxDecoration(
-                                      color: _dayColor(
-                                        context,
-                                        day.dayNumber,
-                                      ),
+                                      color: _dayColor(context, day.dayNumber),
                                       shape: BoxShape.circle,
                                       border: Border.all(
                                         color: Colors.white,
-                                        width:
-                                            _highlightedDay == day.dayNumber
+                                        width: _highlightedDay == day.dayNumber
                                             ? 4
                                             : 3,
                                       ),
@@ -3790,8 +3791,7 @@ class _DestinationMapState extends State<_DestinationMap> {
                           onEnter: (_) => _highlightHotel(true),
                           onExit: (_) => _highlightHotel(false),
                           child: Tooltip(
-                            message:
-                                'Hotel: ${hotel.name} • all daily routes',
+                            message: 'Hotel: ${hotel.name} • all daily routes',
                             child: AnimatedScale(
                               duration: const Duration(milliseconds: 140),
                               scale: _hotelHighlighted ? 1.18 : 1,
@@ -3806,16 +3806,10 @@ class _DestinationMapState extends State<_DestinationMap> {
                                   boxShadow: [
                                     BoxShadow(
                                       color: Colors.black.withValues(
-                                        alpha: _hotelHighlighted
-                                            ? 0.45
-                                            : 0.26,
+                                        alpha: _hotelHighlighted ? 0.45 : 0.26,
                                       ),
-                                      blurRadius: _hotelHighlighted
-                                          ? 14
-                                          : 6,
-                                      spreadRadius: _hotelHighlighted
-                                          ? 3
-                                          : 0,
+                                      blurRadius: _hotelHighlighted ? 14 : 6,
+                                      spreadRadius: _hotelHighlighted ? 3 : 0,
                                     ),
                                   ],
                                 ),
@@ -3871,10 +3865,7 @@ class _DestinationMapState extends State<_DestinationMap> {
               right: 76,
               child: Card(
                 child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
-                  ),
+                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -3897,10 +3888,7 @@ class _DestinationMapState extends State<_DestinationMap> {
               child: Card(
                 color: Theme.of(context).colorScheme.primary,
                 child: const Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 7,
-                  ),
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   child: Text(
                     'All hotel routes highlighted',
                     style: TextStyle(
@@ -3938,10 +3926,7 @@ class _DestinationMapState extends State<_DestinationMap> {
               right: 76,
               child: Card(
                 child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
-                  ),
+                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   child: Text('Route API unavailable • showing stop order'),
                 ),
               ),
@@ -3950,10 +3935,7 @@ class _DestinationMapState extends State<_DestinationMap> {
             right: 8,
             bottom: 8,
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 6,
-                vertical: 3,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               color: Theme.of(
                 context,
               ).colorScheme.surface.withValues(alpha: 0.88),
@@ -4956,10 +4938,9 @@ class _TotalExpenseSummary extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12,
                       decoration: TextDecoration.underline,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onPrimaryContainer
-                          .withValues(alpha: 0.8),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
                     ),
                   ),
                 ),

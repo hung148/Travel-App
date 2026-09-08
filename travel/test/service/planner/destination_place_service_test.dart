@@ -24,7 +24,7 @@ void main() {
 
       expect(result.center.latitude, 10);
       expect(result.center.longitude, 20);
-      expect(mapService.requestedTypes, hasLength(9));
+      expect(mapService.requestedTypes, hasLength(8));
       expect(mapService.requestedTypes, contains('tourist_attraction'));
       expect(mapService.requestedTypes, contains('restaurant'));
       expect(
@@ -39,7 +39,10 @@ void main() {
         result.places.map((place) => place.id),
         isNot(contains('sports-shop')),
       );
-      expect(result.places.map((place) => place.id), isNot(contains('far-away')));
+      expect(
+        result.places.map((place) => place.id),
+        isNot(contains('far-away')),
+      );
       expect(
         result.places.map((place) => place.id),
         isNot(contains('post-office')),
@@ -76,34 +79,36 @@ void main() {
     expect(mapService.resolvedPlaceId, 'da-lat-place-id');
   });
 
-  test('keeps only the biggest malls and drops shops that claim to be one',
-      () async {
-    final mapService = _FakeShoppingMapService();
-    final service = DestinationPlaceService(mapService: mapService);
-    const priceContext = PriceContext(
-      currencyCode: 'USD',
-      totalBudget: 1000,
-      spendingStyle: 'Normal',
-      days: 3,
-      travelers: 1,
-    );
+  test(
+    'keeps only the biggest malls and drops shops that claim to be one',
+    () async {
+      final mapService = _FakeShoppingMapService();
+      final service = DestinationPlaceService(mapService: mapService);
+      const priceContext = PriceContext(
+        currencyCode: 'USD',
+        totalBudget: 1000,
+        spendingStyle: 'Normal',
+        days: 3,
+        travelers: 1,
+      );
 
-    final result = await service.loadForArea(
-      center: Coordinates(latitude: 10, longitude: 20),
-      radiusMeters: 15000,
-      priceContext: priceContext,
-    );
+      final result = await service.loadForArea(
+        center: Coordinates(latitude: 10, longitude: 20),
+        radiusMeters: 15000,
+        priceContext: priceContext,
+      );
 
-    final ids = result.places.map((place) => place.id).toList();
-    expect(ids, isNot(contains('shoe-shop')));
-    expect(ids, isNot(contains('supermarket')));
-    expect(ids, isNot(contains('vacuum-shop')));
-    // The three busiest, mall or market alike.
-    expect(ids, containsAll(['mall-huge', 'market-big', 'mall-big']));
-    expect(ids, hasLength(DestinationPlaceService.maxShoppingCandidates));
-    expect(ids, isNot(contains('mall-medium')));
-    expect(ids, isNot(contains('mall-tiny')));
-  });
+      final ids = result.places.map((place) => place.id).toList();
+      expect(ids, isNot(contains('shoe-shop')));
+      expect(ids, isNot(contains('supermarket')));
+      expect(ids, isNot(contains('vacuum-shop')));
+      // The three busiest, mall or market alike.
+      expect(ids, containsAll(['mall-huge', 'market-big', 'mall-big']));
+      expect(ids, hasLength(DestinationPlaceService.maxShoppingCandidates));
+      expect(ids, isNot(contains('mall-medium')));
+      expect(ids, isNot(contains('mall-tiny')));
+    },
+  );
 
   test('a shopping preference gets a much bigger share of the pool', () async {
     final mapService = _FakeShoppingMapService();
@@ -136,44 +141,46 @@ void main() {
     expect(ids, isNot(contains('vacuum-shop')));
   });
 
-  test('the vetter has the last word on a place the rules cannot judge',
-      () async {
-    final mapService = _FakeShoppingMapService();
-    final vetter = _FakeVetter({'mall-big'});
-    final service = DestinationPlaceService(
-      mapService: mapService,
-      shoppingVetter: vetter,
-    );
-    const priceContext = PriceContext(
-      currencyCode: 'USD',
-      totalBudget: 1000,
-      spendingStyle: 'Normal',
-      days: 3,
-      travelers: 1,
-    );
+  test(
+    'the vetter has the last word on a place the rules cannot judge',
+    () async {
+      final mapService = _FakeShoppingMapService();
+      final vetter = _FakeVetter({'mall-big'});
+      final service = DestinationPlaceService(
+        mapService: mapService,
+        shoppingVetter: vetter,
+      );
+      const priceContext = PriceContext(
+        currencyCode: 'USD',
+        totalBudget: 1000,
+        spendingStyle: 'Normal',
+        days: 3,
+        travelers: 1,
+      );
 
-    final result = await service.loadForArea(
-      center: Coordinates(latitude: 10, longitude: 20),
-      radiusMeters: 15000,
-      priceContext: priceContext,
-      styleTags: const {'Shopping'},
-    );
+      final result = await service.loadForArea(
+        center: Coordinates(latitude: 10, longitude: 20),
+        radiusMeters: 15000,
+        priceContext: priceContext,
+        styleTags: const {'Shopping'},
+      );
 
-    final ids = result.places.map((place) => place.id).toList();
-    expect(ids, isNot(contains('mall-big')));
-    expect(ids, containsAll(['mall-huge', 'market-big']));
+      final ids = result.places.map((place) => place.id).toList();
+      expect(ids, isNot(contains('mall-big')));
+      expect(ids, containsAll(['mall-huge', 'market-big']));
 
-    // It gets the name and the review count - the two things a type rule
-    // cannot see.
-    final names = vetter.asked.map((candidate) => candidate.name).toList();
-    expect(names, contains('mall-huge'));
-    expect(
-      vetter.asked.every((candidate) => candidate.reviewCount > 0),
-      isTrue,
-    );
-    // Only shopping candidates are ever sent for judgement.
-    expect(vetter.asked, hasLength(4));
-  });
+      // It gets the name and the review count - the two things a type rule
+      // cannot see.
+      final names = vetter.asked.map((candidate) => candidate.name).toList();
+      expect(names, contains('mall-huge'));
+      expect(
+        vetter.asked.every((candidate) => candidate.reviewCount > 0),
+        isTrue,
+      );
+      // Only shopping candidates are ever sent for judgement.
+      expect(vetter.asked, hasLength(4));
+    },
+  );
 
   test('an unreachable vetter changes nothing', () async {
     final mapService = _FakeShoppingMapService();
@@ -354,16 +361,16 @@ class _FakeShoppingMapService extends MapService {
     if (query != 'shopping mall') return const [];
 
     NearbyPlace mall(String id, int reviews) => NearbyPlace(
-          placeId: id,
-          name: id,
-          address: 'Address',
-          latitude: latitude,
-          longitude: longitude,
-          rating: 4.4,
-          userRatingsTotal: reviews,
-          types: const ['shopping_mall'],
-          primaryType: 'shopping_mall',
-        );
+      placeId: id,
+      name: id,
+      address: 'Address',
+      latitude: latitude,
+      longitude: longitude,
+      rating: 4.4,
+      userRatingsTotal: reviews,
+      types: const ['shopping_mall'],
+      primaryType: 'shopping_mall',
+    );
 
     return [
       mall('mall-tiny', 40), // below minShoppingReviewCount

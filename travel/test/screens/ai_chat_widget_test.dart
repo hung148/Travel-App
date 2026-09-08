@@ -20,7 +20,7 @@ void main() {
           body: SizedBox(
             height: 600,
             child: AiChatWidget(
-              onPropose: (_, __) async => const TripAiProposal(
+              onPropose: (_, _) async => const TripAiProposal(
                 command: command,
                 summary: 'Reduce lower-priority stops on day 2.',
               ),
@@ -36,7 +36,7 @@ void main() {
     );
 
     await tester.enterText(
-      find.widgetWithText(TextField, 'Ask AI to adjust your trip...'),
+      find.widgetWithText(TextField, 'Ask a question or request a change...'),
       'Relax day 2',
     );
     await tester.testTextInput.receiveAction(TextInputAction.done);
@@ -64,7 +64,7 @@ void main() {
           body: SizedBox(
             height: 600,
             child: AiChatWidget(
-              onPropose: (_, __) async => const TripAiProposal(
+              onPropose: (_, _) async => const TripAiProposal(
                 command: command,
                 summary: 'Reduce lower-priority stops on day 2.',
               ),
@@ -82,7 +82,7 @@ void main() {
     );
 
     await tester.enterText(
-      find.widgetWithText(TextField, 'Ask AI to adjust your trip...'),
+      find.widgetWithText(TextField, 'Ask a question or request a change...'),
       'Relax day 2',
     );
     await tester.testTextInput.receiveAction(TextInputAction.done);

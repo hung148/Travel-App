@@ -64,6 +64,7 @@ class _SignupPageState extends State<SignupPage> {
       // VerifyEmailPage. That screen names the address and explains the next
       // step, so there is no SnackBar here saying the same thing twice.
       Navigator.pop(context);
+      return;
     }
 
     // A failure needs no SnackBar - AuthErrorBanner already shows it above

@@ -52,7 +52,7 @@ void main() {
       tags: ['history'],
       rating: 4.5,
       reviewCount: 1000,
-      cost: const CostEstimate(
+      cost: CostEstimate(
         low: 20,
         high: 20,
         currencyCode: 'USD',
@@ -102,7 +102,7 @@ void main() {
       tags: [],
       rating: 4,
       reviewCount: 100,
-      cost: const CostEstimate(
+      cost: CostEstimate(
         low: 25,
         high: 25,
         currencyCode: 'USD',

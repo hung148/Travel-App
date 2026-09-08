@@ -1,0 +1,7 @@
+{
+  "projects": {
+    "default": "travel-plan-5f810",
+    "dev": "travel-plan-5f810",
+    "prod": "travel-app-production-5e372"
+  }
+}
