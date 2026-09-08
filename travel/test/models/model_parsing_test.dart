@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travel/models/community/destination_review.dart';
+import 'package:travel/models/community/destination_tip.dart';
 import 'package:travel/models/feedback.dart' as model;
 import 'package:travel/models/itinerary.dart';
 import 'package:travel/models/preference/preferences.dart';
@@ -42,6 +44,51 @@ void main() {
       expect(itinerary.places, isEmpty);
       expect(itinerary.estimatedCost, 0);
       expect(feedback.rating, 0);
+    });
+
+    test('Community reviews and tips parse public destination data safely', () {
+      final createdAt = DateTime.utc(2026, 9, 7);
+      final review = DestinationReview.fromMap({
+        'ownerId': 'user-1',
+        'tripId': 'trip-1',
+        'destinationName': 'Da Lat, Viet Nam',
+        'destinationKey': 'da lat, viet nam',
+        'destinationPlaceId': 'place-1',
+        'displayName': 'Son',
+        'isAnonymous': false,
+        'rating': 5.0,
+        'tripStyleTags': ['Food', 'Nature'],
+        'highlights': ['Coffee'],
+        'mustTryFoods': ['banh trang nuong'],
+        'recommendedPlaces': ['Xuan Huong Lake'],
+        'body': 'A calm city with great coffee and cool weather.',
+        'status': 'published',
+        'createdAt': Timestamp.fromDate(createdAt),
+      }, 'review-1');
+      final tip = DestinationTip.fromMap({
+        'ownerId': 'user-1',
+        'destinationName': 'Da Lat, Viet Nam',
+        'destinationKey': 'da lat, viet nam',
+        'displayName': 'Traveler',
+        'isAnonymous': true,
+        'category': 'food',
+        'text': 'Try banh trang nuong near the night market.',
+        'likesCount': 3.0,
+      }, 'tip-1');
+
+      expect(review.visibleName, 'Son');
+      expect(review.rating, 5);
+      expect(review.mustTryFoods, ['banh trang nuong']);
+      expect(
+        review.createdAt?.millisecondsSinceEpoch,
+        createdAt.millisecondsSinceEpoch,
+      );
+      expect(tip.visibleName, 'Traveler');
+      expect(tip.likesCount, 3);
+      expect(
+        DestinationReview.normalizeDestinationKey('  Da   Lat, Viet Nam '),
+        'da lat, viet nam',
+      );
     });
   });
 

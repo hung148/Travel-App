@@ -2,6 +2,7 @@
 //
 // AppUser is the app's domain user, separate from Firebase Auth's User type.
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class AppUser {
@@ -21,6 +22,12 @@ class AppUser {
   /// Whether the user has finished the onboarding flow.
   final bool onboardingCompleted;
 
+  /// When the account profile was created in Firestore.
+  final DateTime? createdAt;
+
+  /// When the profile or account metadata was last refreshed.
+  final DateTime? updatedAt;
+
   /// Main constructor
   ///
   /// required means these fields must be provided when creating an AppUser.
@@ -30,6 +37,8 @@ class AppUser {
     required this.email,
     this.profileImage,
     this.onboardingCompleted = false,
+    this.createdAt,
+    this.updatedAt,
   });
 
   /// Converts this AppUser object into a Map
@@ -51,6 +60,8 @@ class AppUser {
       'name': name,
       'email': email,
       'profileImage': profileImage,
+      'photoUrl': profileImage,
+      'displayName': name,
       'onboardingCompleted': onboardingCompleted,
     };
   }
@@ -66,10 +77,12 @@ class AppUser {
   factory AppUser.fromMap(Map<String, dynamic> map) {
     return AppUser(
       uid: map['uid'] ?? '',
-      name: map['name'] ?? '',
+      name: map['name'] ?? map['displayName'] ?? '',
       email: map['email'] ?? '',
-      profileImage: map['profileImage'],
+      profileImage: map['profileImage'] ?? map['photoUrl'],
       onboardingCompleted: map['onboardingCompleted'] == true,
+      createdAt: _dateFromFirestore(map['createdAt']),
+      updatedAt: _dateFromFirestore(map['updatedAt']),
     );
   }
 
@@ -87,6 +100,8 @@ class AppUser {
       name: user.displayName ?? '',
       email: user.email ?? '',
       profileImage: user.photoURL,
+      createdAt: user.metadata.creationTime,
+      updatedAt: user.metadata.lastSignInTime,
     );
   }
 
@@ -104,6 +119,8 @@ class AppUser {
     String? email,
     Object? profileImage = _notProvided,
     bool? onboardingCompleted,
+    DateTime? createdAt,
+    DateTime? updatedAt,
   }) {
     return AppUser(
       uid: uid ?? this.uid,
@@ -113,6 +130,8 @@ class AppUser {
           ? this.profileImage
           : profileImage as String?,
       onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -137,7 +156,9 @@ class AppUser {
         other.name == name &&
         other.email == email &&
         other.profileImage == profileImage &&
-        other.onboardingCompleted == onboardingCompleted;
+        other.onboardingCompleted == onboardingCompleted &&
+        other.createdAt == createdAt &&
+        other.updatedAt == updatedAt;
   }
 
   /// Required when overriding ==
@@ -148,8 +169,17 @@ class AppUser {
         name.hashCode ^
         email.hashCode ^
         profileImage.hashCode ^
-        onboardingCompleted.hashCode;
+        onboardingCompleted.hashCode ^
+        createdAt.hashCode ^
+        updatedAt.hashCode;
   }
 }
 
 const Object _notProvided = Object();
+
+DateTime? _dateFromFirestore(Object? value) {
+  if (value is Timestamp) return value.toDate();
+  if (value is DateTime) return value;
+  if (value is String) return DateTime.tryParse(value);
+  return null;
+}

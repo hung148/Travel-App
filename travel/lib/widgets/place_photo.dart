@@ -33,7 +33,7 @@ class PlacePhoto extends StatelessWidget {
             width: width,
             height: height,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _placeholder(context),
+            errorBuilder: (_, _, _) => _placeholder(context),
             loadingBuilder: (context, child, progress) => progress == null
                 ? child
                 : _placeholder(context, loading: true),
@@ -190,7 +190,7 @@ class _PhotoGalleryDialogState extends State<_PhotoGalleryDialog> {
     if (!_warmed.add(next)) return;
     // A photo that fails is reported by the errorBuilder when its page is
     // shown; swallowing it here only keeps the warm-up from throwing.
-    precacheImage(_images[next], context, onError: (_, __) {});
+    precacheImage(_images[next], context, onError: (_, _) {});
   }
 
   @override
@@ -241,7 +241,7 @@ class _PhotoGalleryDialogState extends State<_PhotoGalleryDialog> {
                     width: double.infinity,
                     height: 620,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => Center(
+                    errorBuilder: (_, _, _) => Center(
                       child: Icon(
                         Icons.broken_image_outlined,
                         size: 48,

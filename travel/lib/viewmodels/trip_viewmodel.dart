@@ -164,7 +164,10 @@ class TripViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> saveDraftSegmentsToCurrentTrip({String? title}) async {
+  Future<void> saveDraftSegmentsToCurrentTrip({
+    String? title,
+    String? status,
+  }) async {
     final trip = _currentTrip;
 
     if (trip == null) {
@@ -175,6 +178,7 @@ class TripViewModel extends ChangeNotifier {
 
     final updatedTrip = trip.copyWith(
       title: title,
+      status: status,
       segments: List<TripSegment>.unmodifiable(_draftSegments),
     );
 
@@ -248,9 +252,7 @@ class TripViewModel extends ChangeNotifier {
       return;
     }
 
-    final updated = segment.copyWith(
-      days: List<PlannerDay>.unmodifiable(days),
-    );
+    final updated = segment.copyWith(days: List<PlannerDay>.unmodifiable(days));
 
     _replaceSegment(segmentId, updated);
   }

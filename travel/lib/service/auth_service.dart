@@ -65,16 +65,7 @@ class AuthService {
   Stream<AppUser?> get authStateChanges =>
       _auth.authStateChanges().asyncMap((firebaseUser) async {
         if (firebaseUser == null) return null;
-        final snapshot = await _users.doc(firebaseUser.uid).get();
-        if (!snapshot.exists) return AppUser.fromFirebaseUser(firebaseUser);
-        final data = snapshot.data()!;
-        return AppUser.fromMap({
-          ...data,
-          'uid': firebaseUser.uid,
-          'email': firebaseUser.email ?? data['email'] ?? '',
-          'name': firebaseUser.displayName ?? data['name'] ?? '',
-          'profileImage': firebaseUser.photoURL ?? data['profileImage'],
-        });
+        return _ensureUserDocument(firebaseUser, createIfMissing: true);
       });
 
   /// ==============================
@@ -122,13 +113,7 @@ class AuthService {
         throw Exception('User reload failed.');
       }
 
-      final appUser = AppUser.fromFirebaseUser(user);
-      await _users.doc(user.uid).set({
-        ...appUser.toMap(),
-        'onboardingCompleted': false,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      final appUser = await _ensureUserDocument(user, createIfMissing: true);
 
       /// Send the verification email, but never let it fail or delay the
       /// signup. The account already exists by now and nothing below depends
@@ -146,7 +131,25 @@ class AuthService {
   }
 
   Future<void> completeOnboarding(String uid) async {
-    await _users.doc(uid).set({
+    final firebaseUser = _auth.currentUser;
+    final userRef = _users.doc(uid);
+
+    if (firebaseUser == null || firebaseUser.uid != uid) {
+      await userRef.set({
+        'uid': uid,
+        'onboardingCompleted': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      return;
+    }
+
+    final repairedUser = await _ensureUserDocument(
+      firebaseUser,
+      createIfMissing: true,
+    );
+
+    await userRef.set({
+      ...repairedUser.toMap(),
       'onboardingCompleted': true,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -177,30 +180,7 @@ class AuthService {
         throw Exception('Login failed.');
       }
 
-      final snapshot = await _users.doc(firebaseUser.uid).get();
-
-      if (!snapshot.exists) {
-        final appUser = AppUser.fromFirebaseUser(firebaseUser);
-
-        await _users.doc(firebaseUser.uid).set({
-          ...appUser.toMap(),
-          'onboardingCompleted': false,
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-
-        return appUser;
-      }
-
-      final data = snapshot.data()!;
-
-      return AppUser.fromMap({
-        ...data,
-        'uid': firebaseUser.uid,
-        'email': firebaseUser.email ?? data['email'] ?? '',
-        'name': firebaseUser.displayName ?? data['name'] ?? '',
-        'profileImage': firebaseUser.photoURL ?? data['profileImage'],
-      });
+      return await _ensureUserDocument(firebaseUser, createIfMissing: true);
     } on FirebaseAuthException catch (e) {
       throw Exception(_handleError(e));
     } catch (e) {
@@ -362,6 +342,64 @@ class AuthService {
   /// Converts Firebase error codes into readable messages
   String _handleError(FirebaseAuthException e) {
     return authErrorMessage(e.code, fallback: e.message);
+  }
+
+  Future<AppUser> _ensureUserDocument(
+    User firebaseUser, {
+    required bool createIfMissing,
+  }) async {
+    final userRef = _users.doc(firebaseUser.uid);
+    final snapshot = await userRef.get();
+
+    if (!snapshot.exists && !createIfMissing) {
+      return AppUser.fromFirebaseUser(firebaseUser);
+    }
+
+    final existing = snapshot.data() ?? const <String, dynamic>{};
+    final appUser = AppUser.fromMap({
+      ...existing,
+      'uid': firebaseUser.uid,
+      'email': firebaseUser.email ?? existing['email'] ?? '',
+      'name':
+          firebaseUser.displayName ??
+          existing['name'] ??
+          existing['displayName'] ??
+          '',
+      'displayName':
+          firebaseUser.displayName ??
+          existing['displayName'] ??
+          existing['name'] ??
+          '',
+      'profileImage':
+          firebaseUser.photoURL ??
+          existing['profileImage'] ??
+          existing['photoUrl'],
+      'photoUrl':
+          firebaseUser.photoURL ??
+          existing['photoUrl'] ??
+          existing['profileImage'],
+      'onboardingCompleted': existing['onboardingCompleted'] == true,
+    });
+
+    final profileData = {
+      ...appUser.toMap(),
+      'authProvider': firebaseUser.providerData.isEmpty
+          ? 'password'
+          : firebaseUser.providerData.first.providerId,
+      'lastSignInAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    if (!snapshot.exists) {
+      await userRef.set({
+        ...profileData,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      return appUser;
+    }
+
+    await userRef.set(profileData, SetOptions(merge: true));
+    return appUser;
   }
 
   static String authErrorMessage(String code, {String? fallback}) {

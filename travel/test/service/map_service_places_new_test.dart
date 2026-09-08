@@ -41,6 +41,7 @@ void main() {
             ],
           }),
           200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
         );
       });
       final service = MapService(apiKey: 'test-key', client: client);
@@ -119,6 +120,7 @@ void main() {
             ],
           }),
           200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
         );
       });
       final service = MapService(apiKey: 'test-key', client: client);
@@ -135,20 +137,23 @@ void main() {
   test(
     'Trip destination autocomplete restores Da Lat when Google only returns Lam Dong',
     () async {
-      final client = MockClient((request) async => http.Response(
-            jsonEncode({
-              'suggestions': [
-                {
-                  'placePrediction': {
-                    'placeId': 'lam-dong',
-                    'text': {'text': 'Lâm Đồng, Việt Nam'},
-                    'types': ['administrative_area_level_1', 'political'],
-                  },
+      final client = MockClient(
+        (request) async => http.Response(
+          jsonEncode({
+            'suggestions': [
+              {
+                'placePrediction': {
+                  'placeId': 'lam-dong',
+                  'text': {'text': 'Lâm Đồng, Việt Nam'},
+                  'types': ['administrative_area_level_1', 'political'],
                 },
-              ],
-            }),
-            200,
-          ));
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        ),
+      );
       final service = MapService(apiKey: 'test-key', client: client);
 
       final result = await service.getPlaceSuggestions(
@@ -163,33 +168,36 @@ void main() {
   );
 
   test('Mall search rejects related stores returned by Google', () async {
-    final client = MockClient((request) async => http.Response(
-          jsonEncode({
-            'places': [
-              {
-                'id': 'vincom',
-                'displayName': {'text': 'Vincom Plaza'},
-                'types': ['shopping_mall', 'point_of_interest'],
-                'primaryType': 'shopping_mall',
-              },
-              {
-                'id': 'sportswear',
-                'displayName': {'text': 'Sportswear Shop'},
-                'types': ['sporting_goods_store', 'store'],
-                'primaryType': 'sporting_goods_store',
-              },
-              // The case that put shoe shops in the shopping plan: a single
-              // shop that also carries shopping_mall in its type list.
-              {
-                'id': 'shoe-shop',
-                'displayName': {'text': 'Giày Việt'},
-                'types': ['shoe_store', 'shopping_mall', 'store'],
-                'primaryType': 'shoe_store',
-              },
-            ],
-          }),
-          200,
-        ));
+    final client = MockClient(
+      (request) async => http.Response(
+        jsonEncode({
+          'places': [
+            {
+              'id': 'vincom',
+              'displayName': {'text': 'Vincom Plaza'},
+              'types': ['shopping_mall', 'point_of_interest'],
+              'primaryType': 'shopping_mall',
+            },
+            {
+              'id': 'sportswear',
+              'displayName': {'text': 'Sportswear Shop'},
+              'types': ['sporting_goods_store', 'store'],
+              'primaryType': 'sporting_goods_store',
+            },
+            // The case that put shoe shops in the shopping plan: a single
+            // shop that also carries shopping_mall in its type list.
+            {
+              'id': 'shoe-shop',
+              'displayName': {'text': 'Giày Việt'},
+              'types': ['shoe_store', 'shopping_mall', 'store'],
+              'primaryType': 'shoe_store',
+            },
+          ],
+        }),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      ),
+    );
     final service = MapService(apiKey: 'test-key', client: client);
 
     final result = await service.getNearbyPlaces(
@@ -221,48 +229,51 @@ void main() {
   });
 
   test('Mall search returns the biggest malls first', () async {
-    final client = MockClient((request) async => http.Response(
-          jsonEncode({
-            'places': [
-              {
-                'id': 'small-mall',
-                'displayName': {'text': 'Neighbourhood Mall'},
-                'types': ['shopping_mall'],
-                'primaryType': 'shopping_mall',
-                'rating': 4.8,
-                'userRatingCount': 300,
-              },
-              {
-                'id': 'landmark-mall',
-                'displayName': {'text': 'Landmark Mall'},
-                'types': ['shopping_mall'],
-                'primaryType': 'shopping_mall',
-                'rating': 4.4,
-                'userRatingCount': 42000,
-              },
-              // An electronics chain: Google files these under
-              // department_store, which is why department_store is not a
-              // shopping type.
-              {
-                'id': 'appliance-chain',
-                'displayName': {'text': 'Điện Máy Xanh'},
-                'types': ['department_store', 'store'],
-                'primaryType': 'department_store',
-                'rating': 4.5,
-                'userRatingCount': 9000,
-              },
-              {
-                'id': 'mid-mall',
-                'displayName': {'text': 'Central Mall'},
-                'types': ['shopping_mall'],
-                'primaryType': 'shopping_mall',
-                'rating': 4.5,
-                'userRatingCount': 9000,
-              },
-            ],
-          }),
-          200,
-        ));
+    final client = MockClient(
+      (request) async => http.Response(
+        jsonEncode({
+          'places': [
+            {
+              'id': 'small-mall',
+              'displayName': {'text': 'Neighbourhood Mall'},
+              'types': ['shopping_mall'],
+              'primaryType': 'shopping_mall',
+              'rating': 4.8,
+              'userRatingCount': 300,
+            },
+            {
+              'id': 'landmark-mall',
+              'displayName': {'text': 'Landmark Mall'},
+              'types': ['shopping_mall'],
+              'primaryType': 'shopping_mall',
+              'rating': 4.4,
+              'userRatingCount': 42000,
+            },
+            // An electronics chain: Google files these under
+            // department_store, which is why department_store is not a
+            // shopping type.
+            {
+              'id': 'appliance-chain',
+              'displayName': {'text': 'Điện Máy Xanh'},
+              'types': ['department_store', 'store'],
+              'primaryType': 'department_store',
+              'rating': 4.5,
+              'userRatingCount': 9000,
+            },
+            {
+              'id': 'mid-mall',
+              'displayName': {'text': 'Central Mall'},
+              'types': ['shopping_mall'],
+              'primaryType': 'shopping_mall',
+              'rating': 4.5,
+              'userRatingCount': 9000,
+            },
+          ],
+        }),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      ),
+    );
     final service = MapService(apiKey: 'test-key', client: client);
 
     final result = await service.getNearbyPlaces(
@@ -272,10 +283,11 @@ void main() {
       type: 'shopping_mall',
     );
 
-    expect(
-      result.map((place) => place.placeId),
-      ['landmark-mall', 'mid-mall', 'small-mall'],
-    );
+    expect(result.map((place) => place.placeId), [
+      'landmark-mall',
+      'mid-mall',
+      'small-mall',
+    ]);
   });
 
   test('shopping uses Text Search, so prominence decides', () async {
@@ -322,6 +334,7 @@ void main() {
           ],
         }),
         200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
       );
     });
     final service = MapService(apiKey: 'test-key', client: client);
@@ -433,6 +446,7 @@ void main() {
             'types': ['locality', 'political'],
           }),
           200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
         );
       });
       final service = MapService(apiKey: 'test-key', client: client);
@@ -475,6 +489,7 @@ void main() {
             ],
           }),
           200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
         );
       });
       final service = MapService(apiKey: 'test-key', client: client);
@@ -520,26 +535,28 @@ void main() {
   });
 
   test('hotel geocoding still keeps the first Google result', () async {
-    final client = MockClient((request) async => http.Response(
-          jsonEncode({
-            'status': 'OK',
-            'results': [
-              {
-                'types': ['street_address'],
-                'geometry': {
-                  'location': {'lat': 1.0, 'lng': 2.0},
-                },
+    final client = MockClient(
+      (request) async => http.Response(
+        jsonEncode({
+          'status': 'OK',
+          'results': [
+            {
+              'types': ['street_address'],
+              'geometry': {
+                'location': {'lat': 1.0, 'lng': 2.0},
               },
-              {
-                'types': ['locality', 'political'],
-                'geometry': {
-                  'location': {'lat': 9.0, 'lng': 9.0},
-                },
+            },
+            {
+              'types': ['locality', 'political'],
+              'geometry': {
+                'location': {'lat': 9.0, 'lng': 9.0},
               },
-            ],
-          }),
-          200,
-        ));
+            },
+          ],
+        }),
+        200,
+      ),
+    );
     final service = MapService(apiKey: 'test-key', client: client);
 
     final center = await service.geocodeAddress('1 Test Street');

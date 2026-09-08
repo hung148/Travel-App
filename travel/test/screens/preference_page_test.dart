@@ -31,7 +31,7 @@ void main() {
     await tester.pumpWidget(buildPage());
     await tester.pump();
 
-    expect(find.text('What kind of experiences do you want?'), findsOneWidget);
+    expect(find.text('What do you enjoy when you travel?'), findsOneWidget);
     expect(find.text('Nature'), findsOneWidget);
     expect(find.text('Beach'), findsOneWidget);
 
