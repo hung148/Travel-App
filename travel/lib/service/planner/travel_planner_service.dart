@@ -99,7 +99,7 @@ class TravelPlannerService {
     final diningCandidates = rankedPlaces
         .where((item) => item.place.isDining)
         .toList();
-    final requiredMealCount = trip.days * profile.minDiningPlacesPerDay;
+    final requiredMealCount = profile.minDiningPlacesPerDay;
     if (diningCandidates.length < requiredMealCount) {
       return _failedResult(
         days: days,
@@ -110,7 +110,7 @@ class TravelPlannerService {
         currencyCode: currency,
         code: PlannerValidationCode.insufficientDiningCandidates,
         message:
-            'Only ${diningCandidates.length} unique meal places were found, but $requiredMealCount are required for three meals per day. Create this trip manually or shorten it.',
+            'Only ${diningCandidates.length} meal places were found. At least $requiredMealCount are needed for three different meals each day; restaurants can be revisited on later days.',
       );
     }
 
@@ -178,8 +178,10 @@ class TravelPlannerService {
         ? preferredDiningPlan
         : cheapestDiningPlan;
 
-    final dailyActivityBudget = budgetAllocation
-        .dailyActivitiesBudgetPerPerson(trip.days, travelers);
+    final dailyActivityBudget = budgetAllocation.dailyActivitiesBudgetPerPerson(
+      trip.days,
+      travelers,
+    );
 
     _distributePlaces(
       rankedPlaces: rankedPlaces,
@@ -289,6 +291,30 @@ class TravelPlannerService {
     required int dayCount,
     required int mealsPerDay,
   }) {
+    if (diningCandidates.length < dayCount * mealsPerDay) {
+      final unused = List<ScoredPlace>.of(diningCandidates);
+      final byDay = List.generate(dayCount, (_) => <ScoredPlace>[]);
+      var maximumDailyCost = 0.0;
+      for (final day in byDay) {
+        // Try new places first, then revisit the highest-ranked options.
+        // Keep each day's meals distinct so visit-specific edits stay unambiguous.
+        while (day.length < mealsPerDay) {
+          final next = unused.isNotEmpty
+              ? unused.removeAt(0)
+              : diningCandidates.firstWhere(
+                  (candidate) =>
+                      !day.any((meal) => meal.place.id == candidate.place.id),
+                );
+          day.add(next);
+        }
+        final cost = day.fold<double>(
+          0,
+          (total, meal) => total + meal.place.estimatedCost,
+        );
+        if (cost > maximumDailyCost) maximumDailyCost = cost;
+      }
+      return _DiningPlan(byDay: byDay, maximumDailyCost: maximumDailyCost);
+    }
     final selected = diningCandidates.take(dayCount * mealsPerDay).toList()
       ..sort(
         (left, right) =>

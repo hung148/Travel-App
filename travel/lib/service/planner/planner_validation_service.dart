@@ -29,8 +29,10 @@ class PlannerValidationService {
     // because that is the number the user recognises.
     final party = travelers < 1 ? 1 : travelers;
     final currency = Money.normalize(currencyCode);
-    final dailyActivityBudget = budgetAllocation
-        .dailyActivitiesBudgetPerPerson(days.length, party);
+    final dailyActivityBudget = budgetAllocation.dailyActivitiesBudgetPerPerson(
+      days.length,
+      party,
+    );
     final dailyFoodBudget = budgetAllocation.dailyFoodBudgetPerPerson(
       days.length,
       party,
@@ -41,8 +43,12 @@ class PlannerValidationService {
         : PlannerValidationSeverity.error;
 
     for (final day in days) {
+      final dailyDiningIds = <String>{};
       for (final scoredPlace in day.places) {
-        if (!seenPlaceIds.add(scoredPlace.place.id)) {
+        final isUnique = scoredPlace.place.isDining
+            ? dailyDiningIds.add(scoredPlace.place.id)
+            : seenPlaceIds.add(scoredPlace.place.id);
+        if (!isUnique) {
           issues.add(
             PlannerValidationIssue(
               code: PlannerValidationCode.duplicatePlace,
@@ -200,7 +206,8 @@ class PlannerValidationService {
 
     // Per-person day totals scaled to the party, so they can be compared
     // against the allocation, which is the party's money.
-    final totalActivityCost = days.fold<double>(
+    final totalActivityCost =
+        days.fold<double>(
           0,
           (total, day) => total + day.estimatedActivityCost,
         ) *
@@ -215,10 +222,8 @@ class PlannerValidationService {
       );
     }
 
-    final totalFoodCost = days.fold<double>(
-          0,
-          (total, day) => total + day.estimatedFoodCost,
-        ) *
+    final totalFoodCost =
+        days.fold<double>(0, (total, day) => total + day.estimatedFoodCost) *
         party;
     if (totalFoodCost > budgetAllocation.food + 0.001) {
       issues.add(

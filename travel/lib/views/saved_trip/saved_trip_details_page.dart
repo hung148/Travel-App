@@ -205,35 +205,20 @@ class _HeroCard extends StatelessWidget {
           ),
         ],
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 760;
-          final content = _HeroCopy(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _HeroImage(
+            title: trip.destination,
+            photoUrls: firstPhoto == null ? const [] : [firstPhoto],
+          ),
+          const SizedBox(height: 18),
+          _HeroCopy(
             trip: trip,
             plannedStops: plannedStops,
             remaining: remaining,
-          );
-          final image = _HeroImage(
-            title: trip.destination,
-            photoUrls: firstPhoto == null ? const [] : [firstPhoto],
-          );
-
-          if (compact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [image, const SizedBox(height: 18), content],
-            );
-          }
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(flex: 7, child: content),
-              const SizedBox(width: 22),
-              Expanded(flex: 5, child: image),
-            ],
-          );
-        },
+          ),
+        ],
       ),
     );
   }
@@ -418,26 +403,21 @@ class _SegmentedTabs extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFD1B9AA)),
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final tabWidth = (constraints.maxWidth - 6) / tabs.length;
-          return Wrap(
-            spacing: 2,
-            runSpacing: 2,
-            children: [
-              for (var index = 0; index < tabs.length; index++)
-                SizedBox(
-                  width: tabWidth < 120 ? 120 : tabWidth,
-                  child: _TabButton(
-                    icon: tabs[index].$1,
-                    label: tabs[index].$2,
-                    selected: selected == index,
-                    onTap: () => onChanged(index),
-                  ),
-                ),
-            ],
-          );
-        },
+      child: Wrap(
+        spacing: 2,
+        runSpacing: 2,
+        children: [
+          for (var index = 0; index < tabs.length; index++)
+            SizedBox(
+              width: 156,
+              child: _TabButton(
+                icon: tabs[index].$1,
+                label: tabs[index].$2,
+                selected: selected == index,
+                onTap: () => onChanged(index),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -497,36 +477,14 @@ class _OverviewTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 860;
-        final budget = _BudgetCard(trip: trip);
-        final destinations = _DestinationsCard(trip: trip);
-        final nextSteps = const _NextStepsCard();
-
-        if (narrow) {
-          return Column(
-            children: [
-              budget,
-              const SizedBox(height: 14),
-              destinations,
-              const SizedBox(height: 14),
-              nextSteps,
-            ],
-          );
-        }
-
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: budget),
-            const SizedBox(width: 14),
-            Expanded(child: destinations),
-            const SizedBox(width: 14),
-            Expanded(child: nextSteps),
-          ],
-        );
-      },
+    return Column(
+      children: [
+        _BudgetCard(trip: trip),
+        const SizedBox(height: 14),
+        _DestinationsCard(trip: trip),
+        const SizedBox(height: 14),
+        const _NextStepsCard(),
+      ],
     );
   }
 }
