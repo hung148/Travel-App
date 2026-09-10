@@ -14,6 +14,7 @@ class DestinationDraft {
     required this.destination,
     required this.budget,
     this.placeId,
+    this.timeZone,
     this.dates,
     this.selectedPlan = 'Balanced',
     this.plannerResult,
@@ -36,6 +37,7 @@ class DestinationDraft {
   /// map center from Google directly instead of geocoding the text, which is
   /// what keeps cities like Đà Lạt from landing on their parent province.
   String? placeId;
+  String? timeZone;
 
   double budget;
   DateTimeRange? dates;

@@ -1,3 +1,4 @@
+import 'views/existing_plan/existing_plan_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
@@ -52,7 +53,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Travel App',
+      title: 'NghienTravel',
       theme: AppTheme.light,
       themeMode: ThemeMode.light,
       home: FutureBuilder<void>(
@@ -202,7 +203,7 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        title: 'Travel App',
+        title: 'NghienTravel',
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         themeMode: ThemeMode.light,
@@ -215,6 +216,7 @@ class MyApp extends StatelessWidget {
           // (or replace it) and keep showing after sign-out, because it is
           // AuthGate alone that reacts to the user going away.
           '/plan-trip': (_) => const PlanTripPage(),
+          '/existing-plan': (_) => const ExistingPlanPage(),
           '/summary': (_) => const SummaryPage(),
         },
       ),

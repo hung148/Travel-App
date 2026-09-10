@@ -18,6 +18,13 @@ class AppConfig {
   );
 
   static bool get hasGoogleMapsApiKey => googleMapsApiKey.trim().isNotEmpty;
+  static String get itineraryImportUrl {
+    const override = String.fromEnvironment('ITINERARY_IMPORT_URL');
+    if (override.isNotEmpty) return override;
+    final endpoint = aiAssistantUrl.trim();
+    final swapped = endpoint.replaceFirst(RegExp(r'interpretTripRequest(?=$|[?#])'), 'importItinerary');
+    return swapped == endpoint ? '' : swapped;
+  }
 
   static String get placeVettingUrl {
     final override = _placeVettingUrlOverride.trim();

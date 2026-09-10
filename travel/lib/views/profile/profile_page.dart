@@ -349,6 +349,8 @@ class _Hero extends StatelessWidget {
               ],
             ),
           ),
+          OutlinedButton.icon(onPressed: () => Navigator.pushNamed(context, '/existing-plan'),
+            icon: const Icon(Icons.event_note), label: const Text('Add my existing plan')),
           FilledButton.icon(
             onPressed: () => Navigator.pushNamed(context, '/plan-trip'),
             style: FilledButton.styleFrom(

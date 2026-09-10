@@ -1,3 +1,6 @@
+import '../../service/planner/booking_guard.dart';
+import '../../widgets/manual_planner_dialog.dart';
+import '../../widgets/booking_info.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -264,6 +267,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     return DestinationDraft(
       id: segment.id,
       destination: segment.destination,
+      timeZone: segment.timeZone,
       placeId: segment.destinationPlaceId,
       dates: DateTimeRange(start: segment.startDate, end: segment.endDate),
       budget: segment.allocatedBudget,
@@ -309,6 +313,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     final segment = TripSegment(
       id: draft.id,
       destination: draft.destination,
+      timeZone: draft.timeZone,
       destinationPlaceId: draft.placeId,
       startDate: range.start,
       endDate: range.end,
@@ -1236,11 +1241,11 @@ class _PlanTripPageState extends State<PlanTripPage> {
   }
 
   Future<void> _openManualPlanner() async {
-    if (plannerResult == null || plannerResult!.rankedPlaces.isEmpty) {
+    if (plannerResult == null) {
       await _generatePlan();
     }
     final current = plannerResult;
-    if (!mounted || current == null || current.rankedPlaces.isEmpty) {
+    if (!mounted || current == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1254,7 +1259,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     final editedDays = await showDialog<List<PlannerDay>>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => _ManualPlannerDialog(result: current),
+      builder: (context) => ManualPlannerDialog(initialDays: current.days, rankedPlaces: current.rankedPlaces, startDate: _selectedDestination.dates?.start, timeZone: _selectedDestination.timeZone),
     );
     if (!mounted || editedDays == null) return;
 
@@ -1666,6 +1671,19 @@ class _PlanTripPageState extends State<PlanTripPage> {
   ).join('\n');
 
   Future<String> _applyAiCommand(TripAiCommand command) async {
+    final before = plannerResult;
+    if (before == null) return 'Create a plan first.';
+    final snapshot = _captureAiUndoSnapshot();
+    final message = await _applyAiCommandUnchecked(command);
+    final after = plannerResult;
+    if (after == null || !preservesConfirmedBookings(before.days, after.days)) {
+      _restoreAiSnapshot(snapshot);
+      return 'That change would alter a confirmed booking. Your plan was kept unchanged. Edit that booking manually if you intend to change it.';
+    }
+    return message;
+  }
+
+  Future<String> _applyAiCommandUnchecked(TripAiCommand command) async {
     final current = plannerResult;
     if (current == null) {
       return 'Generate a plan first, then ask me to refine it.';
@@ -3388,7 +3406,7 @@ class _DestinationMapState extends State<_DestinationMap> {
   String _resultSignatureFor(String destinationId, PlannerResult? result) {
     final hotelId = result?.hotel?.id ?? 'no-hotel';
     final places = (result?.days ?? const <PlannerDay>[])
-        .expand((day) => day.places)
+        .expand((day) => day.places).where((item) => item.place.hasLocation)
         .map(
           (item) =>
               '${item.place.id}:${item.place.latitude}:${item.place.longitude}',
@@ -3403,7 +3421,7 @@ class _DestinationMapState extends State<_DestinationMap> {
     return [
       if (hotel != null) LatLng(hotel.latitude, hotel.longitude),
       ...(result?.days ?? const <PlannerDay>[])
-          .expand((day) => day.places)
+          .expand((day) => day.places).where((item) => item.place.hasLocation)
           .map((item) => LatLng(item.place.latitude, item.place.longitude)),
     ];
   }
@@ -3463,7 +3481,7 @@ class _DestinationMapState extends State<_DestinationMap> {
       days
           .where(
             (day) =>
-                hotel == null ? day.places.length > 1 : day.places.isNotEmpty,
+                hotel == null ? day.places.where((item) => item.place.hasLocation).length > 1 : day.places.any((item) => item.place.hasLocation),
           )
           .map((day) async {
             try {
@@ -3473,7 +3491,7 @@ class _DestinationMapState extends State<_DestinationMap> {
                     latitude: hotel.latitude,
                     longitude: hotel.longitude,
                   ),
-                ...day.places.map(
+                ...day.places.where((item) => item.place.hasLocation).map(
                   (item) => Coordinates(
                     latitude: item.place.latitude,
                     longitude: item.place.longitude,
@@ -3542,7 +3560,7 @@ class _DestinationMapState extends State<_DestinationMap> {
     final routeDays = days
         .where(
           (day) =>
-              hotel == null ? day.places.length > 1 : day.places.isNotEmpty,
+              hotel == null ? day.places.where((item) => item.place.hasLocation).length > 1 : day.places.any((item) => item.place.hasLocation),
         )
         .toList();
     routeDays.sort((a, b) {
@@ -3617,7 +3635,7 @@ class _DestinationMapState extends State<_DestinationMap> {
                                 <LatLng>[
                                   if (hotel != null)
                                     LatLng(hotel.latitude, hotel.longitude),
-                                  ...day.places.map(
+                                  ...day.places.where((item) => item.place.hasLocation).map(
                                     (item) => LatLng(
                                       item.place.latitude,
                                       item.place.longitude,
@@ -3661,7 +3679,7 @@ class _DestinationMapState extends State<_DestinationMap> {
                               <LatLng>[
                                 if (hotel != null)
                                   LatLng(hotel.latitude, hotel.longitude),
-                                ...highlightedRoute.places.map(
+                                ...highlightedRoute.places.where((item) => item.place.hasLocation).map(
                                   (item) => LatLng(
                                     item.place.latitude,
                                     item.place.longitude,
@@ -3687,7 +3705,7 @@ class _DestinationMapState extends State<_DestinationMap> {
                         stopIndex < day.places.length;
                         stopIndex++
                       )
-                        Marker(
+                        if (day.places[stopIndex].place.hasLocation) Marker(
                           point: LatLng(
                             day.places[stopIndex].place.latitude,
                             day.places[stopIndex].place.longitude,
@@ -4081,332 +4099,6 @@ class _PlanOptions extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ManualPlannerDialog extends StatefulWidget {
-  final PlannerResult result;
-
-  const _ManualPlannerDialog({required this.result});
-
-  @override
-  State<_ManualPlannerDialog> createState() => _ManualPlannerDialogState();
-}
-
-class _ManualPlannerDialogState extends State<_ManualPlannerDialog> {
-  final searchController = TextEditingController();
-  late final List<PlannerDay> days = widget.result.days
-      .map(
-        (day) => PlannerDay(
-          dayNumber: day.dayNumber,
-          places: List<ScoredPlace>.of(day.places),
-        ),
-      )
-      .toList();
-
-  @override
-  void dispose() {
-    searchController.dispose();
-    super.dispose();
-  }
-
-  Set<String> get _usedPlaceIds =>
-      days.expand((day) => day.places).map((item) => item.place.id).toSet();
-
-  List<ScoredPlace> get _availablePlaces {
-    final query = searchController.text.trim().toLowerCase();
-    final used = _usedPlaceIds;
-    return widget.result.rankedPlaces.where((item) {
-      if (used.contains(item.place.id)) return false;
-      if (query.isEmpty) return true;
-      return item.place.name.toLowerCase().contains(query) ||
-          item.place.category.toLowerCase().contains(query);
-    }).toList();
-  }
-
-  void _addPlace(ScoredPlace place, int dayIndex) {
-    setState(() => days[dayIndex].places.add(place));
-  }
-
-  void _removePlace(int dayIndex, int stopIndex) {
-    setState(() => days[dayIndex].places.removeAt(stopIndex));
-  }
-
-  void _movePlace(int dayIndex, int stopIndex, int offset) {
-    final nextIndex = stopIndex + offset;
-    if (nextIndex < 0 || nextIndex >= days[dayIndex].places.length) return;
-    setState(() {
-      final item = days[dayIndex].places.removeAt(stopIndex);
-      days[dayIndex].places.insert(nextIndex, item);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      insetPadding: const EdgeInsets.all(20),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1180, maxHeight: 820),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.edit_calendar_outlined),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Create itinerary manually',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        Text(
-                          'Add places to any day, then reorder them into the sequence you want.',
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final compact = constraints.maxWidth < 760;
-                    final available = _AvailableManualPlaces(
-                      searchController: searchController,
-                      places: _availablePlaces,
-                      dayCount: days.length,
-                      onSearchChanged: (_) => setState(() {}),
-                      onAdd: _addPlace,
-                    );
-                    final itinerary = _ManualDayEditor(
-                      days: days,
-                      onRemove: _removePlace,
-                      onMove: _movePlace,
-                    );
-                    if (compact) {
-                      return Column(
-                        children: [
-                          Expanded(child: available),
-                          const Divider(height: 24),
-                          Expanded(child: itinerary),
-                        ],
-                      );
-                    }
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(child: available),
-                        const VerticalDivider(width: 28),
-                        Expanded(child: itinerary),
-                      ],
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: () => Navigator.pop(context, days),
-                    icon: const Icon(Icons.check_rounded),
-                    label: const Text('Use manual plan'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AvailableManualPlaces extends StatelessWidget {
-  final TextEditingController searchController;
-  final List<ScoredPlace> places;
-  final int dayCount;
-  final ValueChanged<String> onSearchChanged;
-  final void Function(ScoredPlace place, int dayIndex) onAdd;
-
-  const _AvailableManualPlaces({
-    required this.searchController,
-    required this.places,
-    required this.dayCount,
-    required this.onSearchChanged,
-    required this.onAdd,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Available places (${places.length})',
-          style: const TextStyle(fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: searchController,
-          onChanged: onSearchChanged,
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.search_rounded),
-            hintText: 'Search name or category',
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Expanded(
-          child: places.isEmpty
-              ? const Center(child: Text('No unused places match this search.'))
-              : ListView.separated(
-                  itemCount: places.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 6),
-                  itemBuilder: (context, index) {
-                    final item = places[index];
-                    return Card(
-                      margin: EdgeInsets.zero,
-                      child: ListTile(
-                        dense: true,
-                        title: Text(
-                          item.place.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          '${item.place.category} • '
-                          '${item.place.estimatedVisitMinutes} min',
-                        ),
-                        trailing: PopupMenuButton<int>(
-                          tooltip: 'Add to day',
-                          icon: const Icon(Icons.add_circle_outline_rounded),
-                          onSelected: (dayIndex) => onAdd(item, dayIndex),
-                          itemBuilder: (context) => List.generate(
-                            dayCount,
-                            (dayIndex) => PopupMenuItem(
-                              value: dayIndex,
-                              child: Text('Add to Day ${dayIndex + 1}'),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ManualDayEditor extends StatelessWidget {
-  final List<PlannerDay> days;
-  final void Function(int dayIndex, int stopIndex) onRemove;
-  final void Function(int dayIndex, int stopIndex, int offset) onMove;
-
-  const _ManualDayEditor({
-    required this.days,
-    required this.onRemove,
-    required this.onMove,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Your days', style: TextStyle(fontWeight: FontWeight.w900)),
-        const SizedBox(height: 8),
-        Expanded(
-          child: ListView.builder(
-            itemCount: days.length,
-            itemBuilder: (context, dayIndex) {
-              final day = days[dayIndex];
-              return Card(
-                child: ExpansionTile(
-                  initiallyExpanded: dayIndex < 2,
-                  title: Text(
-                    'Day ${day.dayNumber} • ${day.places.length} stops',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  children: day.places.isEmpty
-                      ? const [
-                          Padding(
-                            padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text('No places added yet.'),
-                            ),
-                          ),
-                        ]
-                      : List.generate(day.places.length, (stopIndex) {
-                          final item = day.places[stopIndex];
-                          return ListTile(
-                            dense: true,
-                            leading: CircleAvatar(
-                              radius: 14,
-                              child: Text('${stopIndex + 1}'),
-                            ),
-                            title: Text(item.place.name),
-                            subtitle: Text(item.place.category),
-                            trailing: Wrap(
-                              spacing: 0,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Move earlier',
-                                  onPressed: stopIndex == 0
-                                      ? null
-                                      : () => onMove(dayIndex, stopIndex, -1),
-                                  icon: const Icon(Icons.arrow_upward_rounded),
-                                ),
-                                IconButton(
-                                  tooltip: 'Move later',
-                                  onPressed: stopIndex == day.places.length - 1
-                                      ? null
-                                      : () => onMove(dayIndex, stopIndex, 1),
-                                  icon: const Icon(
-                                    Icons.arrow_downward_rounded,
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Remove',
-                                  onPressed: () =>
-                                      onRemove(dayIndex, stopIndex),
-                                  icon: const Icon(
-                                    Icons.delete_outline_rounded,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
     );
   }
 }
@@ -5076,6 +4768,7 @@ class _GeneratedDayPreview extends StatelessWidget {
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),
+                                  BookingInfo(place: day.places[stopIndex].place),
                                   const SizedBox(height: 2),
                                   Wrap(
                                     spacing: 7,

@@ -1,4 +1,5 @@
 import 'cost_estimate.dart';
+import 'booking_details.dart';
 
 class TravelPlace {
   final String id;
@@ -13,6 +14,9 @@ class TravelPlace {
 
   final double latitude;
   final double longitude;
+  final bool hasLocation;
+  final bool isCustom;
+  final BookingDetails? booking;
 
   final int estimatedVisitMinutes;
   /// Up to [MapService.maxPhotosPerPlace] photos, most representative first.
@@ -30,6 +34,9 @@ class TravelPlace {
     required this.longitude,
     required this.estimatedVisitMinutes,
     this.photoUrls = const [],
+    this.hasLocation = true,
+    this.isCustom = false,
+    this.booking,
   });
 
   /// Planning cost for ONE person, in the trip currency.
@@ -84,6 +91,9 @@ class TravelPlace {
       'longitude': longitude,
       'estimatedVisitMinutes': estimatedVisitMinutes,
       'photoUrls': photoUrls,
+      'hasLocation': hasLocation,
+      'isCustom': isCustom,
+      'booking': booking?.toMap(),
     };
   }
 
@@ -111,6 +121,11 @@ class TravelPlace {
           (data['estimatedVisitMinutes'] as num?)?.toInt() ?? 0,
       // Plans saved before stops had a gallery stored a single photoUrl.
       photoUrls: _photoUrlsFromMap(data),
+      hasLocation: data['hasLocation'] as bool? ??
+          (data['latitude'] is num && data['longitude'] is num),
+      isCustom: data['isCustom'] == true,
+      booking: data['booking'] is Map
+          ? BookingDetails.fromMap(Map<String, dynamic>.from(data['booking'] as Map)) : null,
     );
   }
 }

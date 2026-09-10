@@ -18,7 +18,7 @@ service cloud.firestore {
     // ---------------------------------------------------------------------
 
     function signedIn() {
-      return request.auth != null;
+      return request.auth != null && request.auth.token.email_verified == true;
     }
 
     function uid() {
@@ -166,8 +166,10 @@ service cloud.firestore {
     // ---------------------------------------------------------------------
 
     match /users/{userId} {
-      allow read, delete: if signedIn() && uid() == userId;
-      allow create, update: if signedIn()
+      // Registration needs its own profile before verification mail is sent.
+      // All trip, preference and community access still requires verification.
+      allow read, delete: if request.auth != null && uid() == userId;
+      allow create, update: if request.auth != null
         && uid() == userId
         && validUser(request.resource.data, userId);
     }
@@ -201,6 +203,8 @@ service cloud.firestore {
       allow update: if (owns(resource.data)
                         || ownsTrip(resource.data.get('tripId', '')))
         && owns(request.resource.data)
+        && request.resource.data.tripId == resource.data.tripId
+        && ownsTrip(request.resource.data.tripId)
         && validItinerary(request.resource.data, id);
     }
 

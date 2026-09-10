@@ -31,6 +31,13 @@ class AccountDeletionService {
   /// successful auth deletion is the one outcome that cannot be recovered
   /// from, so the caller must not proceed to delete the account.
   Future<void> deleteDataForUser(String uid) async {
+    if (uid.trim().isEmpty) throw ArgumentError.value(uid, 'uid');
+    // Community contributions also contain account-linked personal data.
+    for (final collection in ['publicDestinationReviews', 'destinationTips']) {
+      final documents = await _firestore.collection(collection)
+          .where('ownerId', isEqualTo: uid).get();
+      await _deleteRefs(documents.docs.map((doc) => doc.reference).toList());
+    }
     // Feedback first - its rule checks userId directly and never reads the
     // trip, so it is safe at any point, but doing it up front keeps the
     // trip-dependent work together below.

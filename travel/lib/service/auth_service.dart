@@ -42,6 +42,7 @@ class AuthService {
   /// Token from the REST re-authentication, held between the reauth and the
   /// delete. Only used on the REST path, and cleared as soon as it is spent.
   String? _restIdToken;
+  String? _verificationRefreshPendingUid;
 
   String get _apiKey => _auth.app.options.apiKey;
 
@@ -208,7 +209,9 @@ class AuthService {
   /// True once the signed-in user has clicked the link in the verification
   /// email. Firebase caches this on the client, so call [reloadUser] first if
   /// you need a fresh answer.
-  bool get isEmailVerified => _auth.currentUser?.emailVerified ?? false;
+  bool get isEmailVerified => _auth.currentUser != null &&
+      _auth.currentUser!.uid != _verificationRefreshPendingUid &&
+      _auth.currentUser!.emailVerified;
 
   /// Sends (or re-sends) the verification email to the signed-in user.
   ///
@@ -232,10 +235,18 @@ class AuthService {
 
   /// Pulls the latest user record from Firebase (display name, emailVerified).
   Future<void> reloadUser() async {
+    _verificationRefreshPendingUid = _auth.currentUser?.uid;
     try {
       await _auth.currentUser?.reload();
+      // Firestore rules inspect the token claim, not the reloaded User flag.
+      // Finish refreshing the token before the verification gate opens.
+      if (_auth.currentUser?.emailVerified == true) {
+        await _auth.currentUser!.getIdToken(true);
+      }
+      _verificationRefreshPendingUid = null;
     } catch (error) {
       debugPrint('Could not reload user: $error');
+      rethrow;
     }
   }
 

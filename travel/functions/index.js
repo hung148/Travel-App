@@ -1,3 +1,5 @@
+import { authenticatedUser, consumeAiQuota } from './endpoint-security.js';
+import { validateImportText, validateImportResult, importSchema, importInstruction } from './itinerary-import.js';
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
@@ -35,9 +37,9 @@ export const interpretTripRequest = onRequest(
         response.status(401).json({ error: "Authentication required" });
         return;
       }
-      await getAuth().verifyIdToken(bearer.slice(7));
+      const uid = await authenticatedUser(request, getAuth());
 
-      const instruction = String(request.body?.instruction ?? "").trim();
+      const instruction = typeof request.body?.instruction === "string" ? request.body.instruction.trim() : "";
       const context = request.body?.context ?? {};
       if (instruction.length === 0 || instruction.length > 1000) {
         response.status(400).json({ error: "Invalid instruction" });
@@ -55,6 +57,7 @@ export const interpretTripRequest = onRequest(
         return;
       }
 
+      await consumeAiQuota(getFirestore(), uid);
       const openAiResponse = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: {
@@ -96,7 +99,7 @@ export const interpretTripRequest = onRequest(
       response.status(200).json(command);
     } catch (error) {
       console.error(error);
-      response.status(500).json({ error: "Unable to interpret request" });
+      response.status(error.status ?? 500).json({ error: error.status ? error.message : "Unable to interpret request" });
     }
   },
 );
@@ -172,7 +175,7 @@ export const vetShoppingPlaces = onRequest(
         response.status(401).json({ error: "Authentication required" });
         return;
       }
-      await getAuth().verifyIdToken(bearer.slice(7));
+      const uid = await authenticatedUser(request, getAuth());
 
       let candidates;
       try {
@@ -193,6 +196,7 @@ export const vetShoppingPlaces = onRequest(
 
       let fresh = {};
       if (unjudged.length > 0) {
+        await consumeAiQuota(database, uid);
         const openAiResponse = await fetch(
           "https://api.openai.com/v1/responses",
           {
@@ -245,7 +249,7 @@ export const vetShoppingPlaces = onRequest(
       });
     } catch (error) {
       console.error(error);
-      response.status(500).json({ error: "Unable to vet places" });
+      response.status(error.status ?? 500).json({ error: error.status ? error.message : "Unable to vet places" });
     }
   },
 );
@@ -257,3 +261,28 @@ function booleanVerdicts(verdicts) {
   }
   return flat;
 }
+
+export const importItinerary = onRequest(
+  {cors: true, secrets: [openAiApiKey], timeoutSeconds: 60, maxInstances: 10},
+  async (request, response) => {
+    try {
+      if (request.method !== 'POST') { response.status(405).json({error: 'POST required'}); return; }
+      const uid = await authenticatedUser(request, getAuth());
+      const text = validateImportText(request.body?.text);
+      await consumeAiQuota(getFirestore(), uid);
+      const result = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST', signal: AbortSignal.timeout(45000),
+        headers: {Authorization: `Bearer ${openAiApiKey.value()}`, 'Content-Type': 'application/json'},
+        body: JSON.stringify({model: process.env.OPENAI_MODEL || 'gpt-5-mini',
+          instructions: importInstruction, input: text,
+          text: {format: {type: 'json_schema', name: 'itinerary_import', strict: true, schema: importSchema}}}),
+      });
+      if (!result.ok) { response.status(502).json({error: 'AI import unavailable. Try again later.'}); return; }
+      const body = await result.json();
+      const output = body.output?.flatMap(item => item.content ?? []).find(item => item.type === 'output_text')?.text;
+      response.json(validateImportResult(JSON.parse(output ?? '{}'), text));
+    } catch (error) {
+      response.status(error.status ?? 500).json({error: error.status ? error.message : 'Unable to import itinerary'});
+    }
+  },
+);

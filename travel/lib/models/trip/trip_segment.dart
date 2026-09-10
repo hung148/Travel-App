@@ -6,6 +6,7 @@ import '../planner_result.dart';
 class TripSegment {
   final String id;
   final String destination;
+  final String? timeZone;
 
   /// Google placeId for [destination], kept so a reloaded trip resolves the
   /// same map center that was used when the destination was picked.
@@ -26,6 +27,7 @@ class TripSegment {
   const TripSegment({
     required this.id,
     required this.destination,
+    this.timeZone,
     this.destinationPlaceId,
     required this.startDate,
     required this.endDate,
@@ -88,6 +90,7 @@ class TripSegment {
   TripSegment copyWith({
     String? id,
     String? destination,
+    String? timeZone,
     String? destinationPlaceId,
     DateTime? startDate,
     DateTime? endDate,
@@ -105,6 +108,7 @@ class TripSegment {
     return TripSegment(
       id: id ?? this.id,
       destination: destination ?? this.destination,
+      timeZone: timeZone ?? this.timeZone,
       destinationPlaceId: destinationPlaceId ?? this.destinationPlaceId,
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
@@ -127,6 +131,7 @@ class TripSegment {
     return {
       'id': id,
       'destination': destination,
+      'timeZone': timeZone,
       'destinationPlaceId': destinationPlaceId,
       'startDate': startDate,
       'endDate': endDate,
@@ -151,6 +156,7 @@ class TripSegment {
     return TripSegment(
       id: data['id'] as String? ?? '',
       destination: data['destination'] as String? ?? '',
+      timeZone: data['timeZone'] as String?,
       destinationPlaceId: data['destinationPlaceId'] as String?,
       startDate: _dateFromFirestore(data['startDate']) ?? DateTime(1970),
       endDate: _dateFromFirestore(data['endDate']) ?? DateTime(1970),
