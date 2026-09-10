@@ -224,10 +224,16 @@ class _ProfilePageState extends State<ProfilePage> {
   /// the dialog closes this State is unmounted and could not show a message
   /// even if it wanted to. The dialog reports its own outcome.
   Future<void> _confirmDeleteAccount() async {
+    // The dialog is on the root navigator, outside the profile's providers.
+    final authViewModel = context.read<AuthViewModel>();
+    final tripViewModel = context.read<TripViewModel>();
     await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const _DeleteAccountDialog(),
+      builder: (_) => _DeleteAccountDialog(
+        authViewModel: authViewModel,
+        tripViewModel: tripViewModel,
+      ),
     );
   }
 
@@ -562,7 +568,13 @@ class _DangerZone extends StatelessWidget {
 /// sign-in older than a few minutes, so re-authentication is required anyway.
 /// Requiring it here means it doubles as the confirmation step.
 class _DeleteAccountDialog extends StatefulWidget {
-  const _DeleteAccountDialog();
+  const _DeleteAccountDialog({
+    required this.authViewModel,
+    required this.tripViewModel,
+  });
+
+  final AuthViewModel authViewModel;
+  final TripViewModel tripViewModel;
 
   @override
   State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
@@ -592,8 +604,8 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
       _error = null;
     });
 
-    final authViewModel = context.read<AuthViewModel>();
-    final tripViewModel = context.read<TripViewModel>();
+    final authViewModel = widget.authViewModel;
+    final tripViewModel = widget.tripViewModel;
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
 
@@ -619,6 +631,13 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
         _error =
             'This is taking too long. Check your connection, then '
             'reopen the app to see whether the account was removed.';
+      });
+      return;
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = 'Unable to finish account deletion. Reopen the app to check your account before retrying.';
       });
       return;
     }
