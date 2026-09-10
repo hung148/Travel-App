@@ -30,22 +30,29 @@ COMPLETED
     No backfill writes were necessary. Legacy compatibility rules remain.
 
 IN PROGRESS / MUST VERIFY
-[ ] Validate and commit latest local changes after tool access recovers:
-    environment-aware default AI endpoints, restored saved-trip editor choices,
-    booking time display, menu test, traveler guide and this checklist.
-    Earlier Flutter results do not cover these last edits.
-[ ] Complete production build-artifact cleanup policy. Functions deployed
-    successfully; the CLI reported missing artifact retention policy afterward.
-[ ] Authenticated live AI smoke test in dev and prod with their own accounts.
-[ ] Chrome account-deletion acceptance and cloud orphan-data inspection.
-    Automated tests and named-account admin cleanup do not replace this check.
+[x] Latest Flutter fixes validated: analyzer clean, 198 tests passed, web built.
+    Commits: 420bfd3 editor choices, f5e20a1 AI booking time changes,
+    a5b0fb2 deletion-dialog provider access.
+[x] Production artifact cleanup policy configured: delete images after 7 days.
+[x] Owner live Chrome test: Groq import, manual correction, save/reopen, Today,
+    directions and map marker, AI confirmed protection and unconfirmed time edit.
+[x] Chrome account deletion returned to sign-in; owner checked Authentication,
+    users, all three remaining trip ownerIds and both preference ownerIds.
+    No itinerary, feedback or community collections were listed in that test DB.
+[ ] Deploy and live-test new Groq cloud functions. Production GROQ_API_KEY
+    version 1 stored by owner. Groq Free selected; subscriptions deferred.
+    Local backend tests: 52 passed, one emulator-only test skipped; lint passed.
+    Provider switch is NOT deployed yet. Development cloud still uses OpenAI;
+    local development uses the Groq gateway with AI_ASSISTANT_URL override.
+[ ] Commit Groq provider changes and checklist update after deployment testing.
 [ ] Finish owner-filtered itinerary query/rule migration, including indexes and
     emulator verification, before removing the legacy ownership fallback.
 [ ] Maps key: API restrictions confirmed for Places, Geocoding and Routes;
     application restrictions or a server proxy remain to be configured.
-[ ] Confirm separate OpenAI project budgets/spending limits with the owner.
-    Dev and prod secrets reside in separate Firebase projects; only production
-    key creation was confirmed by the owner. Billing isolation is not verified.
+[ ] Monitor shared Groq Free organization quotas across dev and production.
+    Separate keys do not create separate free-tier capacity. Existing cloud
+    per-account limits remain 10/minute and 100/day; provider limits also apply.
+    No automatic paid-provider fallback. Firebase/Maps costs remain separate.
 [ ] App Check: plan provider registration and monitoring before enforcement.
     Requires platform-specific setup; enforcement is not currently enabled.
 [ ] Real travelers: paste → review → edit → save → close → reopen → Today.

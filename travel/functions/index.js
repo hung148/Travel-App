@@ -1,3 +1,4 @@
+import { groqJson } from './groq-provider.js';
 import { authenticatedUser, consumeAiQuota } from './endpoint-security.js';
 import { validateImportText, validateImportResult, importSchema, importInstruction } from './itinerary-import.js';
 import { getApps, initializeApp } from "firebase-admin/app";
@@ -23,10 +24,10 @@ import {
 
 if (getApps().length === 0) initializeApp();
 
-const openAiApiKey = defineSecret("OPENAI_API_KEY");
+const groqApiKey = defineSecret("GROQ_API_KEY");
 
 export const interpretTripRequest = onRequest(
-  { cors: true, secrets: [openAiApiKey], timeoutSeconds: 30 },
+  { cors: true, secrets: [groqApiKey], timeoutSeconds: 60, maxInstances: 2 },
   async (request, response) => {
     try {
       if (request.method !== "POST") {
@@ -59,47 +60,14 @@ export const interpretTripRequest = onRequest(
       }
 
       await consumeAiQuota(getFirestore(), uid);
-      const openAiResponse = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${openAiApiKey.value()}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: process.env.OPENAI_MODEL || "gpt-5-mini",
-          instructions: systemInstruction,
-          input: JSON.stringify({ instruction, context }),
-          text: {
-            format: {
-              type: "json_schema",
-              name: "trip_ai_command",
-              strict: true,
-              schema: commandSchema,
-            },
-          },
-        }),
-      });
-      if (!openAiResponse.ok) {
-        const detail = await openAiResponse.text();
-        console.error("OpenAI request failed", openAiResponse.status, detail);
-        response.status(502).json({ error: "AI provider request failed" });
-        return;
-      }
-      const result = await openAiResponse.json();
-      const outputText = result.output
-        ?.flatMap((item) => item.content ?? [])
-        .find((item) => item.type === "output_text")?.text;
-      if (!outputText) {
-        response.status(502).json({ error: "AI returned no command" });
-        return;
-      }
+      const result = await groqJson({apiKey: groqApiKey.value(),
+        name: 'trip_ai_command', schema: commandSchema,
+        instruction: systemInstruction, input: JSON.stringify({instruction, context})});
       const command = validateCommand(
-        recoverExplicitArguments(JSON.parse(outputText), instruction),
-        context.destinationId,
-      );
+        recoverExplicitArguments(result, instruction), context.destinationId);
       response.status(200).json(command);
     } catch (error) {
-      console.error(error);
+      console.error('AI endpoint failed', error.status ?? 500);
       response.status(error.status ?? 500).json({ error: error.status ? error.message : "Unable to interpret request" });
     }
   },
@@ -164,7 +132,7 @@ async function cacheVerdicts(database, candidates, verdicts) {
 /// client treats absence as "keep", so neither a provider outage nor a
 /// confused model can empty a traveler's shopping plan.
 export const vetShoppingPlaces = onRequest(
-  { cors: true, secrets: [openAiApiKey], timeoutSeconds: 30 },
+  { cors: true, secrets: [groqApiKey], timeoutSeconds: 60, maxInstances: 2 },
   async (request, response) => {
     try {
       if (request.method !== "POST") {
@@ -198,50 +166,16 @@ export const vetShoppingPlaces = onRequest(
       let fresh = {};
       if (unjudged.length > 0) {
         await consumeAiQuota(database, uid);
-        const openAiResponse = await fetch(
-          "https://api.openai.com/v1/responses",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${openAiApiKey.value()}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: process.env.OPENAI_VETTING_MODEL ||
-                process.env.OPENAI_MODEL ||
-                "gpt-5-mini",
-              instructions: vettingInstruction,
-              input: providerInput(unjudged),
-              text: {
-                format: {
-                  type: "json_schema",
-                  name: "shopping_place_verdicts",
-                  strict: true,
-                  schema: verdictSchema,
-                },
-              },
-            }),
-          },
-        );
-        if (!openAiResponse.ok) {
-          const detail = await openAiResponse.text();
-          console.error(
-            "OpenAI vetting request failed",
-            openAiResponse.status,
-            detail,
-          );
-          // Fail open: answer with whatever the cache knew. The client keeps
-          // every place it got no verdict for.
-          response.status(200).json({ verdicts: booleanVerdicts(known) });
-          return;
-        }
-        const result = await openAiResponse.json();
-        const outputText = result.output
-          ?.flatMap((item) => item.content ?? [])
-          .find((item) => item.type === "output_text")?.text;
-        if (outputText) {
-          fresh = validateVerdicts(JSON.parse(outputText), unjudged);
+        try {
+          const result = await groqJson({apiKey: groqApiKey.value(),
+            name: 'shopping_place_verdicts', schema: verdictSchema,
+            instruction: vettingInstruction, input: providerInput(unjudged)});
+          fresh = validateVerdicts(result, unjudged);
           await cacheVerdicts(database, unjudged, fresh);
+        } catch {
+          // Preserve cached verdicts and keep unjudged places on provider failure.
+          response.status(200).json({verdicts: booleanVerdicts(known)});
+          return;
         }
       }
 
@@ -249,7 +183,7 @@ export const vetShoppingPlaces = onRequest(
         verdicts: booleanVerdicts({ ...known, ...fresh }),
       });
     } catch (error) {
-      console.error(error);
+      console.error('AI endpoint failed', error.status ?? 500);
       response.status(error.status ?? 500).json({ error: error.status ? error.message : "Unable to vet places" });
     }
   },
@@ -264,24 +198,17 @@ function booleanVerdicts(verdicts) {
 }
 
 export const importItinerary = onRequest(
-  {cors: true, secrets: [openAiApiKey], timeoutSeconds: 60, maxInstances: 10},
+  {cors: true, secrets: [groqApiKey], timeoutSeconds: 60, maxInstances: 2},
   async (request, response) => {
     try {
       if (request.method !== 'POST') { response.status(405).json({error: 'POST required'}); return; }
       const uid = await authenticatedUser(request, getAuth());
       const text = validateImportText(request.body?.text);
       await consumeAiQuota(getFirestore(), uid);
-      const result = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST', signal: AbortSignal.timeout(45000),
-        headers: {Authorization: `Bearer ${openAiApiKey.value()}`, 'Content-Type': 'application/json'},
-        body: JSON.stringify({model: process.env.OPENAI_MODEL || 'gpt-5-mini',
-          instructions: importInstruction, input: text,
-          text: {format: {type: 'json_schema', name: 'itinerary_import', strict: true, schema: importSchema}}}),
-      });
-      if (!result.ok) { response.status(502).json({error: 'AI import unavailable. Try again later.'}); return; }
-      const body = await result.json();
-      const output = body.output?.flatMap(item => item.content ?? []).find(item => item.type === 'output_text')?.text;
-      response.json(validateImportResult(JSON.parse(output ?? '{}'), text));
+      const result = await groqJson({apiKey: groqApiKey.value(),
+        name: 'itinerary_import', schema: importSchema,
+        instruction: importInstruction, input: text});
+      response.json(validateImportResult(result, text));
     } catch (error) {
       response.status(error.status ?? 500).json({error: error.status ? error.message : 'Unable to import itinerary'});
     }
