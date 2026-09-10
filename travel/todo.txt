@@ -1,209 +1,69 @@
-TRAVEL APP
+NGHIENTRAVEL — verified status, 2026-09-10
 
-BUILD NEXT
-[ ] 1. Support an existing plan without requiring generation.
-    Add an 'Add my existing plan' entry point alongside the planner.
-    Allow custom items such as flights, pickups, and personal activities,
-    even when they have no matching Google place or known coordinates.
+COMPLETED
+[x] Merge team changes from origin/main through 3d495d9.
+    Local branch: codex/merge-team-save-final-plan; merge commit: 5e88088.
+    Includes budget-driven dining/hotels, discovery, preferences and layouts.
+[x] Existing-plan entry, custom items, booking details and confirmation status.
+[x] Reviewed pasted-text import; uncertain details remain flagged or unknown.
+[x] Today view, destination time zones and external directions for located items.
+[x] Preserve confirmed bookings against AI changes.
+[x] Verification-token refresh and verified-email Firestore access controls.
+[x] Account deletion ordering and community-data cleanup.
+[x] Analyzer, 196 Flutter tests and web build passed for the committed merge.
+[x] Backend emulator run: 43 tests passed. Latest non-emulator run: 42 passed,
+    one emulator-only test skipped.
+[x] Firebase CLI credentials restored for successful deployments.
+[x] Firestore rules and indexes deployed to development and production.
+[x] Cloud Functions Node 22; interpretTripRequest, importItinerary and
+    vetShoppingPlaces deployed to both projects.
+[x] AI endpoints require verified authentication and share per-account quotas:
+    10 calls/minute and 100/day; payload size limits are enforced.
+[x] Production OPENAI_API_KEY version 1 enabled; verified metadata only.
+[x] Production project and visible app name: NghienTravel.
+[x] MainActivity package path corrected.
+[x] Three named disposable development accounts and associated data deleted.
+    Follow-up inspection found zero remaining named disposable accounts.
+[x] Phone sign-in confirmed disabled in both projects.
+[x] Production database exists in nam5 (North America). No migration performed.
+[x] Owner backfill audits found zero itinerary documents in either project.
+    No backfill writes were necessary. Legacy compatibility rules remain.
 
-[ ] 2. Add practical trip and booking details.
-    Store item date/time, destination time zone, address or meeting point,
-    notes, booking reference, provider name, and contact details.
-    Distinguish confirmed bookings from suggestions. Preserve fixed booking
-    times when AI changes a schedule. Keep existing saved trips compatible.
+IN PROGRESS / MUST VERIFY
+[ ] Validate and commit latest local changes after tool access recovers:
+    environment-aware default AI endpoints, restored saved-trip editor choices,
+    booking time display, menu test, traveler guide and this checklist.
+    Earlier Flutter results do not cover these last edits.
+[ ] Complete production build-artifact cleanup policy. Functions deployed
+    successfully; the CLI reported missing artifact retention policy afterward.
+[ ] Authenticated live AI smoke test in dev and prod with their own accounts.
+[ ] Chrome account-deletion acceptance and cloud orphan-data inspection.
+    Automated tests and named-account admin cleanup do not replace this check.
+[ ] Finish owner-filtered itinerary query/rule migration, including indexes and
+    emulator verification, before removing the legacy ownership fallback.
+[ ] Maps key: API restrictions confirmed for Places, Geocoding and Routes;
+    application restrictions or a server proxy remain to be configured.
+[ ] Confirm separate OpenAI project budgets/spending limits with the owner.
+    Dev and prod secrets reside in separate Firebase projects; only production
+    key creation was confirmed by the owner. Billing isolation is not verified.
+[ ] App Check: plan provider registration and monitoring before enforcement.
+    Requires platform-specific setup; enforcement is not currently enabled.
+[ ] Real travelers: paste → review → edit → save → close → reopen → Today.
+    Owner agreed to arrange testers. See TRAVELER_TEST.md for steps and feedback.
+[ ] Verify older generated trips restore and remain editable in live app.
 
-[ ] 3. Import an itinerary from pasted text.
-    Extract the supplied items into a draft daily schedule using AI.
-    Let users correct and approve it before saving. Flag missing or unclear
-    details instead of inventing booking references, times, or locations.
-    Reuse the current itinerary editor, maps, and trip saving.
+OWNER DECISIONS
+- Name settled: NghienTravel.
+- Domain deferred until the app becomes popular.
+- Keep the existing production database intact. Moving to Singapore would be
+  separate migration work requiring a concrete plan and owner decision.
 
-[ ] 4. Add a 'Today' view for a saved trip.
-    Show today's items in time order, the next activity, and quick access
-    to meeting points and booking details. Use the destination's local date.
-    Let users browse other days when the trip is not currently underway.
+LATER — AFTER TRAVELER VALIDATION
+[ ] PDF and booking-screenshot imports.
+[ ] Explicitly downloaded offline trip details and visible sync status.
+[ ] Sharing with travel companions.
+[ ] Activity and transportation reminders.
 
-[ ] 5. Add an 'Open directions' action for each located item.
-    Reuse existing coordinates to open an external maps app.
-    Ask users to add a location when one is missing.
-
-[ ] 6. Validate the complete flow with real travelers.
-    Try several actual itineraries: paste, review, edit, save, close,
-    reopen, and find today's meeting point and booking details.
-    Verify that older generated trips still restore correctly.
-    Fix problems travelers encounter before expanding features.
-
-LATER - AFTER THE CORE FLOW IS USEFUL
-[ ] Import PDFs and booking screenshots.
-[ ] Provide explicitly downloaded offline trip details and show sync status.
-[ ] Share a trip with travel companions.
-[ ] Add activity and transportation reminders.
-
-DEFER
-- Agent marketplace, agent dashboard, and direct booking integrations.
-- Further AI planner expansion unless real user feedback calls for it.
-
-DO FIRST
-[] 1. Fix the Firebase CLI credentials.
-      The deploy prints "credentials are no longer valid"
-      twice and then keeps going anyway - it is walking
-      toward a failure, not recovering. Get a run with no
-      auth errors at the top before trusting anything else
-      the CLI tells you. Nothing else deploys until this
-      is clean.
-      firebase.cmd login:list
-      firebase.cmd login --reauth
-      still stuck? firebase.cmd logout && firebase.cmd login
-
-[] 2. Run the analyzer and the test suite.
-      Around twenty Dart files changed and several have
-      never been compiled. The cheapest possible check.
-      flutter analyze
-      flutter test
-
-[] 3. Commit everything to git.
-      A full day of changes with no checkpoint. If the next
-      change goes wrong there is no way back.
-      git add -A
-      git commit -m "Auth hardening: verification gate, account deletion, Firestore rules, app ID rename"
-
-[] 4. Test account deletion on Chrome.
-      Windows exercised the REST fallback. Chrome runs the
-      other branch - the firebase_auth plugin path - and web
-      is a platform you ship. Use an account that has a
-      saved trip so the cascade has something to delete.
-      flutter run -d chrome
-
-[] 5. Confirm nothing survives a deleted account.
-      In the console, check that the uid appears in none of
-      users, trips, itineraries, preferences or feedbacks.
-      If itineraries survive but trips are gone, the deletion
-      order is wrong - that is the exact failure the design
-      guards against.
-
-[] 6. Rename the prod Firebase project.
-      %APP_NAME% resolves to the project name, so verification
-      mail currently reads "Verify your email for
-      Travel-app-production". Every user has to open that
-      email now that verification is a hard gate.
-      Project settings -> General -> Project name -> "Travel App"
-
-[] 7. Move MainActivity.kt into com/hungson/travelapp/.
-      It sits one folder short, beside the empty travelapp
-      directory. Kotlin compiles either way, but the layout
-      should match the package.
-      android/app/src/main/kotlin/com/hungson/travelapp/MainActivity.kt
-
-[] 8. Delete the unreachable dev accounts.
-      a@gmail.com, son@gmail.com and xxx@gmail.com can never
-      receive a verification email, so the hard gate has
-      locked them out permanently. They are test junk -
-      remove them from Authentication -> Users.
-
-[] 9. Turn off Phone sign-in on dev.
-      Enabled but unused by the app. Open phone auth is a
-      standing invitation to SMS toll fraud, and it bills you.
-
-SECURITY
-[] 2. Move Cloud Functions off Node 20. Deprecated on 
-      2026-04-30 and decommissioned on 2026-10-30 — roughly 
-      seven weeks out. After that date you cannot deploy 
-      functions at all until you upgrade. Do it on a calm 
-      day, not the day you need to ship a fix.
-      functions/package.json → "engines": { "node": "22" }
-      deadline 30 oct
-
-[] 3. Create the production Firestore database. It does not 
-      exist yet, so rules cannot deploy there at all. The 
-      location is permanent — asia-southeast1 (Singapore) 
-      for a Vietnam-focused app. Start in locked mode so it 
-      is never briefly world-writable.
-
-[] 4. Deploy rules and indexes to production. Only after the 
-      dev pass above is clean. Use the whole firestore target 
-      so indexes go too, not just the rules.
-      firebase.cmd deploy --only firestore --project travel-app-production-5e372
-
-[] 5. Settle where the AI endpoint actually runs.
-      The context cap only protects a deployed function. 
-      Dev has no Secret Manager and no OPENAI_API_KEY, 
-      which suggests dev uses the local Groq gateway — 
-      in which case the cap is already live there and prod 
-      is what needs deploying. Work out which, then deploy 
-      that one.
-      firebase.cmd functions:secrets:set OPENAI_API_KEY --project <project>
-
-[] 6. Check the Google Maps/Places key is restricted. 
-       That key ships inside the app and is readable by 
-       anyone who has it. Unrestricted, it is another way for 
-       someone to spend your money. Restrict by app and by API 
-       in Google Cloud.
-
-
-[] 7. Set the name under the app icon
-      android:label is currently the lowercase placeholder 
-      "travel". Unlike the application ID, this one you can 
-      change any time.
-      android/app/src/main/AndroidManifest.xml
-
-[] 8. Decide on a domain
-      About $10 a year, and it fixes the largest remaining 
-      spam signal: mail from noreply@travel-app-production-5e372.firebaseapp.com. 
-      Verification is a hard gate now, so an email lost to a spam folder is 
-      a user who cannot get in at all. A sender name helps; 
-      only a real domain plus custom SMTP fixes it.
-
-
-[] 9. Settle the product name.
-      It decides the app label, the email subject 
-      line and the eventual store listing. The application 
-      ID is already locked in as com.hungson.travelapp and 
-      does not depend on this.
-
-
-[] 10. Decide when to take on App Check
-       Parked, and it is a project rather than a task: 
-       Play Integrity on Android needs a SHA-256 fingerprint 
-       and a Play Console link, DeviceCheck on iOS needs an 
-       Apple Developer account, and web needs reCAPTCHA 
-       Enterprise. It is the only thing that distinguishes 
-       your app from a script holding a valid token — the 
-       real protection for your OpenAI bill.
-
-[] 11. Backfill ownerId onto old itineraries
-       New itineraries carry it; older ones do not. 
-       Once every document has it, the rules can drop the 
-       per-document trip lookup, the queries can filter on 
-       ownerId, and the 20-lookup ceiling — which breaks any 
-       trip longer than about 20 saved days — goes away. 
-       Needs a small admin script and a composite index.
-
-
-[] 12. Rate-limit the AI endpoint per account
-       Payload size is capped now; the number of calls is not. 
-       One signed-in account can still loop the endpoint and 
-       spend your model budget.
-
-
-[] 13. Use a separate OpenAI key for dev.
-       With its own spending limit set in the OpenAI dashboard. 
-       Right now dev experiments and real usage bill the same 
-       key with no way to tell them apart — and dev is where 
-       the accidents happen.
-
-
-[] 14. Require email_verified in the Firestore rules
-       The app hard-gates on verification, but the rules do 
-       not, so an unverified account can still reach the 
-       REST API directly. Left out deliberately for now: 
-       a stale token makes writes fail with 
-       permission-denied even after the user has 
-       verified, which is confusing to debug.
-
-
-[] 15. Add tests for deletion and endpoint validation.
-       The deletion cascade and the context cap are both 
-       enforced by hand-checking today. The functions 
-       suite covers place vetting only; nothing covers 
-       interpretTripRequest's input validation or the 
-       order the cascade deletes in.
+DEFERRED
+- Agent marketplace, agent dashboard and direct booking integrations.
+- Further AI planner expansion unless traveler feedback calls for it.

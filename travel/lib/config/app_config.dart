@@ -5,6 +5,9 @@ class AppConfig {
   );
   static const String aiAssistantUrl = String.fromEnvironment(
     'AI_ASSISTANT_URL',
+    defaultValue: String.fromEnvironment('ENV', defaultValue: 'dev') == 'prod'
+        ? 'https://us-central1-travel-app-production-5e372.cloudfunctions.net/interpretTripRequest'
+        : 'https://us-central1-travel-plan-5f810.cloudfunctions.net/interpretTripRequest',
   );
 
   /// Endpoint for the shopping-place vetting function.

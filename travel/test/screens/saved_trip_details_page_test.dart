@@ -28,6 +28,11 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
       expect(find.text('Da Nang weekend'), findsWidgets);
+      await tester.tap(find.text('Edit plan'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit bookings and schedule'), findsOneWidget);
+      expect(find.text('Refine with planner'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   }
 }

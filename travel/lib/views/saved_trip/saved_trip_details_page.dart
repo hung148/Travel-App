@@ -4,6 +4,9 @@ import '../../widgets/booking_info.dart';
 import '../existing_plan/existing_plan_page.dart';
 import 'today_view.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../viewmodels/trip_viewmodel.dart';
+import '../plan_trip/plan_trip_page.dart';
 
 import '../../core/utils/money.dart';
 import '../../models/planner_result.dart';
@@ -62,7 +65,24 @@ class _SavedTripDetailsPageState extends State<SavedTripDetailsPage> {
                     child: _TopBar(
                       title: trip.title ?? trip.destination,
                       onBack: () => Navigator.maybePop(context),
-                      onEdit: () async {
+                      onEdit: (action) async {
+                        if (action == 'planner') {
+                          final viewModel = context.read<TripViewModel>();
+                          await viewModel.loadTripById(trip.id);
+                          if (!context.mounted) return;
+                          if (viewModel.errorMessage != null || viewModel.currentTrip?.id != trip.id) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Could not load the trip. Please try again.')),
+                            );
+                            return;
+                          }
+                          await Navigator.push<void>(context,
+                            MaterialPageRoute(builder: (_) => const PlanTripPage()));
+                          if (mounted && viewModel.currentTrip?.id == trip.id) {
+                            setState(() => _trip = viewModel.currentTrip!);
+                          }
+                          return;
+                        }
                         final updated = await Navigator.push<Trip>(context,
                           MaterialPageRoute(builder: (_) => ExistingPlanPage(trip: trip)));
                         if (mounted && updated != null) setState(() => _trip = updated);
@@ -142,7 +162,7 @@ class _TopBar extends StatelessWidget {
 
   final String title;
   final VoidCallback onBack;
-  final VoidCallback onEdit;
+  final ValueChanged<String> onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -164,10 +184,22 @@ class _TopBar extends StatelessWidget {
             ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
         ),
-        FilledButton.icon(
-          onPressed: onEdit,
-          icon: const Icon(Icons.edit_outlined),
-          label: const Text('Edit plan'),
+        PopupMenuButton<String>(
+          tooltip: 'Edit plan',
+          onSelected: onEdit,
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'bookings', child: Text('Edit bookings and schedule')),
+            PopupMenuItem(value: 'planner', child: Text('Refine with planner')),
+          ],
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.edit_outlined),
+              SizedBox(width: 8),
+              Text('Edit plan'),
+              Icon(Icons.arrow_drop_down),
+            ]),
+          ),
         ),
       ],
     );

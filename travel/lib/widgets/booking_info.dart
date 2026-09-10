@@ -18,6 +18,8 @@ class BookingInfo extends StatelessWidget {
       Text(booking?.confirmed == true ? 'Confirmed booking' : 'Suggestion / unconfirmed'),
       if (booking != null) ...[
         if (booking.localDate != null) Text('Date: ${booking.localDate}'),
+        Text(booking.startMinutes == null ? 'Time: unknown' :
+          'Time: ${(booking.startMinutes! ~/ 60).toString().padLeft(2, '0')}:${(booking.startMinutes! % 60).toString().padLeft(2, '0')}'),
         if (booking.timeZone != null) Text('Time zone: ${booking.timeZone}'),
         if (booking.address.isNotEmpty) SelectableText('Meeting point: ${booking.address}'),
         if (booking.reference.isNotEmpty) SelectableText('Booking reference: ${booking.reference}'),
