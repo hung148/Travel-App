@@ -39,12 +39,15 @@ IN PROGRESS / MUST VERIFY
 [x] Chrome account deletion returned to sign-in; owner checked Authentication,
     users, all three remaining trip ownerIds and both preference ownerIds.
     No itinerary, feedback or community collections were listed in that test DB.
-[ ] Deploy and live-test new Groq cloud functions. Production GROQ_API_KEY
-    version 1 stored by owner. Groq Free selected; subscriptions deferred.
-    Local backend tests: 52 passed, one emulator-only test skipped; lint passed.
-    Provider switch is NOT deployed yet. Development cloud still uses OpenAI;
-    local development uses the Groq gateway with AI_ASSISTANT_URL override.
-[ ] Commit Groq provider changes and checklist update after deployment testing.
+[x] Production Groq deployed: all three functions successfully updated.
+    Import and interpret endpoints verified with production URLs and HTTP 200.
+    Imported three items, saved/reopened, changed hotel time and verified persistence.
+    Shopping vetting is deployed; separate live acceptance remains open.
+    Backend: 52 tests passed, one emulator-only skip; lint passed.
+[x] Groq provider and login focus changes committed in 862795b.
+    Owner verified both login fields editable; latest full suite: 199 passed;
+    web build passed. Production GROQ_API_KEY version 1 stored by owner.
+[ ] Live verification of production shopping-place vetting.
 [ ] Finish owner-filtered itinerary query/rule migration, including indexes and
     emulator verification, before removing the legacy ownership fallback.
 [ ] Maps key: API restrictions confirmed for Places, Geocoding and Routes;
@@ -61,6 +64,9 @@ IN PROGRESS / MUST VERIFY
 
 OWNER DECISIONS
 - Name settled: NghienTravel.
+- First release: iOS. Teammate Mac/Xcode/device testing availability pending.
+  Keep shared Maps key application restrictions unchanged until compatible
+  request handling and iOS testing are ready.
 - Domain deferred until the app becomes popular.
 - Keep the existing production database intact. Moving to Singapore would be
   separate migration work requiring a concrete plan and owner decision.
