@@ -2,8 +2,74 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:travel/service/planner/destination_place_service.dart';
 import 'package:travel/service/map_service.dart';
 import 'package:travel/service/planner/shopping_vetter.dart';
+import 'package:travel/service/currency_rate_service.dart';
+import 'package:travel/models/cost_estimate.dart';
 
 void main() {
+  test(
+    'converts published local prices and excludes hotel rates from meal calibration',
+    () async {
+      final rates = _Rates();
+      addTearDown(rates.dispose);
+      final pool =
+          await DestinationPlaceService(
+            mapService: _PricedMaps(),
+            currencyRates: rates,
+          ).loadForDestination(
+            'Test City',
+            priceContext: const PriceContext(
+              currencyCode: 'USD',
+              totalBudget: 1000,
+              spendingStyle: 'Normal',
+              days: 2,
+              travelers: 1,
+            ),
+          );
+      final meal = pool.places.firstWhere((place) => place.id == 'priced-meal');
+      expect(meal.cost.low, 4);
+      expect(meal.cost.high, 8);
+      expect(meal.cost.currencyCode, 'USD');
+      expect(meal.cost.source, CostSource.googlePriceRange);
+      expect(pool.calibration.bandFor(2).mid, 6);
+      expect(pool.detectedCurrencyCode, 'VND');
+      expect(rates.calls, 1);
+      final hotel = pool.hotels.firstWhere(
+        (hotel) => hotel.id == 'priced-hotel',
+      );
+      expect(hotel.nightlyRate, closeTo(200, 0.001));
+      expect(hotel.nightlyRateEstimated, isTrue);
+    },
+  );
+  for (final style in ['Budget', 'Luxury']) {
+    test('$style broadens dining and hotel searches', () async {
+      final maps = _StyleMapService();
+      final service = DestinationPlaceService(mapService: maps);
+      final result = await service.loadForDestination(
+        'Test City',
+        priceContext: PriceContext(
+          currencyCode: 'USD',
+          totalBudget: 1000,
+          spendingStyle: style,
+          days: 3,
+          travelers: 1,
+        ),
+      );
+      expect(
+        maps.queries,
+        containsAll([
+          'well reviewed local restaurants in Test City',
+          'fine dining restaurants buffet in Test City',
+          'well reviewed budget hotels in Test City',
+          'luxury hotels in Test City',
+        ]),
+      );
+      expect(
+        result.places.map((place) => place.id),
+        containsAll(['style-restaurant', 'hotel-buffet']),
+      );
+      expect(result.hotels.map((hotel) => hotel.id), contains('style-hotel'));
+    });
+  }
   test(
     'geocodes, deduplicates place types, and excludes accommodation',
     () async {
@@ -237,7 +303,56 @@ class _FailOpenVetter implements ShoppingVetter {
   }
 }
 
+class _StyleMapService extends _FakeMapService {
+  final queries = <String>[];
+  @override
+  Future<List<NearbyPlace>> searchPlacesInArea({
+    required double latitude,
+    required double longitude,
+    required int radius,
+    required String query,
+    bool upscaleDiningOnly = false,
+  }) async {
+    queries.add(query);
+    final hotel = query.contains('hotels');
+    return [
+      if (query.contains('buffet'))
+        NearbyPlace(
+          placeId: 'hotel-buffet',
+          name: 'Hotel buffet restaurant',
+          address: 'City',
+          latitude: latitude,
+          longitude: longitude,
+          rating: 4.6,
+          userRatingsTotal: 300,
+          primaryType: 'restaurant',
+          types: const ['restaurant', 'lodging'],
+          priceLevel: 3,
+        ),
+      NearbyPlace(
+        placeId: hotel ? 'style-hotel' : 'style-restaurant',
+        name: 'Style match',
+        address: 'City',
+        latitude: latitude,
+        longitude: longitude,
+        rating: 4.5,
+        userRatingsTotal: 200,
+        types: [hotel ? 'hotel' : 'restaurant'],
+        priceLevel: 2,
+      ),
+    ];
+  }
+}
+
 class _FakeMapService extends MapService {
+  @override
+  Future<List<NearbyPlace>> searchPlacesInArea({
+    required double latitude,
+    required double longitude,
+    required int radius,
+    required String query,
+    bool upscaleDiningOnly = false,
+  }) async => [];
   final List<String> requestedTypes = [];
   final List<String> shoppingQueries = [];
 
@@ -337,6 +452,14 @@ class _FakeMapService extends MapService {
 /// Returns four malls of very different sizes plus a shoe shop that carries
 /// `shopping_mall` in its type list, which is what Google actually does.
 class _FakeShoppingMapService extends MapService {
+  @override
+  Future<List<NearbyPlace>> searchPlacesInArea({
+    required double latitude,
+    required double longitude,
+    required int radius,
+    required String query,
+    bool upscaleDiningOnly = false,
+  }) async => [];
   _FakeShoppingMapService() : super(apiKey: 'test-key');
 
   @override
@@ -425,4 +548,49 @@ class _FakeShoppingMapService extends MapService {
       ),
     ];
   }
+}
+
+class _Rates extends CurrencyRateService {
+  int calls = 0;
+  @override
+  Future<ExchangeRate?> rate({required String from, required String to}) async {
+    calls++;
+    expect(from, 'VND');
+    expect(to, 'USD');
+    return ExchangeRate(
+      base: from,
+      quote: to,
+      rate: 1 / 25000,
+      fetchedAt: DateTime(2026),
+    );
+  }
+}
+
+class _PricedMaps extends _FakeMapService {
+  @override
+  Future<List<NearbyPlace>> getNearbyPlaces({
+    required double latitude,
+    required double longitude,
+    required int radius,
+    required String type,
+  }) async => [
+    if (type == 'restaurant' || type == 'hotel')
+      NearbyPlace(
+        placeId: type == 'hotel' ? 'priced-hotel' : 'priced-meal',
+        name: 'Published price',
+        address: 'City',
+        latitude: latitude,
+        longitude: longitude,
+        rating: 4.6,
+        userRatingsTotal: 500,
+        types: [type],
+        primaryType: type,
+        priceLevel: 2,
+        priceRange: GooglePriceRange(
+          low: type == 'hotel' ? 5000000 : 100000,
+          high: type == 'hotel' ? 5000000 : 200000,
+          currencyCode: 'VND',
+        ),
+      ),
+  ];
 }

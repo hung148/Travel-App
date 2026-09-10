@@ -85,7 +85,11 @@ async function cleanup() {
   console.log(JSON.stringify({remainingDisposableAccounts: remaining.users.length}));
 }
 try {
-  if (mode === 'backfill') await backfill();
+  if (mode === 'secret-metadata') {
+    const result = await request(`https://secretmanager.googleapis.com/v1/projects/${project}/secrets/OPENAI_API_KEY/versions?pageSize=10`);
+    console.log(JSON.stringify({project, versions: (result.versions ?? []).map(version => ({name: version.name, state: version.state, createTime: version.createTime}))}));
+  }
+  else if (mode === 'backfill') await backfill();
   else if (mode === 'cleanup-dev') await cleanup();
   else if (mode === 'disable-phone') {
     if (project !== 'travel-plan-5f810') throw Error('Phone change is restricted to dev');

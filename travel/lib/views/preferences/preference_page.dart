@@ -25,9 +25,8 @@ class _PreferencePageState extends State<PreferencePage> {
 
   Set<String> _experienceType = {};
   String? _activityLevel;
-  String? _spendingStyle;
 
-  static const _totalQuestions = 3;
+  static const _totalQuestions = 2;
 
   final _experienceOptions = const [
     _Option('Nature', Icons.landscape_outlined),
@@ -59,24 +58,6 @@ class _PreferencePageState extends State<PreferencePage> {
     ),
   ];
 
-  final _spendingOptions = const [
-    _Option(
-      'Budget',
-      Icons.savings_outlined,
-      'Prioritize value and local favorites',
-    ),
-    _Option(
-      'Normal',
-      Icons.account_balance_wallet_outlined,
-      'Balance comfort, quality, and price',
-    ),
-    _Option(
-      'Luxury',
-      Icons.diamond_outlined,
-      'Premium stays, dining, and experiences',
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -101,9 +82,6 @@ class _PreferencePageState extends State<PreferencePage> {
         _activityLevel = preference.activityLevel.isEmpty
             ? null
             : preference.activityLevel;
-        _spendingStyle = preference.spendingStyle.isEmpty
-            ? null
-            : preference.spendingStyle;
         _hasInitialized = true;
       });
     });
@@ -115,8 +93,6 @@ class _PreferencePageState extends State<PreferencePage> {
         return _experienceType.isNotEmpty;
       case 1:
         return _activityLevel?.isNotEmpty == true;
-      case 2:
-        return _spendingStyle?.isNotEmpty == true;
       default:
         return false;
     }
@@ -138,7 +114,8 @@ class _PreferencePageState extends State<PreferencePage> {
       ownerId: widget.ownerId,
       experienceType: _experienceType.toList(),
       activityLevel: _activityLevel!,
-      spendingStyle: _spendingStyle!,
+      spendingStyle:
+          'Normal', // Legacy storage compatibility; planning uses the trip budget.
       // Keep both persisted fields in sync for compatibility with the existing
       // recommendation engine while presenting one clear preference question.
       interests: _experienceType.toList(),
@@ -155,11 +132,21 @@ class _PreferencePageState extends State<PreferencePage> {
     );
   }
 
+  void _closeEditMode() {
+    if (!widget.returnOnSave) return;
+    Navigator.maybePop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: _currentPage == 0,
+      canPop: widget.returnOnSave || _currentPage == 0,
       onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (widget.returnOnSave) {
+          _closeEditMode();
+          return;
+        }
         if (!didPop) _back();
       },
       child: Scaffold(
@@ -213,6 +200,9 @@ class _PreferencePageState extends State<PreferencePage> {
                                     currentPage: _currentPage,
                                     totalQuestions: _totalQuestions,
                                     onBack: _currentPage > 0 ? _back : null,
+                                    onClose: widget.returnOnSave
+                                        ? _closeEditMode
+                                        : null,
                                   ),
                                   const SizedBox(height: 24),
                                   Expanded(
@@ -266,21 +256,6 @@ class _PreferencePageState extends State<PreferencePage> {
                                                   ),
                                                 ),
                                               ),
-                                              _QuestionPage(
-                                                eyebrow: 'SPENDING STYLE',
-                                                title:
-                                                    'How do you like to spend while traveling?',
-                                                subtitle:
-                                                    'This is a preference, not your final trip budget. You’ll enter the real budget when planning a trip.',
-                                                child: _SingleChoiceList(
-                                                  options: _spendingOptions,
-                                                  selected: _spendingStyle,
-                                                  onTap: (value) => setState(
-                                                    () =>
-                                                        _spendingStyle = value,
-                                                  ),
-                                                ),
-                                              ),
                                             ],
                                           ),
                                   ),
@@ -301,6 +276,21 @@ class _PreferencePageState extends State<PreferencePage> {
                                     ),
                                   Row(
                                     children: [
+                                      if (widget.returnOnSave) ...[
+                                        TextButton(
+                                          onPressed: vm.isLoading
+                                              ? null
+                                              : _closeEditMode,
+                                          child: const Padding(
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 14,
+                                            ),
+                                            child: Text('Cancel'),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                      ],
                                       if (_currentPage > 0) ...[
                                         OutlinedButton(
                                           onPressed: vm.isLoading
@@ -368,11 +358,13 @@ class _Header extends StatelessWidget {
   final int currentPage;
   final int totalQuestions;
   final VoidCallback? onBack;
+  final VoidCallback? onClose;
 
   const _Header({
     required this.currentPage,
     required this.totalQuestions,
     required this.onBack,
+    this.onClose,
   });
 
   @override
@@ -410,6 +402,14 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
+        if (onClose != null) ...[
+          const SizedBox(width: 14),
+          IconButton.filledTonal(
+            tooltip: 'Close preferences',
+            onPressed: onClose,
+            icon: const Icon(Icons.close_rounded),
+          ),
+        ],
       ],
     );
   }

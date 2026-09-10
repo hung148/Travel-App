@@ -16,7 +16,7 @@ void main() {
   const classifier = PlaceRoleClassifier();
 
   for (final restaurantCount in [1, 2, 4, 9]) {
-    test('fills nine meals with $restaurantCount restaurants', () {
+    test('requires three distinct daily meals with $restaurantCount restaurants', () {
       final planner = TravelPlannerService(
         placeScoringService: PlaceScoringService(),
       );
@@ -47,6 +47,11 @@ void main() {
         centerLongitude: 0,
       );
 
+      if (restaurantCount < 3) {
+        expect(result.validation.isValid, isFalse);
+        expect(result.validation.issues.any((issue) => issue.code == PlannerValidationCode.insufficientDiningCandidates), isTrue);
+        return;
+      }
       expect(
         result.validation.isValid,
         isTrue,

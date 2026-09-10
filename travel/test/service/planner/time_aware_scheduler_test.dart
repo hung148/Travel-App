@@ -12,6 +12,43 @@ void main() {
   );
 
   group('time-aware daily scheduler', () {
+    test('month-long trips revisit top meals after unique options run out', () {
+      final result = planner.generatePlan(
+        trip: _trip(days: 30),
+        preference: _preference('Relaxed'),
+        candidatePlaces: [
+          ...List.generate(
+            30,
+            (index) => _place('activity-$index', minutes: 60),
+          ),
+          ..._meals(35),
+        ],
+        centerLatitude: 0,
+        centerLongitude: 0,
+      );
+
+      expect(result.validation.isValid, isTrue);
+      final meals = result.days
+          .expand((day) => day.places)
+          .where((item) => item.place.isDining)
+          .toList();
+      expect(meals, hasLength(90));
+      expect(meals.map((item) => item.place.id).toSet(), hasLength(35));
+      for (final day in result.days) {
+        expect(
+          day.places
+              .where((item) => item.place.isDining)
+              .map((item) => item.place.id)
+              .toSet(),
+          hasLength(3),
+        );
+      }
+      expect(
+        result.days.fold<double>(0, (sum, day) => sum + day.estimatedFoodCost),
+        900,
+      );
+    });
+
     test('never fills a day beyond the strategy time cap', () {
       final result = planner.generatePlan(
         trip: _trip(days: 2),

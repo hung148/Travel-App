@@ -33,10 +33,13 @@ class PlacePhoto extends StatelessWidget {
             width: width,
             height: height,
             fit: BoxFit.cover,
+            cacheWidth: (width * MediaQuery.devicePixelRatioOf(context))
+                .round(),
+            cacheHeight: (height * MediaQuery.devicePixelRatioOf(context))
+                .round(),
             errorBuilder: (_, _, _) => _placeholder(context),
-            loadingBuilder: (context, child, progress) => progress == null
-                ? child
-                : _placeholder(context, loading: true),
+            loadingBuilder: (context, child, progress) =>
+                progress == null ? child : _placeholder(context, loading: true),
           );
 
     return Semantics(
@@ -142,10 +145,7 @@ class _PhotoGalleryDialog extends StatefulWidget {
   final String placeName;
   final List<String> photoUrls;
 
-  const _PhotoGalleryDialog({
-    required this.placeName,
-    required this.photoUrls,
-  });
+  const _PhotoGalleryDialog({required this.placeName, required this.photoUrls});
 
   @override
   State<_PhotoGalleryDialog> createState() => _PhotoGalleryDialogState();

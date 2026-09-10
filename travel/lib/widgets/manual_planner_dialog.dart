@@ -164,8 +164,8 @@ class ManualPlannerDialogState extends State<ManualPlannerDialog> {
                 ),
               ),
               const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
@@ -322,33 +322,17 @@ class _ManualDayEditor extends StatelessWidget {
                             onTap: () => onEdit(dayIndex, stopIndex),
                             title: Text(item.place.name),
                             subtitle: Text('${item.place.category} • Tap to edit booking details'),
-                            trailing: Wrap(
-                              spacing: 0,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Move earlier',
-                                  onPressed: stopIndex == 0
-                                      ? null
-                                      : () => onMove(dayIndex, stopIndex, -1),
-                                  icon: const Icon(Icons.arrow_upward_rounded),
-                                ),
-                                IconButton(
-                                  tooltip: 'Move later',
-                                  onPressed: stopIndex == day.places.length - 1
-                                      ? null
-                                      : () => onMove(dayIndex, stopIndex, 1),
-                                  icon: const Icon(
-                                    Icons.arrow_downward_rounded,
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Remove',
-                                  onPressed: () =>
-                                      onRemove(dayIndex, stopIndex),
-                                  icon: const Icon(
-                                    Icons.delete_outline_rounded,
-                                  ),
-                                ),
+                            trailing: PopupMenuButton<String>(
+                              tooltip: 'Item actions',
+                              onSelected: (action) {
+                                if (action == 'earlier') onMove(dayIndex, stopIndex, -1);
+                                if (action == 'later') onMove(dayIndex, stopIndex, 1);
+                                if (action == 'remove') onRemove(dayIndex, stopIndex);
+                              },
+                              itemBuilder: (_) => [
+                                PopupMenuItem(value: 'earlier', enabled: stopIndex > 0, child: const Text('Move earlier')),
+                                PopupMenuItem(value: 'later', enabled: stopIndex < day.places.length - 1, child: const Text('Move later')),
+                                const PopupMenuItem(value: 'remove', child: Text('Remove')),
                               ],
                             ),
                           );

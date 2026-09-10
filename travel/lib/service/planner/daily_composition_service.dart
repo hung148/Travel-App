@@ -29,10 +29,24 @@ class DailyCompositionService {
     if (dining.isEmpty) return nonDining;
 
     final arranged = <ScoredPlace>[dining.first];
-    final lunchIndex = (nonDining.length / 2).ceil();
-    arranged.addAll(nonDining.take(lunchIndex));
-    if (dining.length > 1) arranged.add(dining[1]);
-    arranged.addAll(nonDining.skip(lunchIndex));
+    var cursor = 8 * 60 + dining.first.place.estimatedVisitMinutes + 30;
+    var lunchAdded = false;
+    for (final activity in nonDining) {
+      if (!lunchAdded &&
+          dining.length > 1 &&
+          (cursor >= 12 * 60 ||
+              cursor + activity.place.estimatedVisitMinutes + 30 > 14 * 60)) {
+        arranged.add(dining[1]);
+        cursor =
+            (cursor < 12 * 60 ? 12 * 60 : cursor) +
+            dining[1].place.estimatedVisitMinutes +
+            30;
+        lunchAdded = true;
+      }
+      arranged.add(activity);
+      cursor += activity.place.estimatedVisitMinutes + 30;
+    }
+    if (!lunchAdded && dining.length > 1) arranged.add(dining[1]);
     if (dining.length > 2) arranged.addAll(dining.skip(2));
     return arranged;
   }

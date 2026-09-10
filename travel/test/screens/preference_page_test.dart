@@ -20,6 +20,9 @@ void main() {
     when(viewModel.addListener(any)).thenReturn(null);
     when(viewModel.removeListener(any)).thenReturn(null);
     when(viewModel.hasListeners).thenReturn(false);
+    when(viewModel.resetSavedFlag()).thenAnswer((_) {
+      when(viewModel.savedSuccessfully).thenReturn(false);
+    });
   });
 
   Widget buildPage() => ChangeNotifierProvider<PreferenceViewmodel>.value(
@@ -59,5 +62,56 @@ void main() {
     await tester.pump();
 
     expect(find.text('Unable to load preferences.'), findsOneWidget);
+  });
+
+  testWidgets('saving edited preferences returns to the previous page', (
+    tester,
+  ) async {
+    bool? saved;
+    await tester.pumpWidget(
+      ChangeNotifierProvider<PreferenceViewmodel>.value(
+        value: viewModel,
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () async {
+                  saved = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute<bool>(
+                      builder: (_) => const PreferencePage(
+                        ownerId: 'user-1',
+                        returnOnSave: true,
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('Open preferences'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open preferences'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Nature'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Relaxed'));
+    expect(find.text('SPENDING STYLE'), findsNothing);
+    await tester.pumpAndSettle();
+    when(viewModel.savePreferences(any)).thenAnswer((_) async {
+      when(viewModel.savedSuccessfully).thenReturn(true);
+    });
+    await tester.tap(find.text('Save preferences'));
+    // The mock does not notify listeners, so explicitly rebuild the consumer.
+    tester.element(find.byType(PreferencePage)).markNeedsBuild();
+    await tester.pumpAndSettle();
+    verify(viewModel.savePreferences(any)).called(1);
+    expect(saved, isTrue);
+    expect(find.text('Open preferences'), findsOneWidget);
+    expect(find.byType(PreferencePage), findsNothing);
   });
 }

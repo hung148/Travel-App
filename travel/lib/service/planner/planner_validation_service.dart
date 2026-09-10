@@ -43,9 +43,12 @@ class PlannerValidationService {
         : PlannerValidationSeverity.error;
 
     for (final day in days) {
+      final dailyDiningIds = <String>{};
       for (final scoredPlace in day.places) {
-        if (!seenPlaceIds.add(scoredPlace.place.id) &&
-            !scoredPlace.place.isDining) {
+        final isUnique = scoredPlace.place.isDining
+            ? dailyDiningIds.add(scoredPlace.place.id)
+            : seenPlaceIds.add(scoredPlace.place.id);
+        if (!isUnique) {
           issues.add(
             PlannerValidationIssue(
               code: PlannerValidationCode.duplicatePlace,

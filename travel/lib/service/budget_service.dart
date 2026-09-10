@@ -4,6 +4,29 @@ import '../models/spending_profile.dart';
 class BudgetService {
   const BudgetService();
 
+  BudgetAllocation allocateForTrip({
+    required double totalBudget,
+    double? accommodationCost,
+  }) {
+    if (!totalBudget.isFinite ||
+        !(accommodationCost ?? 0).isFinite ||
+        totalBudget < 0 ||
+        (accommodationCost ?? 0) < 0 ||
+        (accommodationCost ?? 0) > totalBudget) {
+      throw ArgumentError('Hotel cost must fit inside the total trip budget.');
+    }
+    final hotel = accommodationCost ?? totalBudget * 0.38;
+    final remaining = totalBudget - hotel;
+    return BudgetAllocation(
+      total: totalBudget,
+      accommodation: hotel,
+      food: remaining * 0.22 / 0.62,
+      transportation: remaining * 0.14 / 0.62,
+      activities: remaining * 0.21 / 0.62,
+      buffer: remaining * 0.05 / 0.62,
+    );
+  }
+
   BudgetAllocation allocate({
     required double totalBudget,
     required String spendingStyle,
@@ -48,6 +71,4 @@ class BudgetService {
       buffer: allocation.buffer - additionalFood,
     );
   }
-
 }
-

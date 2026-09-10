@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -6,6 +7,87 @@ import 'package:http/testing.dart';
 import 'package:travel/service/map_service.dart';
 
 void main() {
+  test(
+    'identical concurrent searches share a request and cached lists are isolated',
+    () async {
+      var calls = 0;
+      final response = Completer<http.Response>();
+      final service = MapService(
+        apiKey: 'test',
+        client: MockClient((_) {
+          calls++;
+          return response.future;
+        }),
+      );
+      Future<List<NearbyPlace>> search() => service.searchPlacesInArea(
+        latitude: 1,
+        longitude: 2,
+        radius: 1000,
+        query: 'restaurants',
+      );
+      final first = search();
+      final second = search();
+      response.complete(
+        http.Response(
+          '{"places":[{"id":"a","displayName":{"text":"A"},"location":{"latitude":1,"longitude":2}}]}',
+          200,
+        ),
+      );
+      final lists = await Future.wait([first, second]);
+      expect(calls, 1);
+      lists.first.clear();
+      expect(lists.last, hasLength(1));
+      expect(await search(), hasLength(1));
+      expect(calls, 1);
+    },
+  );
+  test('failed searches are retried rather than cached', () async {
+    var calls = 0;
+    final service = MapService(
+      apiKey: 'test',
+      client: MockClient(
+        (_) async => ++calls == 1
+            ? http.Response('unavailable', 503)
+            : http.Response('{"places":[]}', 200),
+      ),
+    );
+    Future<List<NearbyPlace>> search() => service.searchPlacesInArea(
+      latitude: 1,
+      longitude: 2,
+      radius: 1000,
+      query: 'restaurants',
+    );
+    await expectLater(search(), throwsException);
+    expect(await search(), isEmpty);
+    expect(calls, 2);
+  });
+  test(
+    'upscale searches send actual restaurant price and rating filters to Google',
+    () async {
+      final service = MapService(
+        apiKey: 'test-key',
+        client: MockClient((request) async {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          expect(body['includedType'], 'restaurant');
+          expect(body['strictTypeFiltering'], isTrue);
+          expect(body['minRating'], 4.0);
+          expect(body['priceLevels'], [
+            'PRICE_LEVEL_EXPENSIVE',
+            'PRICE_LEVEL_VERY_EXPENSIVE',
+          ]);
+          expect(body['textQuery'], 'fine dining restaurants in Da Nang');
+          return http.Response('{"places":[]}', 200);
+        }),
+      );
+      await service.searchPlacesInArea(
+        latitude: 16.06,
+        longitude: 108.22,
+        radius: 15000,
+        query: 'fine dining restaurants in Da Nang',
+        upscaleDiningOnly: true,
+      );
+    },
+  );
   test(
     'Nearby Search uses the Places API New request and response shape',
     () async {

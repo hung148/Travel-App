@@ -277,7 +277,10 @@ class _TopBar extends StatelessWidget {
             final uid = auth.user?.uid ?? user.uid;
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PreferencePage(ownerId: uid)),
+              MaterialPageRoute(
+                builder: (_) =>
+                    PreferencePage(ownerId: uid, returnOnSave: true),
+              ),
             );
           },
           icon: const Icon(Icons.tune_rounded),
@@ -381,7 +384,6 @@ class _TravelStyleCard extends StatelessWidget {
     final chips = <String>[
       ...preference.styleTags,
       preference.activityLevel,
-      preference.spendingStyle,
     ].where((label) => label.trim().isNotEmpty).toList();
     return _Panel(
       title: 'Your travel style',
@@ -392,7 +394,9 @@ class _TravelStyleCard extends StatelessWidget {
           final uid = auth.user?.uid ?? preference.ownerId;
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => PreferencePage(ownerId: uid)),
+            MaterialPageRoute(
+              builder: (_) => PreferencePage(ownerId: uid, returnOnSave: true),
+            ),
           );
         },
         child: const Text('Edit'),
@@ -612,7 +616,8 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = 'This is taking too long. Check your connection, then '
+        _error =
+            'This is taking too long. Check your connection, then '
             'reopen the app to see whether the account was removed.';
       });
       return;
@@ -669,8 +674,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
                       ? Icons.visibility_off_outlined
                       : Icons.visibility_outlined,
                 ),
-                onPressed: () =>
-                    setState(() => _hidePassword = !_hidePassword),
+                onPressed: () => setState(() => _hidePassword = !_hidePassword),
               ),
             ),
           ),

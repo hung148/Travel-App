@@ -6,6 +6,14 @@ class PlaceRoleClassifier {
 
   PlaceRole classify(TravelPlace place) {
     if (place.isDining) return PlaceRole.dining;
+    if (_natureTypes.contains(place.category)) return PlaceRole.nature;
+    if (_entertainmentTypes.contains(place.category)) {
+      return PlaceRole.entertainment;
+    }
+    if (_shoppingTypes.contains(place.category)) return PlaceRole.shopping;
+    if (_sightseeingTypes.contains(place.category)) {
+      return PlaceRole.sightseeing;
+    }
     final types = {
       place.category,
       ...place.tags,
@@ -81,6 +89,7 @@ class PlaceRoleClassifier {
     'performing_arts_theater',
     'concert_hall',
     'comedy_club',
+    'bar',
     'stadium',
     'zoo',
   };
