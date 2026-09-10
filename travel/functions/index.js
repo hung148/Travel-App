@@ -8,6 +8,7 @@ import { defineSecret } from "firebase-functions/params";
 import {
   commandSchema,
   contextError,
+  recoverExplicitArguments,
   systemInstruction,
   validateCommand,
 } from "./trip-command.js";
@@ -93,7 +94,7 @@ export const interpretTripRequest = onRequest(
         return;
       }
       const command = validateCommand(
-        JSON.parse(outputText),
+        recoverExplicitArguments(JSON.parse(outputText), instruction),
         context.destinationId,
       );
       response.status(200).json(command);

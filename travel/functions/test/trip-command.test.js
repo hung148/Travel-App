@@ -8,6 +8,19 @@ import {
   validateCommand,
 } from "../trip-command.js";
 
+test("recovers the requested time when a model chooses a day-only move", () => {
+  const result = validateCommand(recoverExplicitArguments({
+    command: "move_stop", destinationId: "hue", arguments: {
+      activityName: "Airport pickup", targetDayNumber: 1,
+    }, explanation: "Move Airport pickup to day 1.",
+  }, "Move Airport pickup on day 1 to 10:00."), "hue");
+  assert.equal(result.command, "move_stop_time");
+  assert.equal(result.arguments.startMinutes, 600);
+  assert.equal(result.arguments.sourceStop.activityName, "Airport pickup");
+  assert.equal(result.arguments.sourceStop.dayNumber, 1);
+  assert.match(result.explanation, /10:00/);
+});
+
 test("accepts and normalizes a destination-scoped command", () => {
   const command = validateCommand(
     {
