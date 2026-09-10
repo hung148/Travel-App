@@ -111,11 +111,14 @@ class PriceCalibrationService {
     MapEntry<int, List<PriceBand>> chosen;
     if (wellSampled.isEmpty) {
       final all = byLevel.entries.toList()
-        ..sort((left, right) => right.value.length.compareTo(left.value.length));
+        ..sort(
+          (left, right) => right.value.length.compareTo(left.value.length),
+        );
       chosen = all.first;
     } else {
-      wellSampled
-          .sort((left, right) => right.value.length.compareTo(left.value.length));
+      wellSampled.sort(
+        (left, right) => right.value.length.compareTo(left.value.length),
+      );
       chosen = wellSampled.firstWhere(
         (entry) => entry.key == 2,
         orElse: () => wellSampled.first,

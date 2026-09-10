@@ -526,9 +526,7 @@ class TripViewModel extends ChangeNotifier {
                 ? 'Places in ${trip.destination}'
                 : '${preference.styleTags.join(', ')} places in '
                       '${trip.destination}',
-            meals: preference.spendingStyle.trim().isEmpty
-                ? 'Meal plan'
-                : '${preference.spendingStyle} meal plan',
+            meals: 'Meals within the trip budget',
             estimatedCost: trip.budget / trip.days,
           ),
         );

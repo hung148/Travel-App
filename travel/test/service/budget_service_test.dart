@@ -106,8 +106,14 @@ void main() {
           profile.costFitScore(placeCost: 90, dailyBudget: 150);
 
       expect(fit(SpendingProfile.luxury), 100);
-      expect(fit(SpendingProfile.budget), lessThan(fit(SpendingProfile.normal)));
-      expect(fit(SpendingProfile.normal), lessThan(fit(SpendingProfile.luxury)));
+      expect(
+        fit(SpendingProfile.budget),
+        lessThan(fit(SpendingProfile.normal)),
+      );
+      expect(
+        fit(SpendingProfile.normal),
+        lessThan(fit(SpendingProfile.luxury)),
+      );
     });
 
     test('a stop that eats the whole day is a bad pick for every style', () {
@@ -123,12 +129,15 @@ void main() {
     test('unknown styles fall back to Normal', () {
       expect(SpendingProfile.fromName(null), same(SpendingProfile.normal));
       expect(SpendingProfile.fromName(''), same(SpendingProfile.normal));
-      expect(SpendingProfile.fromName('  BUDGET '), same(SpendingProfile.budget));
+      expect(
+        SpendingProfile.fromName('  BUDGET '),
+        same(SpendingProfile.budget),
+      );
       expect(SpendingProfile.fromName('Premium'), same(SpendingProfile.luxury));
     });
   });
 
-  test('spending style changes which place ranks first', () {
+  test('legacy spending style does not affect rankings', () {
     const cheap = TravelPlace(
       id: 'cheap',
       name: 'Cheap Museum',
@@ -188,8 +197,7 @@ void main() {
     }
 
     // The whole point of the fix: identical candidates, different order.
-    expect(rankedIds('Budget').first, 'cheap');
-    expect(rankedIds('Luxury').first, 'premium');
+    expect(rankedIds('Luxury'), rankedIds('Budget'));
   });
 
   test('planner selects attractions using only the activities allocation', () {
@@ -222,8 +230,8 @@ void main() {
           rating: 5,
           reviewCount: 1000,
           cost: CostEstimate(
-            low: 200,
-            high: 200,
+            low: 250,
+            high: 250,
             currencyCode: 'USD',
             source: CostSource.userProvided,
           ),
@@ -304,7 +312,7 @@ void main() {
       centerLongitude: 0,
     );
 
-    expect(result.budgetAllocation.activities, closeTo(160, 0.001));
+    expect(result.budgetAllocation.activities, closeTo(210, 0.001));
     expect(result.validation.warnings, isEmpty);
     expect(
       result.days.single.places

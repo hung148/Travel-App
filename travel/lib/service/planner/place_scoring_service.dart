@@ -35,9 +35,8 @@ class PlaceScoringService {
       preference: preference,
     );
 
-    // Spending style decides which price band counts as a good fit, instead
-    // of every style preferring whatever is cheapest.
-    final spending = SpendingProfile.fromName(preference.spendingStyle);
+    // Use one budget-fit curve for everyone; saved legacy styles have no effect.
+    const spending = SpendingProfile.normal;
     final budget = spending.costFitScore(
       placeCost: place.estimatedCost,
       dailyBudget: place.isDining
@@ -173,10 +172,7 @@ class PlaceScoringService {
       return 50;
     }
 
-    final matches = preferenceMatchCount(
-      place: place,
-      preference: preference,
-    );
+    final matches = preferenceMatchCount(place: place, preference: preference);
 
     if (matches == 0) {
       return 20;
@@ -188,7 +184,6 @@ class PlaceScoringService {
     // a genuine preference match.
     return max(45, score).clamp(0, 100).toDouble();
   }
-
 
   double _distanceScore({
     required double distanceKm,

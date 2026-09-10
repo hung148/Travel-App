@@ -14,6 +14,7 @@ enum PlannerValidationCode {
   totalFoodCostExceeded,
   insufficientBudgetForRequiredMeals,
   insufficientDiningCandidates,
+  luxuryDiningUnavailable,
   accommodationCostExceeded,
   totalTripCostExceeded,
 }

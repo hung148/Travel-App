@@ -36,6 +36,7 @@ import '../../service/planner/plan_refinement_service.dart';
 import '../../service/planner/planner_validation_service.dart';
 import '../../service/currency_rate_service.dart';
 import '../../service/planner/travel_planner_service.dart';
+import '../../service/planner/hotel_selection_service.dart';
 import '../../widgets/cost_breakdown_page.dart';
 import '../../widgets/inputs/currency_field.dart';
 import '../../viewmodels/auth_viewmodel.dart';
@@ -89,6 +90,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       ? DestinationPlaceService(
           mapService: _mapService,
           shoppingVetter: _shoppingVetter,
+          currencyRates: _currencyRates,
         )
       : null;
 
@@ -122,6 +124,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
   /// separate object; without this the reload would look like a second change
   /// and regenerate the plan twice.
   Preference? _generatedFromPreference;
+  bool _editingPreferences = false;
+  bool _preferenceRegenerationPending = false;
+  final _planPreviewKey = GlobalKey();
 
   PlannerResult? plannerResult;
   List<HotelStay> hotelRecommendations = const [];
@@ -194,8 +199,13 @@ class _PlanTripPageState extends State<PlanTripPage> {
 
     // The very first load is not a change the user made, and there is nothing
     // on screen yet to bring back into line.
-    if (previous == null || !planGenerated || isGenerating) return;
-    if (updated == _generatedFromPreference) return;
+    if (previous == null) return;
+    if (updated == _generatedFromPreference && !isGenerating) {
+      _preferenceRegenerationPending = false;
+      return;
+    }
+    _preferenceRegenerationPending = true;
+    if (_editingPreferences || isGenerating) return;
 
     _regenerateForPreferenceChange();
   }
@@ -204,10 +214,21 @@ class _PlanTripPageState extends State<PlanTripPage> {
     // _generatePlan reports anything missing through its own snackbars; if the
     // setup is still incomplete there is simply nothing to rebuild yet.
     if (_missingTripSetup.isNotEmpty) return;
+    _preferenceRegenerationPending = false;
 
     final before = plannerResult;
     await _generatePlan();
     if (!mounted || identical(plannerResult, before)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final previewContext = _planPreviewKey.currentContext;
+      if (mounted && previewContext != null) {
+        Scrollable.ensureVisible(
+          previewContext,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -961,6 +982,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
   }
 
   Future<void> _generatePlan() async {
+    if (isGenerating) return;
     if (dates == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -970,6 +992,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       return;
     }
     final preference = _preferenceForSelectedPlan();
+    final sourcePreference = savedPreference;
     if (preference == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -982,7 +1005,10 @@ class _PlanTripPageState extends State<PlanTripPage> {
     final destination = destinationController.text.trim();
     final budget = double.tryParse(budgetController.text.trim());
 
-    if (destination.isEmpty || budget == null || budget <= 0) {
+    if (destination.isEmpty ||
+        budget == null ||
+        !budget.isFinite ||
+        budget <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Enter a destination and valid budget first.'),
@@ -1025,6 +1051,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                   styleTags: preference.styleTags,
                 )
               : await destinationPlaceService.loadForArea(
+                  destinationName: destination,
                   center: Coordinates(
                     latitude: selectedArea.latitude,
                     longitude: selectedArea.longitude,
@@ -1079,8 +1106,23 @@ class _PlanTripPageState extends State<PlanTripPage> {
         currencyCode: currencyCode,
       );
 
+      final nightCount = dates == null
+          ? (dayCount - 1).clamp(1, dayCount)
+          : dates!.end.difference(dates!.start).inDays.clamp(1, dayCount);
+      final roomCount = ((travelers + 1) ~/ 2).clamp(1, travelers);
+      var nextHotel =
+          (selectedHotel?.userProvided == true ? selectedHotel : null)
+              ?.copyWith(nights: nightCount, rooms: selectedHotel!.rooms);
+      nextHotel ??= const HotelSelectionService().select(
+        nextHotels,
+        spendingStyle: preference.spendingStyle,
+        nights: nightCount,
+        rooms: roomCount,
+        accommodationBudget: budget * 0.38,
+      );
       final generatedResult = _planner
           .generatePlan(
+            accommodationCost: nextHotel?.totalCost,
             trip: trip,
             preference: preference,
             candidatePlaces: candidatePlaces,
@@ -1092,27 +1134,13 @@ class _PlanTripPageState extends State<PlanTripPage> {
             priceDisplayMode: priceDisplayMode,
           );
 
-      final nightCount = dates == null
-          ? (dayCount - 1).clamp(1, dayCount)
-          : dates!.end.difference(dates!.start).inDays.clamp(1, dayCount);
-      final roomCount = ((travelers + 1) ~/ 2).clamp(1, travelers);
-      var nextHotel = selectedHotel?.copyWith(
-        nights: nightCount,
-        rooms: roomCount,
-      );
-      nextHotel ??= _pickHotelWithinBudget(
-        nextHotels,
-        nights: nightCount,
-        rooms: roomCount,
-        accommodationBudget: generatedResult.budgetAllocation.accommodation,
-      );
       final result = _resultWithHotel(generatedResult, nextHotel);
 
       if (!mounted) return;
 
       setState(() {
         plannerResult = result;
-        _generatedFromPreference = savedPreference;
+        _generatedFromPreference = sourcePreference;
         _selectedDestination.currencyCode = currencyCode;
         planGenerated = true;
         placeDataSource = nextPlaceDataSource;
@@ -1132,6 +1160,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
     } finally {
       if (mounted) {
         setState(() => isGenerating = false);
+        if (_preferenceRegenerationPending && !_editingPreferences) {
+          await _regenerateForPreferenceChange();
+        }
       }
     }
   }
@@ -1186,39 +1217,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
     );
   }
 
-  /// The best-rated hotel the accommodation allocation can actually cover.
-  ///
-  /// The recommendation list is sorted by rating, so taking the first one
-  /// picked the most highly reviewed hotel regardless of price and reliably
-  /// blew the allocation. When nothing fits, the cheapest is chosen so the
-  /// warning the user sees is about a genuine shortfall rather than an
-  /// arbitrary pick.
-  HotelStay? _pickHotelWithinBudget(
-    List<HotelStay> hotels, {
-    required int nights,
-    required int rooms,
-    required double accommodationBudget,
-  }) {
-    if (hotels.isEmpty) return null;
-
-    final sized = hotels
-        .map((hotel) => hotel.copyWith(nights: nights, rooms: rooms))
-        .toList();
-
-    final affordable = sized
-        .where((hotel) => hotel.totalCost <= accommodationBudget + 0.001)
-        .toList();
-    if (affordable.isNotEmpty) {
-      affordable.sort((left, right) => right.rating.compareTo(left.rating));
-      return affordable.first;
-    }
-
-    sized.sort((left, right) => left.totalCost.compareTo(right.totalCost));
-    return sized.first;
-  }
-
-  void _selectRecommendedHotel(HotelStay hotel) {
+  Future<void> _selectRecommendedHotel(HotelStay hotel) async {
     final updated = hotel.copyWith(
+      userProvided: true,
       nightlyRate: selectedHotel?.id == hotel.id
           ? selectedHotel?.nightlyRate ?? 0
           : hotel.nightlyRate,
@@ -1232,6 +1233,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       }
       _persistSelectedDestination();
     });
+    await _generatePlan();
   }
 
   Future<void> _editHotel() async {
@@ -1258,6 +1260,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       }
       _persistSelectedDestination();
     });
+    await _generatePlan();
   }
 
   Future<void> _openManualPlanner() async {
@@ -2200,16 +2203,23 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       onEdit: () async {
                         final ownerId = savedPreference?.ownerId;
                         if (ownerId == null) return;
-                        await Navigator.push(
+                        _editingPreferences = true;
+                        final saved = await Navigator.push<bool>(
                           context,
-                          MaterialPageRoute<void>(
+                          MaterialPageRoute<bool>(
                             builder: (_) => PreferencePage(
                               ownerId: ownerId,
                               returnOnSave: true,
                             ),
                           ),
                         );
-                        if (mounted) await _loadPreference();
+                        if (!mounted) return;
+                        _editingPreferences = false;
+                        if (saved == true &&
+                            _preferenceRegenerationPending &&
+                            !isGenerating) {
+                          await _regenerateForPreferenceChange();
+                        }
                       },
                     ),
                     const SizedBox(height: 20),
@@ -2310,6 +2320,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                       ),
                       const SizedBox(height: 20),
                       _PlanPreview(
+                        key: _planPreviewKey,
                         generated: planGenerated,
                         selectedPlan: selectedPlan,
                         destination: destinationController.text.trim().isEmpty
@@ -2462,7 +2473,7 @@ class _PreferenceStatusCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  '$selectedPlan pace • ${preference!.spendingStyle} spending',
+                  '$selectedPlan pace • Recommendations fit your total budget',
                 ),
                 if (preferenceLabels.isNotEmpty) ...[
                   const SizedBox(height: 10),
@@ -2586,7 +2597,7 @@ class _TripSetupCard extends StatelessWidget {
               ),
             ),
             _LabeledField(
-              label: 'Total budget (all travelers)',
+              label: 'Total trip budget (hotel included, all travelers)',
               // Sized by the same Container as the Travelers field rather
               // than by InputDecoration. Letting the decorator draw its own
               // box put this control at a different height twice: it sizes to
@@ -3410,7 +3421,8 @@ class _DestinationMapState extends State<_DestinationMap> {
   }
 
   String _resultSignatureFor(String destinationId, PlannerResult? result) {
-    final hotelId = result?.hotel?.id ?? 'no-hotel';
+    final hotelId =
+        '${result?.hotel?.id}:${result?.hotel?.latitude}:${result?.hotel?.longitude}';
     final places = (result?.days ?? const <PlannerDay>[])
         .expand((day) => day.places)
         .map(
@@ -3418,7 +3430,10 @@ class _DestinationMapState extends State<_DestinationMap> {
               '${item.place.id}:${item.place.latitude}:${item.place.longitude}',
         )
         .join('|');
-    return '$destinationId|$hotelId|$places';
+    final boundaries = result?.days
+        .map((day) => '${day.dayNumber}:${day.places.length}')
+        .join('|');
+    return '$destinationId|$hotelId|$boundaries|$places';
   }
 
   List<LatLng> _resultPoints() {
@@ -3461,6 +3476,8 @@ class _DestinationMapState extends State<_DestinationMap> {
   }
 
   Future<void> _loadWalkingRoutes() async {
+    final signature = _resultSignature();
+    if (!mounted) return;
     final days = widget.result?.days ?? const <PlannerDay>[];
     if (!AppConfig.hasGoogleMapsApiKey || days.isEmpty) {
       if (mounted) {
@@ -3483,50 +3500,60 @@ class _DestinationMapState extends State<_DestinationMap> {
     final loadedRoutes = <int, List<LatLng>>{};
     var fallbackUsed = false;
 
-    await Future.wait(
-      days
-          .where(
-            (day) =>
-                hotel == null ? day.places.length > 1 : day.places.isNotEmpty,
-          )
-          .map((day) async {
-            try {
-              final stops = <Coordinates>[
-                if (hotel != null)
-                  Coordinates(
-                    latitude: hotel.latitude,
-                    longitude: hotel.longitude,
+    for (var offset = 0; offset < days.length; offset += 4) {
+      if (!mounted || _resultSignature() != signature) return;
+      await Future.wait(
+        days
+            .skip(offset)
+            .take(4)
+            .where(
+              (day) =>
+                  hotel == null ? day.places.length > 1 : day.places.isNotEmpty,
+            )
+            .map((day) async {
+              try {
+                final stops = <Coordinates>[
+                  if (hotel != null)
+                    Coordinates(
+                      latitude: hotel.latitude,
+                      longitude: hotel.longitude,
+                    ),
+                  ...day.places.map(
+                    (item) => Coordinates(
+                      latitude: item.place.latitude,
+                      longitude: item.place.longitude,
+                    ),
                   ),
-                ...day.places.map(
-                  (item) => Coordinates(
-                    latitude: item.place.latitude,
-                    longitude: item.place.longitude,
-                  ),
-                ),
-                if (hotel != null)
-                  Coordinates(
-                    latitude: hotel.latitude,
-                    longitude: hotel.longitude,
-                  ),
-              ];
-              final route = await service.getWalkingRoute(stops);
-              loadedRoutes[day.dayNumber] = route
-                  .map((point) => LatLng(point.latitude, point.longitude))
-                  .toList();
-            } catch (_) {
-              fallbackUsed = true;
-            }
-          }),
-    );
-
-    _routeCache[_loadedSignature] = Map<int, List<LatLng>>.from(loadedRoutes);
+                  if (hotel != null)
+                    Coordinates(
+                      latitude: hotel.latitude,
+                      longitude: hotel.longitude,
+                    ),
+                ];
+                final route = await service.getWalkingRoute(stops);
+                loadedRoutes[day.dayNumber] = route
+                    .map((point) => LatLng(point.latitude, point.longitude))
+                    .toList();
+              } catch (_) {
+                fallbackUsed = true;
+              }
+            }),
+      );
+    }
+    if (!mounted || _resultSignature() != signature) return;
+    if (_routeCache.length >= 16) {
+      final oldest = _routeCache.keys.first;
+      _routeCache.remove(oldest);
+      _fallbackSignatures.remove(oldest);
+    }
+    _routeCache[signature] = Map<int, List<LatLng>>.from(loadedRoutes);
     if (fallbackUsed) {
-      _fallbackSignatures.add(_loadedSignature);
+      _fallbackSignatures.add(signature);
     } else {
-      _fallbackSignatures.remove(_loadedSignature);
+      _fallbackSignatures.remove(signature);
     }
 
-    if (!mounted || _resultSignature() != _loadedSignature) return;
+    if (!mounted || _resultSignature() != signature) return;
     setState(() {
       _walkingRoutes.addAll(loadedRoutes);
       _routeFallbackUsed = fallbackUsed;
@@ -4447,6 +4474,7 @@ class _PlanPreview extends StatelessWidget {
   final String currencyCode;
 
   const _PlanPreview({
+    super.key,
     required this.generated,
     required this.selectedPlan,
     required this.destination,

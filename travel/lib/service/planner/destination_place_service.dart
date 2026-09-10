@@ -5,12 +5,15 @@ import '../../models/place_role.dart';
 import '../../models/travel_place.dart';
 import '../../models/hotel_stay.dart';
 import '../../models/price_calibration.dart';
+
 import '../budget_service.dart';
+import '../currency_rate_service.dart';
 import '../map_service.dart';
 import 'preference_normalizer.dart';
 import 'price_calibration_service.dart';
 import 'shopping_vetter.dart';
 import 'travel_place_mapper.dart';
+import 'place_quality_service.dart';
 
 /// What the caller knows before any place has been fetched. Used to fall back
 /// to budget-anchored pricing when a destination publishes no prices at all.
@@ -56,6 +59,7 @@ class DestinationPlaceService {
   final TravelPlaceMapper mapper;
   final PriceCalibrationService calibrationService;
   final BudgetService budgetService;
+  final CurrencyRateService? currencyRates;
 
   /// [shoppingVetter] is the only thing here that can read a place's NAME.
   /// Optional: with none supplied the type and review rules stand alone, which
@@ -68,6 +72,7 @@ class DestinationPlaceService {
     this.calibrationService = const PriceCalibrationService(),
     this.budgetService = const BudgetService(),
     this.shoppingVetter,
+    this.currencyRates,
   });
 
   static const _candidateTypes = [
@@ -150,17 +155,12 @@ class DestinationPlaceService {
   /// Biggest first. Review count is the closest thing Google gives us to a
   /// measure of how major a mall is - a landmark mall has tens of thousands of
   /// reviews, a neighbourhood one a few hundred.
-  static List<NearbyPlace> _biggestShoppingFirst(
-    Iterable<NearbyPlace> places,
-  ) {
-    return places.toList()
-      ..sort((left, right) {
-        final byReviews = right.userRatingsTotal.compareTo(
-          left.userRatingsTotal,
-        );
-        if (byReviews != 0) return byReviews;
-        return right.rating.compareTo(left.rating);
-      });
+  static List<NearbyPlace> _biggestShoppingFirst(Iterable<NearbyPlace> places) {
+    return places.toList()..sort((left, right) {
+      final byReviews = right.userRatingsTotal.compareTo(left.userRatingsTotal);
+      if (byReviews != 0) return byReviews;
+      return right.rating.compareTo(left.rating);
+    });
   }
 
   /// [placeId] is the Google id of the suggestion the user picked. When it is
@@ -183,6 +183,7 @@ class DestinationPlaceService {
       radiusMeters: radiusMeters,
       priceContext: priceContext,
       styleTags: styleTags,
+      destinationName: destination,
     );
   }
 
@@ -194,9 +195,40 @@ class DestinationPlaceService {
     required int radiusMeters,
     required PriceContext priceContext,
     Set<String> styleTags = const {},
+    String destinationName = '',
   }) async {
-    final searches = await Future.wait(
-      _candidateTypes.map(
+    Future<List<NearbyPlace>> discover(
+      String query, {
+      bool upscale = false,
+    }) async {
+      try {
+        return await mapService.searchPlacesInArea(
+          latitude: center.latitude,
+          longitude: center.longitude,
+          radius: radiusMeters,
+          upscaleDiningOnly: upscale,
+          query: destinationName.isEmpty ? query : '$query in $destinationName',
+        );
+      } catch (_) {
+        return <NearbyPlace>[];
+      }
+    }
+
+    // Start independent discovery requests together. Search a range of prices;
+    // the user's total allowance determines which returned places fit.
+    final queries = <String>[
+      'top tourist attractions famous landmarks',
+      'best beaches scenic viewpoints',
+      'well reviewed local restaurants',
+      'fine dining restaurants buffet',
+      'well reviewed budget hotels',
+      'luxury hotels',
+      if (styleTags.any((tag) => tag.toLowerCase() == 'nightlife'))
+        'best rooftop bars nightlife',
+    ];
+    final results = await Future.wait<List<NearbyPlace>>([
+      ...queries.map((query) => discover(query)),
+      ..._candidateTypes.map(
         (type) => mapService.getNearbyPlaces(
           latitude: center.latitude,
           longitude: center.longitude,
@@ -204,15 +236,13 @@ class DestinationPlaceService {
           type: type,
         ),
       ),
-    );
-    final hotelResults = await mapService.getNearbyPlaces(
-      latitude: center.latitude,
-      longitude: center.longitude,
-      radius: radiusMeters,
-      type: 'hotel',
-    );
-    final shoppingSearches = await Future.wait(
-      _shoppingQueries.map(
+      mapService.getNearbyPlaces(
+        latitude: center.latitude,
+        longitude: center.longitude,
+        radius: radiusMeters,
+        type: 'hotel',
+      ),
+      ..._shoppingQueries.map(
         (query) => mapService.searchShoppingDestinations(
           latitude: center.latitude,
           longitude: center.longitude,
@@ -220,19 +250,65 @@ class DestinationPlaceService {
           query: query,
         ),
       ),
+    ]);
+    final highlights = [
+      ...results[0],
+      ...results[1],
+      if (queries.length > 6) ...results[6],
+    ];
+    final extraDining = [...results[2], ...results[3]];
+    final searches = results.sublist(
+      queries.length,
+      queries.length + _candidateTypes.length,
     );
-
+    final hotelIndex = queries.length + _candidateTypes.length;
+    final hotelResults = {
+      for (final hotel in [
+        ...results[4],
+        ...results[5],
+        ...results[hotelIndex],
+      ])
+        if (hotel.types.any(_accommodationTypes.contains)) hotel.placeId: hotel,
+    }.values.toList();
+    final shoppingSearches = results.sublist(hotelIndex + 1);
     final uniquePlaces = <String, NearbyPlace>{};
     final shoppingCandidates = <String, NearbyPlace>{};
 
     for (final nearbyPlace in [
       ...searches.expand((places) => places),
+      ...extraDining,
+      ...highlights,
       ...shoppingSearches.expand((places) => places),
     ]) {
       if (nearbyPlace.placeId.isEmpty || nearbyPlace.name.trim().isEmpty) {
         continue;
       }
-      if (nearbyPlace.types.any(_accommodationTypes.contains)) {
+      final primaryType = nearbyPlace.primaryType;
+      if (const PlaceQualityService().excluded(
+        name: nearbyPlace.name,
+        types: {...nearbyPlace.types, primaryType},
+      )) {
+        continue;
+      }
+      final types = {primaryType, ...nearbyPlace.types};
+      final dining = types.any(
+        (type) =>
+            type == 'restaurant' ||
+            type.endsWith('_restaurant') ||
+            {'cafe', 'bakery', 'meal_takeaway', 'snack_bar'}.contains(type),
+      );
+      // Require a meaningful review history for automatically selected sights.
+      if (!dining &&
+          !types.any(_accommodationTypes.contains) &&
+          (nearbyPlace.rating < 4 || nearbyPlace.userRatingsTotal < 100)) {
+        continue;
+      }
+      final isHotelRestaurant =
+          (primaryType == 'restaurant' ||
+              primaryType.endsWith('_restaurant')) &&
+          extraDining.any((place) => place.placeId == nearbyPlace.placeId);
+      if (nearbyPlace.types.any(_accommodationTypes.contains) &&
+          !isHotelRestaurant) {
         continue;
       }
       // A post office or a bank is an errand, not a stop - even when Google
@@ -243,10 +319,7 @@ class DestinationPlaceService {
       // Retail is judged separately: a mall is a stop, a single shop is not.
       if (isRetailPlace(nearbyPlace.types)) {
         if (!nearbyPlace.isMajorShoppingDestination) continue;
-        shoppingCandidates.putIfAbsent(
-          nearbyPlace.placeId,
-          () => nearbyPlace,
-        );
+        shoppingCandidates.putIfAbsent(nearbyPlace.placeId, () => nearbyPlace);
         continue;
       }
 
@@ -287,14 +360,66 @@ class DestinationPlaceService {
     // what the plan is priced in.
     final currency = Money.normalize(priceContext.currencyCode);
     final detectedCurrency = calibrationService.detectCurrency(pricingSample);
+    final rates = <String, double>{currency: 1};
+    final nativeCurrencies = pricingSample
+        .map((place) => place.priceRange?.currencyCode.trim().toUpperCase())
+        .whereType<String>()
+        .where((code) => code != currency)
+        .toSet();
+    if (currencyRates != null) {
+      await Future.wait(
+        nativeCurrencies.map((code) async {
+          final rate = await currencyRates!.rate(from: code, to: currency);
+          if (rate != null) rates[code] = rate.rate;
+        }),
+      );
+    }
+    NearbyPlace priced(NearbyPlace place) {
+      final range = place.priceRange;
+      final factor = rates[range?.currencyCode.trim().toUpperCase()];
+      if (range == null ||
+          factor == null ||
+          factor == 1 && range.currencyCode == currency) {
+        return place;
+      }
+      return NearbyPlace(
+        placeId: place.placeId,
+        name: place.name,
+        address: place.address,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        rating: place.rating,
+        userRatingsTotal: place.userRatingsTotal,
+        types: place.types,
+        primaryType: place.primaryType,
+        priceLevel: place.priceLevel,
+        photoUrls: place.photoUrls,
+        priceRange: GooglePriceRange(
+          low: range.low * factor,
+          high: range.high * factor,
+          currencyCode: currency,
+        ),
+      );
+    }
 
-    final allocation = budgetService.allocate(
+    final allocation = budgetService.allocateForTrip(
       totalBudget: priceContext.totalBudget < 0 ? 0 : priceContext.totalBudget,
-      spendingStyle: priceContext.spendingStyle,
     );
 
     final calibration = calibrationService.calibrate(
-      places: pricingSample,
+      // Hotel room bands must not inflate the restaurant price baseline.
+      places: uniquePlaces.values
+          .where(
+            (place) => place.types.any(
+              (type) =>
+                  type == 'restaurant' ||
+                  type.endsWith('_restaurant') ||
+                  type == 'cafe' ||
+                  type == 'bakery',
+            ),
+          )
+          .map(priced)
+          .toList(),
       currencyCode: currency,
       // The budget is typed in this same currency, so it is always a valid
       // fallback anchor.
@@ -309,19 +434,30 @@ class DestinationPlaceService {
       detectedCurrencyCode: detectedCurrency,
       places: uniquePlaces.values
           .map(
-            (place) => mapper.fromNearbyPlace(place, calibration: calibration),
+            (place) => mapper.fromNearbyPlace(
+              priced(place),
+              calibration: calibration,
+              luxuryDiningSearchMatch: results[3].any(
+                (match) => match.placeId == place.placeId,
+              ),
+              destinationHighlight:
+                  place.rating >= 4 &&
+                  place.userRatingsTotal >= 100 &&
+                  highlights.any((item) => item.placeId == place.placeId),
+            ),
           )
           .toList(),
-      hotels: hotelResults
-          .where(
-            (hotel) =>
-                hotel.placeId.isNotEmpty &&
-                hotel.name.trim().isNotEmpty &&
-                _distanceMeters(center, hotel) <= radiusMeters,
-          )
-          .map((hotel) => _hotelStay(hotel, calibration))
-          .toList()
-        ..sort((left, right) => right.rating.compareTo(left.rating)),
+      hotels:
+          hotelResults
+              .where(
+                (hotel) =>
+                    hotel.placeId.isNotEmpty &&
+                    hotel.name.trim().isNotEmpty &&
+                    _distanceMeters(center, hotel) <= radiusMeters,
+              )
+              .map((hotel) => _hotelStay(priced(hotel), calibration))
+              .toList()
+            ..sort((left, right) => right.rating.compareTo(left.rating)),
     );
   }
 
@@ -330,7 +466,8 @@ class DestinationPlaceService {
   /// single hardcoded figure.
   HotelStay _hotelStay(NearbyPlace hotel, PriceCalibration calibration) {
     final range = hotel.priceRange;
-    final hasPublishedRate = range != null &&
+    final hasPublishedRate =
+        range != null &&
         range.currencyCode.trim().toUpperCase() == calibration.currencyCode &&
         range.high > 0;
 
@@ -348,7 +485,8 @@ class DestinationPlaceService {
       nightlyRate: nightlyRate,
       nights: 1,
       rooms: 1,
-      nightlyRateEstimated: !hasPublishedRate,
+      // Places price bands are not a dated room quote, even when published.
+      nightlyRateEstimated: true,
     );
   }
 
@@ -362,6 +500,7 @@ class DestinationPlaceService {
   int _hotelPriceLevel(NearbyPlace hotel) {
     final level = hotel.priceLevel;
     if (level != null && level > 0) return level;
+    if (hotel.types.any({'hostel', 'guest_house', 'motel'}.contains)) return 1;
     return 2;
   }
 

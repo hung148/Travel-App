@@ -10,9 +10,12 @@ import '../../models/travel_place.dart';
 import '../../models/trip/trip.dart';
 import '../budget_service.dart';
 import 'daily_composition_service.dart';
+import 'dining_selection_service.dart';
 import 'place_scoring_service.dart';
 import 'planner_validation_service.dart';
 import 'route_optimizer.dart';
+import 'place_quality_service.dart';
+import 'daily_time_schedule_service.dart';
 
 class TravelPlannerService {
   final PlaceScoringService placeScoringService;
@@ -35,6 +38,7 @@ class TravelPlannerService {
     required List<TravelPlace> candidatePlaces,
     required double centerLatitude,
     required double centerLongitude,
+    double? accommodationCost,
   }) {
     final profile = PlannerProfile.fromActivityLevel(preference.activityLevel);
     // The budget is the WHOLE party's money, but every place cost is per
@@ -43,10 +47,16 @@ class TravelPlannerService {
     final currency = Money.normalize(trip.currencyCode);
     final eligibleCandidatePlaces = candidatePlaces
         .where((place) => !_isInvalidRetailCandidate(place))
+        .where(
+          (place) => !const PlaceQualityService().excluded(
+            name: place.name,
+            types: {place.category, ...place.tags},
+          ),
+        )
         .toList();
-    var budgetAllocation = budgetService.allocate(
+    var budgetAllocation = budgetService.allocateForTrip(
       totalBudget: trip.budget,
-      spendingStyle: preference.spendingStyle,
+      accommodationCost: accommodationCost,
     );
 
     if (trip.days <= 0) {
@@ -114,18 +124,21 @@ class TravelPlannerService {
       );
     }
 
-    final cheapestDiningPlan = _buildDiningPlan(
-      diningCandidates: [...diningCandidates]
-        ..sort(
-          (left, right) =>
-              left.place.estimatedCost.compareTo(right.place.estimatedCost),
-        ),
-      dayCount: trip.days,
-      mealsPerDay: profile.minDiningPlacesPerDay,
-    );
-    // maximumDailyCost is per person; the food allocation is the party's.
+    final cheapestDailyMeals =
+        ([...diningCandidates]..sort(
+              (left, right) =>
+                  left.place.estimatedCost.compareTo(right.place.estimatedCost),
+            ))
+            .take(profile.minDiningPlacesPerDay);
+    // Repeats are allowed across days, so the real floor is the cheapest
+    // complete day, not a trip's worth of increasingly expensive unique meals.
     final minimumFoodAllocation =
-        cheapestDiningPlan.maximumDailyCost * trip.days * travelers;
+        cheapestDailyMeals.fold<double>(
+          0,
+          (sum, meal) => sum + meal.place.estimatedCost,
+        ) *
+        trip.days *
+        travelers;
     final adjustedAllocation = budgetService.ensureMinimumFoodBudget(
       allocation: budgetAllocation,
       minimumFoodBudget: minimumFoodAllocation,
@@ -164,19 +177,30 @@ class TravelPlannerService {
       centerLongitude: centerLongitude,
       profile: profile,
     );
-    final preferredDiningPlan = _buildDiningPlan(
-      diningCandidates: rankedPlaces
-          .where((item) => item.place.isDining)
-          .toList(),
-      dayCount: trip.days,
-      mealsPerDay: profile.minDiningPlacesPerDay,
-    );
-    final diningPlan =
-        preferredDiningPlan.maximumDailyCost <=
-            budgetAllocation.dailyFoodBudgetPerPerson(trip.days, travelers) +
-                0.001
-        ? preferredDiningPlan
-        : cheapestDiningPlan;
+    late final List<List<ScoredPlace>> diningDays;
+    try {
+      diningDays = const DiningSelectionService().select(
+        candidates: rankedPlaces.where((item) => item.place.isDining).toList(),
+        days: trip.days,
+        mealsPerDay: profile.minDiningPlacesPerDay,
+        dailyBudget: budgetAllocation.dailyFoodBudgetPerPerson(
+          trip.days,
+          travelers,
+        ),
+        spendingStyle: preference.spendingStyle,
+      );
+    } on StateError catch (error) {
+      return _failedResult(
+        days: days,
+        rankedPlaces: rankedPlaces,
+        profile: profile,
+        budgetAllocation: budgetAllocation,
+        travelers: travelers,
+        currencyCode: currency,
+        code: PlannerValidationCode.insufficientBudgetForRequiredMeals,
+        message: error.message,
+      );
+    }
 
     final dailyActivityBudget = budgetAllocation.dailyActivitiesBudgetPerPerson(
       trip.days,
@@ -188,17 +212,42 @@ class TravelPlannerService {
       days: days,
       profile: profile,
       dailyActivityBudget: dailyActivityBudget,
-      diningPlan: diningPlan,
+      diningPlan: diningDays,
       preference: preference,
     );
 
+    final beforeRouting = days
+        .map((day) => List<ScoredPlace>.of(day.places))
+        .toList();
     _optimizeDailyRoutes(
       days: days,
       centerLatitude: centerLatitude,
       centerLongitude: centerLongitude,
     );
 
+    // Route optimization must not move the reserved dinner into breakfast.
+    for (var index = 0; index < days.length; index++) {
+      final activities = days[index].places
+          .where((item) => !item.place.isDining)
+          .toList();
+      days[index].places
+        ..clear()
+        ..addAll(diningDays[index])
+        ..addAll(activities);
+    }
     _composeDays(days: days, profile: profile);
+    for (var index = 0; index < days.length; index++) {
+      if (!_fitsMealWindows(days[index].places)) {
+        days[index].places
+          ..clear()
+          ..addAll(
+            compositionService.arrange(
+              routeOrderedPlaces: beforeRouting[index],
+              profile: profile,
+            ),
+          );
+      }
+    }
 
     final validation = _requireWarningFree(
       validationService.validate(
@@ -286,65 +335,6 @@ class TravelPlannerService {
     );
   }
 
-  _DiningPlan _buildDiningPlan({
-    required List<ScoredPlace> diningCandidates,
-    required int dayCount,
-    required int mealsPerDay,
-  }) {
-    if (diningCandidates.length < dayCount * mealsPerDay) {
-      final unused = List<ScoredPlace>.of(diningCandidates);
-      final byDay = List.generate(dayCount, (_) => <ScoredPlace>[]);
-      var maximumDailyCost = 0.0;
-      for (final day in byDay) {
-        // Try new places first, then revisit the highest-ranked options.
-        // Keep each day's meals distinct so visit-specific edits stay unambiguous.
-        while (day.length < mealsPerDay) {
-          final next = unused.isNotEmpty
-              ? unused.removeAt(0)
-              : diningCandidates.firstWhere(
-                  (candidate) =>
-                      !day.any((meal) => meal.place.id == candidate.place.id),
-                );
-          day.add(next);
-        }
-        final cost = day.fold<double>(
-          0,
-          (total, meal) => total + meal.place.estimatedCost,
-        );
-        if (cost > maximumDailyCost) maximumDailyCost = cost;
-      }
-      return _DiningPlan(byDay: byDay, maximumDailyCost: maximumDailyCost);
-    }
-    final selected = diningCandidates.take(dayCount * mealsPerDay).toList()
-      ..sort(
-        (left, right) =>
-            right.place.estimatedCost.compareTo(left.place.estimatedCost),
-      );
-    final byDay = List.generate(dayCount, (_) => <ScoredPlace>[]);
-    final dayCosts = List<double>.filled(dayCount, 0);
-
-    for (final meal in selected) {
-      var targetDay = 0;
-      for (var dayIndex = 1; dayIndex < dayCount; dayIndex++) {
-        final targetIsFull = byDay[targetDay].length >= mealsPerDay;
-        final candidateHasSpace = byDay[dayIndex].length < mealsPerDay;
-        if (candidateHasSpace &&
-            (targetIsFull || dayCosts[dayIndex] < dayCosts[targetDay])) {
-          targetDay = dayIndex;
-        }
-      }
-      byDay[targetDay].add(meal);
-      dayCosts[targetDay] += meal.place.estimatedCost;
-    }
-
-    return _DiningPlan(
-      byDay: byDay,
-      maximumDailyCost: dayCosts.reduce(
-        (left, right) => left > right ? left : right,
-      ),
-    );
-  }
-
   void _composeDays({
     required List<PlannerDay> days,
     required PlannerProfile profile,
@@ -383,11 +373,11 @@ class TravelPlannerService {
     required List<PlannerDay> days,
     required PlannerProfile profile,
     required double dailyActivityBudget,
-    required _DiningPlan diningPlan,
+    required List<List<ScoredPlace>> diningPlan,
     required Preference preference,
   }) {
     for (var dayIndex = 0; dayIndex < days.length; dayIndex++) {
-      days[dayIndex].places.addAll(diningPlan.byDay[dayIndex]);
+      days[dayIndex].places.addAll(diningPlan[dayIndex]);
     }
 
     // What the traveler actually asked for goes in first. Scoring alone is not
@@ -403,9 +393,34 @@ class TravelPlannerService {
         place: item.place,
         preference: preference,
       );
-      (wanted ? activityPlaces : otherPlaces).add(item);
+      (wanted || item.place.destinationHighlight ? activityPlaces : otherPlaces)
+          .add(item);
     }
     activityPlaces.addAll(otherPlaces);
+    activityPlaces.sort((a, b) {
+      final highlight = (b.place.destinationHighlight ? 1 : 0).compareTo(
+        a.place.destinationHighlight ? 1 : 0,
+      );
+      if (highlight != 0) return highlight;
+      final preferenceMatch =
+          (placeScoringService.matchesPreference(
+                    place: b.place,
+                    preference: preference,
+                  )
+                  ? 1
+                  : 0)
+              .compareTo(
+                placeScoringService.matchesPreference(
+                      place: a.place,
+                      preference: preference,
+                    )
+                    ? 1
+                    : 0,
+              );
+      return preferenceMatch != 0
+          ? preferenceMatch
+          : b.totalScore.compareTo(a.totalScore);
+    });
 
     final dayCosts = List<double>.filled(days.length, 0);
     final dayMinutes = List<int>.filled(days.length, 0);
@@ -423,8 +438,13 @@ class TravelPlannerService {
         final projectedMinutes =
             dayMinutes[dayIndex] + scoredPlace.place.estimatedVisitMinutes;
         final withinTime = projectedMinutes <= profile.targetMinutesPerDay;
+        final proposed = compositionService.arrange(
+          routeOrderedPlaces: [...day.places, scoredPlace],
+          profile: profile,
+        );
+        final withinMealTimes = _fitsMealWindows(proposed);
 
-        if (hasSpace && withinBudget && withinTime) {
+        if (hasSpace && withinBudget && withinTime && withinMealTimes) {
           day.places.add(scoredPlace);
           dayCosts[dayIndex] = projectedCost;
           dayMinutes[dayIndex] = projectedMinutes;
@@ -437,11 +457,13 @@ class TravelPlannerService {
       }
     }
   }
-}
 
-class _DiningPlan {
-  final List<List<ScoredPlace>> byDay;
-  final double maximumDailyCost;
-
-  const _DiningPlan({required this.byDay, required this.maximumDailyCost});
+  bool _fitsMealWindows(List<ScoredPlace> places) =>
+      const DailyTimeScheduleService()
+          .schedule(places)
+          .every(
+            (stop) =>
+                (stop.roleLabel != 'Lunch' || stop.startMinutes <= 14 * 60) &&
+                (stop.roleLabel != 'Dinner' || stop.startMinutes <= 20 * 60),
+          );
 }

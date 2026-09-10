@@ -97,6 +97,7 @@ const nonItineraryTypes = <String>{
   'electrician',
   'plumber',
   'funeral_home',
+  'cemetery',
   'telecommunications_service_provider',
   'corporate_office',
   'school',

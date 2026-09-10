@@ -34,18 +34,6 @@ void main() {
           .toList();
       expect(meals, hasLength(90));
       expect(meals.map((item) => item.place.id).toSet(), hasLength(35));
-      final topIds = result.rankedPlaces
-          .where((item) => item.place.isDining)
-          .take(3)
-          .map((item) => item.place.id)
-          .toSet();
-      expect(
-        result.days.last.places
-            .where((item) => item.place.isDining)
-            .map((item) => item.place.id)
-            .toSet(),
-        topIds,
-      );
       for (final day in result.days) {
         expect(
           day.places

@@ -382,7 +382,6 @@ class _TravelStyleCard extends StatelessWidget {
     final chips = <String>[
       ...preference.styleTags,
       preference.activityLevel,
-      preference.spendingStyle,
     ].where((label) => label.trim().isNotEmpty).toList();
     return _Panel(
       title: 'Your travel style',

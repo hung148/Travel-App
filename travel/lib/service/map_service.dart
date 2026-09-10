@@ -28,6 +28,38 @@ import '../models/place_role.dart';
 class MapService {
   final String apiKey;
   final http.Client _client;
+  final _placeCache =
+      <String, ({DateTime expires, List<NearbyPlace> places})>{};
+  final _placeRequests = <String, Future<List<NearbyPlace>>>{};
+
+  Future<List<NearbyPlace>> _cachedPlaces(
+    String key,
+    Future<List<NearbyPlace>> Function() fetch,
+  ) async {
+    final cached = _placeCache[key];
+    if (cached != null && cached.expires.isAfter(DateTime.now())) {
+      return List.of(cached.places);
+    }
+    final active = _placeRequests[key];
+    if (active != null) return List.of(await active);
+    final request = (() async {
+      try {
+        final places = await fetch().timeout(const Duration(seconds: 15));
+        if (_placeCache.length >= 64) {
+          _placeCache.remove(_placeCache.keys.first);
+        }
+        _placeCache[key] = (
+          expires: DateTime.now().add(const Duration(minutes: 5)),
+          places: List.of(places),
+        );
+        return places;
+      } finally {
+        _placeRequests.remove(key);
+      }
+    })();
+    _placeRequests[key] = request;
+    return List.of(await request);
+  }
 
   /// Constructor
   ///
@@ -258,6 +290,21 @@ class MapService {
     required double longitude,
     required int radius,
     required String type,
+  }) => _cachedPlaces(
+    'nearby:$latitude:$longitude:$radius:$type',
+    () => _fetchNearbyPlaces(
+      latitude: latitude,
+      longitude: longitude,
+      radius: radius,
+      type: type,
+    ),
+  );
+
+  Future<List<NearbyPlace>> _fetchNearbyPlaces({
+    required double latitude,
+    required double longitude,
+    required int radius,
+    required String type,
   }) async {
     final uri = Uri.parse(
       'https://places.googleapis.com/v1/places:searchNearby',
@@ -315,6 +362,39 @@ class MapService {
     required int radius,
     required String query,
   }) async {
+    return (await searchPlacesInArea(
+        latitude: latitude,
+        longitude: longitude,
+        radius: radius,
+        query: query,
+      )).where((place) => place.isMajorShoppingDestination).toList()
+      ..sort(_biggestShoppingFirst);
+  }
+
+  Future<List<NearbyPlace>> searchPlacesInArea({
+    required double latitude,
+    required double longitude,
+    required int radius,
+    required String query,
+    bool upscaleDiningOnly = false,
+  }) => _cachedPlaces(
+    'text:$latitude:$longitude:$radius:$query:$upscaleDiningOnly',
+    () => _fetchPlacesInArea(
+      latitude: latitude,
+      longitude: longitude,
+      radius: radius,
+      query: query,
+      upscaleDiningOnly: upscaleDiningOnly,
+    ),
+  );
+
+  Future<List<NearbyPlace>> _fetchPlacesInArea({
+    required double latitude,
+    required double longitude,
+    required int radius,
+    required String query,
+    bool upscaleDiningOnly = false,
+  }) async {
     final response = await _client.post(
       Uri.parse('https://places.googleapis.com/v1/places:searchText'),
       headers: {
@@ -324,6 +404,15 @@ class MapService {
       },
       body: jsonEncode({
         'textQuery': query,
+        if (upscaleDiningOnly) ...{
+          'includedType': 'restaurant',
+          'strictTypeFiltering': true,
+          'minRating': 4.0,
+          'priceLevels': [
+            'PRICE_LEVEL_EXPENSIVE',
+            'PRICE_LEVEL_VERY_EXPENSIVE',
+          ],
+        },
         'maxResultCount': 20,
         'locationBias': {
           'circle': {
@@ -335,13 +424,10 @@ class MapService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to search shopping destinations.');
+      throw Exception('Failed to search places.');
     }
 
-    return _placesFromResponse(jsonDecode(response.body))
-        .where((place) => place.isMajorShoppingDestination)
-        .toList()
-      ..sort(_biggestShoppingFirst);
+    return _placesFromResponse(jsonDecode(response.body));
   }
 
   static const _placeFieldMask =
@@ -866,8 +952,7 @@ class GooglePriceRange {
   });
 
   @override
-  String toString() =>
-      'GooglePriceRange($low-$high $currencyCode)';
+  String toString() => 'GooglePriceRange($low-$high $currencyCode)';
 }
 
 class NearbyPlace {

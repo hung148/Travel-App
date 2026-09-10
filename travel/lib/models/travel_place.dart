@@ -11,10 +11,17 @@ class TravelPlace {
 
   final CostEstimate cost;
 
+  /// Search provenance, not a verified star rating or a published price.
+  final bool luxuryDiningSearchMatch;
+  final bool destinationHighlight;
+  /// Published per-person Vietnamese meal price, retained across currency conversion.
+  final double? mealPriceVnd;
+
   final double latitude;
   final double longitude;
 
   final int estimatedVisitMinutes;
+
   /// Up to [MapService.maxPhotosPerPlace] photos, most representative first.
   final List<String> photoUrls;
 
@@ -26,6 +33,9 @@ class TravelPlace {
     required this.rating,
     required this.reviewCount,
     required this.cost,
+    this.luxuryDiningSearchMatch = false,
+    this.destinationHighlight = false,
+    this.mealPriceVnd,
     required this.latitude,
     required this.longitude,
     required this.estimatedVisitMinutes,
@@ -80,6 +90,9 @@ class TravelPlace {
       'rating': rating,
       'reviewCount': reviewCount,
       'cost': cost.toMap(),
+      'luxuryDiningSearchMatch': luxuryDiningSearchMatch,
+      'destinationHighlight': destinationHighlight,
+      'mealPriceVnd': mealPriceVnd,
       'latitude': latitude,
       'longitude': longitude,
       'estimatedVisitMinutes': estimatedVisitMinutes,
@@ -99,6 +112,9 @@ class TravelPlace {
           .toList(),
       rating: (data['rating'] as num?)?.toDouble() ?? 0,
       reviewCount: (data['reviewCount'] as num?)?.toInt() ?? 0,
+      luxuryDiningSearchMatch: data['luxuryDiningSearchMatch'] == true,
+      destinationHighlight: data['destinationHighlight'] == true,
+      mealPriceVnd: (data['mealPriceVnd'] as num?)?.toDouble(),
       // Plans saved before costs carried a source stored a bare number.
       cost: costData is Map
           ? CostEstimate.fromMap(Map<String, dynamic>.from(costData))

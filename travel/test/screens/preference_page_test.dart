@@ -67,6 +67,7 @@ void main() {
   testWidgets('saving edited preferences returns to the previous page', (
     tester,
   ) async {
+    bool? saved;
     await tester.pumpWidget(
       ChangeNotifierProvider<PreferenceViewmodel>.value(
         value: viewModel,
@@ -74,15 +75,17 @@ void main() {
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => const PreferencePage(
-                      ownerId: 'user-1',
-                      returnOnSave: true,
+                onPressed: () async {
+                  saved = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute<bool>(
+                      builder: (_) => const PreferencePage(
+                        ownerId: 'user-1',
+                        returnOnSave: true,
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
                 child: const Text('Open preferences'),
               ),
             ),
@@ -97,10 +100,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Relaxed'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Budget'));
+    expect(find.text('SPENDING STYLE'), findsNothing);
     await tester.pumpAndSettle();
     when(viewModel.savePreferences(any)).thenAnswer((_) async {
       when(viewModel.savedSuccessfully).thenReturn(true);
@@ -110,6 +110,7 @@ void main() {
     tester.element(find.byType(PreferencePage)).markNeedsBuild();
     await tester.pumpAndSettle();
     verify(viewModel.savePreferences(any)).called(1);
+    expect(saved, isTrue);
     expect(find.text('Open preferences'), findsOneWidget);
     expect(find.byType(PreferencePage), findsNothing);
   });

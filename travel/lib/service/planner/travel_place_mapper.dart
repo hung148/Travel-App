@@ -25,20 +25,24 @@ class TravelPlaceMapper {
   /// destination's calibration turns that level into money in the right
   /// currency, so there is no per-currency table anywhere in this file.
   static int _fallbackPriceLevel(String category) => switch (category) {
-        'cafe' || 'bakery' || 'meal_takeaway' => 1,
-        'museum' || 'art_gallery' || 'restaurant' => 2,
-        'zoo' || 'amusement_park' || 'aquarium' => 3,
-        _ => 2,
-      };
+    'cafe' || 'bakery' || 'meal_takeaway' => 1,
+    'museum' || 'art_gallery' || 'restaurant' => 2,
+    'zoo' || 'amusement_park' || 'aquarium' => 3,
+    _ => 2,
+  };
 
   TravelPlace fromNearbyPlace(
     NearbyPlace nearbyPlace, {
     required PriceCalibration calibration,
+    bool luxuryDiningSearchMatch = false,
+    bool destinationHighlight = false,
   }) {
-    final category = nearbyPlace.types.firstWhere(
-      (type) => !_genericTypes.contains(type),
-      orElse: () => 'attraction',
-    );
+    final category = nearbyPlace.primaryType.isNotEmpty
+        ? nearbyPlace.primaryType
+        : nearbyPlace.types.firstWhere(
+            (type) => !_genericTypes.contains(type),
+            orElse: () => 'attraction',
+          );
 
     return TravelPlace(
       id: nearbyPlace.placeId,
@@ -47,6 +51,8 @@ class TravelPlaceMapper {
       tags: nearbyPlace.types.toSet().toList(),
       rating: nearbyPlace.rating,
       reviewCount: nearbyPlace.userRatingsTotal,
+      luxuryDiningSearchMatch: luxuryDiningSearchMatch,
+      destinationHighlight: destinationHighlight,
       cost: _costEstimate(
         priceRange: nearbyPlace.priceRange,
         priceLevel: nearbyPlace.priceLevel,
