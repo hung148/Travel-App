@@ -11,9 +11,10 @@ void main() {
         await db.collection(collection).doc(uid).set({'ownerId': uid});
       }
       await db.collection('feedbacks').doc(uid).set({'userId': uid});
-      // Legacy itinerary without ownerId must still be deleted via its trip.
-      await db.collection('itineraries').doc(uid).set({'tripId': uid});
+      // Migration stamps ownerId before ownership-only rules are deployed.
+      await db.collection('itineraries').doc(uid).set({'tripId': uid, 'ownerId': uid});
     }
+    await db.collection('itineraries').doc('orphan').set({'tripId': 'missing', 'ownerId': 'target'});
     await AccountDeletionService(firestore: db).deleteDataForUser('target');
     for (final collection in ['users', 'trips', 'preferences', 'publicDestinationReviews', 'destinationTips', 'feedbacks', 'itineraries']) {
       final snapshot = await db.collection(collection).get();
@@ -26,7 +27,7 @@ void main() {
     final db = FakeFirebaseFirestore();
     await db.collection('trips').doc('trip').set({'ownerId': 'user'});
     for (var i = 0; i < 405; i++) {
-      await db.collection('itineraries').doc('day-$i').set({'tripId': 'trip'});
+      await db.collection('itineraries').doc('day-$i').set({'tripId': 'trip', 'ownerId': 'user'});
     }
     await AccountDeletionService(firestore: db).deleteDataForUser('user');
     expect((await db.collection('itineraries').get()).docs, isEmpty);

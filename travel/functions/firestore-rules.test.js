@@ -1,9 +1,9 @@
 import test from 'node:test';
 import fs from 'node:fs/promises';
 import {initializeTestEnvironment, assertFails, assertSucceeds} from '@firebase/rules-unit-testing';
-import {doc, setDoc, getDoc, deleteDoc, updateDoc, collection, query, where, getDocs, writeBatch} from 'firebase/firestore';
+import {doc, setDoc, getDoc, deleteDoc, updateDoc, collection, query, where, orderBy, getDocs, writeBatch} from 'firebase/firestore';
 
-test('Firestore ownership, verification, legacy deletion and batch access', {skip: !process.env.FIRESTORE_EMULATOR_HOST}, async () => {
+test('Firestore owner-filtered reads, verification and independent batch deletion', {skip: !process.env.FIRESTORE_EMULATOR_HOST}, async () => {
   const env = await initializeTestEnvironment({projectId: 'demo-nghientravel', firestore: {rules: await fs.readFile(new URL('../firestore.rules', import.meta.url), 'utf8')}});
   try {
     await env.withSecurityRulesDisabled(async context => {
@@ -24,10 +24,18 @@ test('Firestore ownership, verification, legacy deletion and batch access', {ski
     await assertFails(setDoc(doc(unverified, 'preferences/test'), {ownerId: 'owner'}));
     await assertFails(updateDoc(doc(verified, 'itineraries/t_day_1'), {tripId: 'other'}));
     await assertSucceeds(getDocs(query(collection(verified, 'itineraries'), where('ownerId', '==', 'owner'))));
+    await assertSucceeds(getDocs(query(collection(verified, 'itineraries'),
+      where('ownerId', '==', 'owner'), where('tripId', '==', 't'), orderBy('dayNumber'))));
+    await assertFails(getDocs(query(collection(verified, 'itineraries'), where('tripId', '==', 't'))));
+    await assertFails(getDoc(doc(other, 'itineraries/t_day_1')));
+    await assertFails(deleteDoc(doc(other, 'itineraries/t_day_1')));
+    await assertFails(getDoc(doc(unverified, 'itineraries/t_day_1')));
+    await assertFails(getDoc(doc(verified, 'itineraries/legacy')));
+    await assertFails(deleteDoc(doc(verified, 'itineraries/legacy')));
+    // Reads/deletes no longer depend on the parent trip's continued existence.
+    await assertSucceeds(deleteDoc(doc(verified, 'trips/t')));
     const batch = writeBatch(verified);
     for (let day = 1; day <= 30; day++) batch.delete(doc(verified, `itineraries/t_day_${day}`));
     await assertSucceeds(batch.commit());
-    await assertSucceeds(deleteDoc(doc(verified, 'itineraries/legacy')));
-    await assertSucceeds(deleteDoc(doc(verified, 'trips/t')));
   } finally { await env.cleanup(); }
 });

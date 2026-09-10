@@ -6,11 +6,8 @@ import 'package:flutter/foundation.dart';
 ///
 /// ORDER IS NOT ARBITRARY. Two constraints shape it:
 ///
-/// 1. Itineraries must go before their trips. The delete rule for an
-///    itinerary is `ownsTrip(resource.data.tripId)`, which reads the trip
-///    document to check the owner. Delete the trip first and that read finds
-///    nothing, so every one of its itineraries becomes undeletable - orphaned
-///    private data that no client can ever reach again.
+/// 1. Delete itineraries by ownerId, including records whose parent trip is
+///    already missing. Parent trips are removed afterwards.
 ///
 /// 2. All of this must finish BEFORE the auth account is deleted. Once the
 ///    account is gone the user is signed out, `request.auth` is null, and the
@@ -55,21 +52,9 @@ class AccountDeletionService {
         .where('ownerId', isEqualTo: uid)
         .get();
 
-    // One trip at a time, and one batch per trip on purpose. Every itinerary
-    // delete makes the rules read its trip, and a batched write may perform
-    // at most 20 such document lookups. Lookups of the SAME document count
-    // once, so a batch confined to a single trip needs exactly one - while a
-    // batch spanning 21+ trips would fail outright.
-    debugPrint('[delete]   trips: ${trips.docs.length} found');
-    for (final trip in trips.docs) {
-      debugPrint('[delete]   itineraries for trip ${trip.id}: query');
-      final itineraries = await _firestore
-          .collection('itineraries')
-          .where('tripId', isEqualTo: trip.id)
-          .get();
-      debugPrint('[delete]   itineraries: ${itineraries.docs.length} to remove');
-      await _deleteRefs(itineraries.docs.map((doc) => doc.reference).toList());
-    }
+    final itineraries = await _firestore.collection('itineraries')
+        .where('ownerId', isEqualTo: uid).get();
+    await _deleteRefs(itineraries.docs.map((doc) => doc.reference).toList());
 
     // Now the trips themselves; nothing depends on them any more.
     debugPrint('[delete]   trips: removing');

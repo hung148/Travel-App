@@ -193,15 +193,13 @@ service cloud.firestore {
     }
 
     match /itineraries/{id} {
-      allow read, delete: if owns(resource.data)
-        || ownsTrip(resource.data.get('tripId', ''));
+      allow read, delete: if owns(resource.data);
 
       allow create: if owns(request.resource.data)
         && ownsTrip(request.resource.data.tripId)
         && validItinerary(request.resource.data, id);
 
-      allow update: if (owns(resource.data)
-                        || ownsTrip(resource.data.get('tripId', '')))
+      allow update: if owns(resource.data)
         && owns(request.resource.data)
         && request.resource.data.tripId == resource.data.tripId
         && ownsTrip(request.resource.data.tripId)
