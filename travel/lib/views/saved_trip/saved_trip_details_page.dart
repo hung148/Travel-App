@@ -820,6 +820,7 @@ class _StopTile extends StatelessWidget {
         PlacePhoto(
           placeName: travelPlace.name,
           photoUrls: travelPlace.photoUrls,
+          placeId: travelPlace.id,
           width: 78,
           height: 78,
           borderRadius: 8,

@@ -1,3 +1,4 @@
+import 'widgets/osm_credit.dart';
 import 'views/existing_plan/existing_plan_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -202,6 +203,10 @@ class MyApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
+        builder: (context, child) => Column(children: [
+          Expanded(child: child ?? const SizedBox.shrink()),
+          const Material(child: SafeArea(top: false, child: Center(child: OsmCredit()))),
+        ]),
         debugShowCheckedModeBanner: false,
         title: 'NghienTravel',
         theme: AppTheme.light,

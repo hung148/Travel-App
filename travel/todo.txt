@@ -1,82 +1,106 @@
-NGHIENTRAVEL — verified status, 2026-09-10
+NGHIENTRAVEL — handoff status, 2026-09-11
 
-COMPLETED
-[x] Merge team changes from origin/main through 3d495d9.
-    Local branch: codex/merge-team-save-final-plan; merge commit: 5e88088.
-    Includes budget-driven dining/hotels, discovery, preferences and layouts.
-[x] Existing-plan entry, custom items, booking details and confirmation status.
-[x] Reviewed pasted-text import; uncertain details remain flagged or unknown.
-[x] Today view, destination time zones and external directions for located items.
-[x] Preserve confirmed bookings against AI changes.
-[x] Verification-token refresh and verified-email Firestore access controls.
-[x] Account deletion ordering and community-data cleanup.
-[x] Analyzer, 196 Flutter tests and web build passed for the committed merge.
-[x] Backend emulator run: 43 tests passed. Latest non-emulator run: 42 passed,
-    one emulator-only test skipped.
-[x] Firebase CLI credentials restored for successful deployments.
-[x] Firestore rules and indexes deployed to development and production.
-[x] Cloud Functions Node 22; interpretTripRequest, importItinerary and
-    vetShoppingPlaces deployed to both projects.
-[x] AI endpoints require verified authentication and share per-account quotas:
-    10 calls/minute and 100/day; payload size limits are enforced.
-[x] Production OPENAI_API_KEY version 1 enabled; verified metadata only.
-[x] Production project and visible app name: NghienTravel.
-[x] MainActivity package path corrected.
-[x] Three named disposable development accounts and associated data deleted.
-    Follow-up inspection found zero remaining named disposable accounts.
-[x] Phone sign-in confirmed disabled in both projects.
-[x] Production database exists in nam5 (North America). No migration performed.
-[x] Owner backfill audits found zero itinerary documents in either project.
-    No backfill writes were necessary. Legacy compatibility rules remain.
+CURRENT BRANCH
+codex/merge-team-save-final-plan. OSM migration changes are uncommitted.
+Development: travel-plan-5f810. Production: travel-app-production-5e372.
 
-IN PROGRESS / MUST VERIFY
-[x] Latest Flutter fixes validated: analyzer clean, 198 tests passed, web built.
-    Commits: 420bfd3 editor choices, f5e20a1 AI booking time changes,
-    a5b0fb2 deletion-dialog provider access.
-[x] Production artifact cleanup policy configured: delete images after 7 days.
-[x] Owner live Chrome test: Groq import, manual correction, save/reopen, Today,
-    directions and map marker, AI confirmed protection and unconfirmed time edit.
-[x] Chrome account deletion returned to sign-in; owner checked Authentication,
-    users, all three remaining trip ownerIds and both preference ownerIds.
-    No itinerary, feedback or community collections were listed in that test DB.
-[x] Production Groq deployed: all three functions successfully updated.
-    Import and interpret endpoints verified with production URLs and HTTP 200.
-    Imported three items, saved/reopened, changed hotel time and verified persistence.
-    Shopping vetting is deployed; separate live acceptance remains open.
-    Backend: 52 tests passed, one emulator-only skip; lint passed.
-[x] Groq provider and login focus changes committed in 862795b.
-    Owner verified both login fields editable; latest full suite: 199 passed;
-    web build passed. Production GROQ_API_KEY version 1 stored by owner.
-[ ] Live verification of production shopping-place vetting.
-[ ] Finish owner-filtered itinerary query/rule migration, including indexes and
-    emulator verification, before removing the legacy ownership fallback.
-[ ] Maps key: API restrictions confirmed for Places, Geocoding and Routes;
-    application restrictions or a server proxy remain to be configured.
-[ ] Monitor shared Groq Free organization quotas across dev and production.
-    Separate keys do not create separate free-tier capacity. Existing cloud
-    per-account limits remain 10/minute and 100/day; provider limits also apply.
-    No automatic paid-provider fallback. Firebase/Maps costs remain separate.
-[ ] App Check: plan provider registration and monitoring before enforcement.
-    Requires platform-specific setup; enforcement is not currently enabled.
-[ ] Real travelers: paste → review → edit → save → close → reopen → Today.
-    Owner agreed to arrange testers. See TRAVELER_TEST.md for steps and feedback.
-[ ] Verify older generated trips restore and remain editable in live app.
+COMPLETED / VERIFIED
+[x] Earlier ownership, account-deletion, login and Groq work committed through f79fb1c.
+[x] Owner-filtered itinerary reads/indexes and ownership rules deployed to both projects.
+[x] OSM discovery, stable source IDs, missing-rating/price handling and attribution implemented.
+[x] Photon automatic destination suggestions; owner confirmed Da Nang search works.
+[x] Development searchOsmPlaces deployed; ORS and Mapillary secrets configured by owner.
+[x] openrouteservice routing works in development, confirmed by owner.
+[x] Route cache nested-array failure fixed; API-key whitespace handling and secret bindings fixed.
+[x] Live photo displayed, confirmed by screenshot. Commons-first / Mapillary fallback implemented.
+[x] Automatic photo loading, no circular border, gallery up to five credited photos implemented locally.
+[x] Google fallback remains OFF; stored Google photo URLs blocked in normal OSM flows.
 
-OWNER DECISIONS
-- Name settled: NghienTravel.
-- First release: iOS. Teammate Mac/Xcode/device testing availability pending.
-  Keep shared Maps key application restrictions unchanged until compatible
-  request handling and iOS testing are ready.
-- Domain deferred until the app becomes popular.
-- Keep the existing production database intact. Moving to Singapore would be
-  separate migration work requiring a concrete plan and owner decision.
+NEXT — BEFORE MERGING / PRODUCTION
+[ ] BLOCKER — Photos remain broken in live development after the latest changes: most
+    stops show no-photo icons; others show retry arrows. Owner clicked retry repeatedly
+    with no image. Earlier single-photo success does NOT verify the automatic gallery.
+    Capture one failed photo request's status/response and safe server diagnostic; distinguish
+    no coverage from quota/provider/configuration errors. Check shared daily quota exhaustion,
+    duplicate requests for repeated places, client hints, and Commons/Mapillary responses.
+    Fix the confirmed cause; verify thumbnails/gallery on the owner's actual trip before
+    claiming this resolved. Avoid repeated blind retries and speculative deployments.
+[ ] HIGH — Planner generates days with 0 minutes of activities against a 7-hour target,
+    cafe-only breakfast/lunch choices and repeated dinner venues across days. Screenshots
+    include Highlands Coffee, CafeKhanh Ly and repeated Nha Hang Chay & Ca Phe Thup An.
+    Inspect OSM category coverage/result truncation, meal suitability, activity filtering and
+    cross-day diversity. Show an honest insufficient-coverage state rather than a complete
+    itinerary when the activity target cannot be met; add a representative regression fixture.
+[ ] Deploy latest gallery backend, restart Flutter and verify automatic thumbnails, next/previous,
+    per-image credits, missing photos and retries on a small trip. Latest gallery not live-confirmed.
+[ ] Test save/reopen of new OSM trips, older Google trips (use a fixture if none exist), confirmed
+    bookings and Today; verify normal flows issue no Google Places/photo requests.
+[ ] Teammate iOS device/Xcode test: login, search, routing, photos, external links, save/reopen.
+[ ] Production rollout is NOT ready: choose permitted Overpass/Photon/tile hosting and budgets;
+    configure production environment and secrets, then smoke-test before enabling for travelers.
+[ ] Inventory all Google call paths and verify daily quotas in both projects. Keep fallback OFF
+    until its secret binding, Google display/storage terms and bounded opt-in behavior are reviewed.
+[ ] Real traveler testing using TRAVELER_TEST.md; production shopping vetting only if still used.
 
-LATER — AFTER TRAVELER VALIDATION
-[ ] PDF and booking-screenshot imports.
-[ ] Explicitly downloaded offline trip details and visible sync status.
-[ ] Sharing with travel companions.
-[ ] Activity and transportation reminders.
+NEW FOLLOW-UP TASKS FROM THIS WORK
+[ ] Photo performance: visible-only scheduling (current queue covers mounted widgets), request
+    coalescing across instances, cancellation, and per-feature quotas; test multi-day photo load
+    against shared 100/day user budget and Overpass busy lease before scaling.
+[ ] Add widget tests for auto-loading gallery, retry, five-photo navigation, credits and narrow layouts.
+[ ] Improve Commons coverage using vetted Wikidata/category links and bilingual names; retain
+    identity/location and license checks. Test Mapillary coverage/diversity, avoid repeated frames.
+[ ] Cache maintenance/TTL for osmPlaceCache, osmLookupCache, osmPhotoCache and placeUsage;
+    bound remaining static client place cache and prevent cache failures hiding valid photo results.
+[ ] Separate optional secret bindings/configuration cleanly by project: ORS and Mapillary are now
+    explicitly bound, so deploying this function to another project requires both secrets there.
+[ ] Make provider diagnostics safe and actionable (stage/status only, no keys, tokens or raw bodies).
+[ ] Verify limits and deployment manifest with integration/emulator tests; recent tests mostly use mocks.
+[ ] Review attribution placement and map-tile terms; global ORS credit should match actual usage.
+[ ] Record cost/usage after small smoke test. Groq quotas shared across dev/prod; budgets are not
+    universal hard spending caps. Owner reported Places quotas lowered to 10; independently verify.
+[ ] App Check registration and monitoring before enforcement.
 
-DEFERRED
-- Agent marketplace, agent dashboard and direct booking integrations.
-- Further AI planner expansion unless traveler feedback calls for it.
+LATER / DEFERRED
+[ ] PDF and booking screenshot import; offline trip downloads/sync status; companion sharing;
+    activity/transport reminders, only after traveler feedback.
+- First release iOS; domain deferred. No database-region migration or hosting purchase authorized.
+- Agent marketplace/dashboard and direct booking integrations deferred.
+
+DEPLOY / HANDOFF
+See OSM_ROLLOUT.md. Never commit secrets or functions/.env.* files.
+Push this as a development feature branch, not as a production-ready release.
+
+PRE-PUSH VERIFICATION (2026-09-11)
+[x] Full Flutter suite: 204 passed.
+[x] flutter analyze: no issues.
+[x] Backend suite: 71 passed, one emulator-only skip.
+[x] git diff --check passed; common literal-secret pattern scan found no matches.
+[x] Development .env file is ignored. Current changes have not been committed/pushed.
+[ ] Latest web build not rerun during this pre-push check; previous build predates gallery.
+
+PHOTO PERFORMANCE FOLLOW-UP (before push)
+[x] Two concurrent client lookups replace the single blocking queue; regression tested.
+[x] Known place name/coordinates avoid an extra Overpass request; validated hints cannot
+    supply trusted Commons file/license claims and have isolated cache keys.
+[x] Mapillary nearby search widened to approximately 150–170 metres; still labelled street view.
+[x] Empty photo results retryable; server negative cache reduced to 30 seconds; cache write
+    failure no longer hides successful photos. Old negative-cache version bypassed.
+[ ] Deploy and smoke-test latest photo performance patch; actual coverage is not guaranteed.
+    Tests: 8 targeted backend, 4 targeted Flutter passed after the earlier full-suite run.
+
+PHOTO QUERY AUDIT
+[x] Mapillary already uses graph.mapillary.com v4 and longitude-first bounding boxes.
+[x] Commons candidate lookup now uses generator=geosearch, file namespace 6, radius 500m,
+    with imageinfo and coordinates in the same call. Strict venue/credit checks retained.
+[x] Added safe provider HTTP-status logging; no credentials or raw response bodies logged.
+[x] Eight photo tests pass. Live empty results remain unresolved until measured on actual stops.
+[ ] Add verified OSM-linked Wikidata P18 resolution; do not guess entity identity from names alone.
+[ ] Measure returned candidate count vs rejected candidates and HTTP failures on an actual failing stop.
+
+QUOTA FIX
+[x] Owner confirmed HTTP 429 Daily place lookup limit reached. Split per-user quota into
+    destination suggestions, routing, photos and discovery (100/day each, UTC reset).
+    New versioned counters isolate the exhausted legacy shared counter. Shared upstream
+    budgets unchanged. Six OSM tests pass including photo exhaustion/search isolation.
+[ ] Deploy quota fix; confirm suggestions recover. Provider/shared photo limits can still
+    prevent photos independently. This confirms one failure cause, not all empty-photo causes.

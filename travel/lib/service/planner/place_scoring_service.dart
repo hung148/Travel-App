@@ -57,12 +57,13 @@ class PlaceScoringService {
     );
 
     final weights = profile.scoringWeights.weightedFor(spending);
-    final total =
-        rating * weights.rating +
-        reviews * weights.reviews +
+    final hasReviews = !place.id.startsWith('osm:');
+    final availableWeight = hasReviews ? 1.0 : weights.preference + weights.budget + weights.distance;
+    final total = (
+        (hasReviews ? rating * weights.rating + reviews * weights.reviews : 0) +
         preferenceMatch * weights.preference +
         budget * weights.budget +
-        distance * weights.distance;
+        distance * weights.distance) / (availableWeight > 0 ? availableWeight : 1);
 
     return ScoredPlace(
       place: place,

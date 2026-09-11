@@ -651,6 +651,11 @@ class PlanRefinementService {
         .map((item) => item.place.id)
         .toSet();
     final preference = replacementPreference?.toLowerCase().trim();
+    if ((replacementCriterion == 'higher_rated' || replacementCriterion == 'more_popular') &&
+        plan.rankedPlaces.every((candidate) => candidate.place.id.startsWith('osm:'))) {
+      return PlanRefinementResult(plan: plan, changed: false,
+        message: 'Ratings and review counts are unavailable for these OpenStreetMap places. Try a closer place or a different category.');
+    }
     final candidates = plan.rankedPlaces.where((candidate) {
       if (scheduledIds.contains(candidate.place.id)) return false;
       if (candidate.place.isDining != match.place.place.isDining) return false;

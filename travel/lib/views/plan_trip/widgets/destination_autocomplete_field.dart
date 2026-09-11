@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../config/app_config.dart';
+import '../../../service/osm_map_service.dart';
+import '../../../widgets/osm_credit.dart';
 import '../../../service/map_service.dart';
 
 class DestinationAutocompleteField extends StatefulWidget {
@@ -43,12 +44,10 @@ class _DestinationAutocompleteFieldState
   List<PlaceSuggestion> _suggestions = const [];
   bool _loading = false;
   int _requestNumber = 0;
+  String? _searchMessage;
+  late final MapService _defaultService = OsmMapService();
 
-  MapService? get _mapService =>
-      widget.mapService ??
-      (AppConfig.hasGoogleMapsApiKey
-          ? MapService(apiKey: AppConfig.googleMapsApiKey)
-          : null);
+  MapService? get _mapService => widget.mapService ?? _defaultService;
 
   @override
   void dispose() {
@@ -63,6 +62,13 @@ class _DestinationAutocompleteFieldState
     widget.onSuggestionSelected?.call(null);
     widget.onChanged();
     _debounce?.cancel();
+    _search(value);
+  }
+
+  void _search(String value) {
+    _debounce?.cancel();
+    _focusNode.requestFocus();
+    final currentRequest = ++_requestNumber;
     final query = value.trim();
     if (query.length < 2 || _mapService == null) {
       _requestNumber++;
@@ -75,7 +81,6 @@ class _DestinationAutocompleteFieldState
     }
 
     _debounce = Timer(const Duration(milliseconds: 350), () async {
-      final currentRequest = ++_requestNumber;
       if (mounted) setState(() => _loading = true);
       try {
         // Trip segments need a broad planning area, not an individual hotel,
@@ -88,6 +93,9 @@ class _DestinationAutocompleteFieldState
         setState(() {
           _suggestions = results;
           _loading = false;
+          _searchMessage = results.isEmpty
+              ? 'No city found. Try the full local or English name, or choose an area on the map.'
+              : null;
         });
         if (_focusNode.hasFocus && _suggestions.isNotEmpty) {
           _menuController.open();
@@ -99,6 +107,7 @@ class _DestinationAutocompleteFieldState
         setState(() {
           _loading = false;
           _suggestions = const [];
+          _searchMessage = 'Search is unavailable. Try again shortly.';
         });
         if (_menuController.isOpen) _menuController.close();
       }
@@ -117,6 +126,32 @@ class _DestinationAutocompleteFieldState
     _focusNode.unfocus();
     widget.onSuggestionSelected?.call(suggestion);
     widget.onChanged();
+  }
+
+  Future<void> _searchGoogle() async {
+    final service = _mapService;
+    if (service is! OsmMapService || _loading) return;
+    final number = ++_requestNumber;
+    setState(() => _loading = true);
+    try {
+      final results = await service.searchGoogle(widget.controller.text);
+      if (!mounted || number != _requestNumber) return;
+      setState(() {
+        _suggestions = results;
+        _loading = false;
+        _searchMessage = results.isEmpty
+            ? 'No result. Choose an area on the map.'
+            : null;
+      });
+      if (results.isNotEmpty) _menuController.open();
+    } catch (_) {
+      if (!mounted || number != _requestNumber) return;
+      setState(() {
+        _loading = false;
+        _searchMessage =
+            'Google search is unavailable or its daily limit was reached.';
+      });
+    }
   }
 
   @override
@@ -142,14 +177,14 @@ class _DestinationAutocompleteFieldState
           if (_suggestions.isNotEmpty)
             SizedBox(
               width: constraints.maxWidth,
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.fromLTRB(16, 6, 16, 10),
                 child: Align(
                   alignment: Alignment.centerRight,
-                  child: Text(
-                    'Powered by Google',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
+                  child:
+                      _suggestions.any((p) => p.placeId.startsWith('google:'))
+                      ? const Text('Google Maps')
+                      : const OsmCredit(),
                 ),
               ),
             ),
@@ -159,10 +194,13 @@ class _DestinationAutocompleteFieldState
           focusNode: _focusNode,
           autofocus: widget.autofocus,
           onChanged: _queryChanged,
+          onFieldSubmitted: _search,
           validator: widget.validator,
           decoration: InputDecoration(
             labelText: 'Destination',
             hintText: 'Tokyo, Japan',
+            helperText: _searchMessage ?? 'Start typing a city name.',
+            helperMaxLines: 3,
             prefixIcon: const Icon(Icons.location_on_outlined),
             suffixIcon: _loading
                 ? const Padding(
@@ -173,7 +211,18 @@ class _DestinationAutocompleteFieldState
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   )
-                : null,
+                : _searchMessage != null &&
+                      _mapService is OsmMapService &&
+                      (_mapService as OsmMapService).googleFallbackAvailable
+                ? TextButton(
+                    onPressed: _searchGoogle,
+                    child: const Text('Search Google'),
+                  )
+                : IconButton(
+                    tooltip: 'Search destination',
+                    onPressed: () => _search(widget.controller.text),
+                    icon: const Icon(Icons.search),
+                  ),
           ),
         ),
       ),

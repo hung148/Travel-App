@@ -1,4 +1,11 @@
+import {photoPlaceHint} from './photo-place-hint.js';
+import {readLookupCache, writeLookupCache} from './lookup-cache.js';
 import { groqJson } from './groq-provider.js';
+import { createOsmProvider, consumePlaceQuota, osmRequest } from './osm-places.js';
+import { googlePlaceFallback } from './google-place-fallback.js';
+import { findPlacePhotos } from './place-photos.js';
+import { photonSearch, osmRoute } from './osm-search-routing.js';
+import { createHash } from 'node:crypto';
 import { authenticatedUser, consumeAiQuota } from './endpoint-security.js';
 import { validateImportText, validateImportResult, importSchema, importInstruction } from './itinerary-import.js';
 import { getApps, initializeApp } from "firebase-admin/app";
@@ -25,6 +32,74 @@ import {
 if (getApps().length === 0) initializeApp();
 
 const groqApiKey = defineSecret("GROQ_API_KEY");
+
+const osmHostConfigured = Boolean(process.env.OSM_OVERPASS_URL) ||
+  (process.env.GCLOUD_PROJECT !== 'travel-app-production-5e372' && process.env.GOOGLE_CLOUD_PROJECT !== 'travel-app-production-5e372');
+const osmLookup = createOsmProvider({endpoint: process.env.OSM_OVERPASS_URL || undefined});
+const googleFallbackEnabled = process.env.GOOGLE_PLACES_FALLBACK_ENABLED === 'true';
+// defineSecret registers a deployment parameter even when no function binds it.
+// Register optional provider credentials only when the feature is enabled.
+const googlePlacesKey = googleFallbackEnabled ? defineSecret('GOOGLE_PLACES_API_KEY') : null;
+const mapillaryEnabled = process.env.MAPILLARY_ENABLED === 'true';
+const mapillaryToken = defineSecret('MAPILLARY_ACCESS_TOKEN');
+const routingEnabled = process.env.OSM_ROUTING_ENABLED === 'true';
+// Secret bindings must be present during function discovery, before dotenv loading.
+const routingKey = defineSecret('OPENROUTESERVICE_API_KEY');
+export const searchOsmPlaces = onRequest(
+  {cors: true, timeoutSeconds: 60, maxInstances: 2,
+    secrets: [...(googleFallbackEnabled ? [googlePlacesKey] : []), mapillaryToken, routingKey]},
+  async (request, response) => {
+    try {
+      if (request.method !== 'POST') return response.status(405).json({error: 'POST required'});
+      if (JSON.stringify(request.body ?? {}).length > 4000) return response.status(400).json({error:'Request too large'});
+      const uid = await authenticatedUser(request, getAuth());
+      if (request.body?.action === 'suggest' || request.body?.action === 'route') {
+        const route = request.body.action === 'route';
+        await consumePlaceQuota(getFirestore(), uid, route ? 'route' : 'suggest');
+        const key = createHash('sha256').update(JSON.stringify(request.body)).digest('hex');
+        const ref = getFirestore().collection('osmLookupCache').doc(key);
+        const cached = (await ref.get()).data();
+        const cachedResult = readLookupCache(cached);
+        if (cachedResult) return response.json(cachedResult);
+        await consumePlaceQuota(getFirestore(), route ? 'shared-route-budget' : 'shared-suggestion-budget');
+        const result = route ? {route: await osmRoute(request.body, {apiKey:routingEnabled ? routingKey.value() : ''})}
+          : {places:await photonSearch(request.body.query, {endpoint:process.env.OSM_PHOTON_URL || undefined}), googleFallbackAvailable:googleFallbackEnabled};
+        await writeLookupCache(ref, result);
+        return response.json(result);
+      }
+      if (!osmHostConfigured) return response.status(503).json({error: 'The production place provider is not configured yet.'});
+      if (request.body?.action === 'photo') {
+        const body = {action: 'details', id: request.body.id};
+        osmRequest(body);
+        await consumePlaceQuota(getFirestore(), uid, 'photo');
+        const ref = getFirestore().collection('osmPhotoCache').doc('v4-' + createHash('sha256').update(JSON.stringify({id:body.id,place:request.body.place ?? null})).digest('hex'));
+        const cached = (await ref.get()).data();
+        if (cached?.expires > Date.now()) return response.json({photos: cached.photos, photo: cached.photos?.[0] ?? null});
+        await consumePlaceQuota(getFirestore(), 'shared-photo-provider-budget');
+        const hint = photoPlaceHint(request.body.place, body.id);
+        const places = hint ? [hint] : await osmLookup(getFirestore(), body);
+        const photos = places.length ? await findPlacePhotos(places[0],
+          {mapillaryToken: mapillaryEnabled ? mapillaryToken.value() : ''}) : [];
+        try { await ref.set({photos, expires: Date.now() + (photos.length ? 3600000 : 30000)}); }
+        catch { console.warn('Photo cache write failed; returning images.'); }
+        return response.json({photos, photo: photos[0] ?? null});
+      }
+      if (request.body?.action === 'google') {
+        const places = await googlePlaceFallback(getFirestore(), uid, request.body,
+          {enabled: googleFallbackEnabled, apiKey: googleFallbackEnabled ? googlePlacesKey.value() : ''});
+        return response.json({places, attribution: 'Google Maps'});
+      }
+      osmRequest(request.body);
+      await consumePlaceQuota(getFirestore(), uid, 'discovery');
+      const places = await osmLookup(getFirestore(), request.body);
+      return response.json({places, googleFallbackAvailable: googleFallbackEnabled,
+        attribution: '© OpenStreetMap contributors'});
+    } catch (error) {
+      console.error('OSM lookup failed', error.status ?? 503);
+      return response.status(error.status ?? 503).json({error: error.status ? error.message : 'Place search is unavailable. Try again later.'});
+    }
+  },
+);
 
 export const interpretTripRequest = onRequest(
   { cors: true, secrets: [groqApiKey], timeoutSeconds: 60, maxInstances: 2 },

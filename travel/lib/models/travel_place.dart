@@ -2,6 +2,7 @@ import 'cost_estimate.dart';
 import 'booking_details.dart';
 
 class TravelPlace {
+  String get dataSource => id.startsWith('osm:') ? 'openstreetmap' : isCustom ? 'custom' : 'google';
   final String id;
   final String name;
   final String category;
@@ -91,6 +92,7 @@ class TravelPlace {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'dataSource': dataSource,
       'name': name,
       'category': category,
       'tags': tags,

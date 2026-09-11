@@ -54,6 +54,7 @@ class TravelPlaceMapper {
       luxuryDiningSearchMatch: luxuryDiningSearchMatch,
       destinationHighlight: destinationHighlight,
       cost: _costEstimate(
+        allowInferredFree: !nearbyPlace.placeId.startsWith('osm:'),
         priceRange: nearbyPlace.priceRange,
         priceLevel: nearbyPlace.priceLevel,
         category: category,
@@ -67,6 +68,7 @@ class TravelPlaceMapper {
   }
 
   CostEstimate _costEstimate({
+    bool allowInferredFree = true,
     required GooglePriceRange? priceRange,
     required int? priceLevel,
     required String category,
@@ -108,7 +110,7 @@ class TravelPlaceMapper {
     }
 
     // 4. A park is genuinely free.
-    if (_freeCategories.contains(category)) {
+    if (allowInferredFree && _freeCategories.contains(category)) {
       return CostEstimate.free(currencyCode: currency);
     }
 

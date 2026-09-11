@@ -540,6 +540,7 @@ class _DayReview extends StatelessWidget {
                         category: item.place.category,
                         minutes: item.place.estimatedVisitMinutes,
                         photoUrls: item.place.photoUrls,
+                        placeId: item.place.id,
                       );
                     },
                   ),
@@ -608,6 +609,7 @@ class _StopRow extends StatelessWidget {
   final String category;
   final int minutes;
   final List<String> photoUrls;
+  final String? placeId;
 
   const _StopRow({
     required this.number,
@@ -617,6 +619,7 @@ class _StopRow extends StatelessWidget {
     required this.category,
     required this.minutes,
     required this.photoUrls,
+    this.placeId,
   });
 
   @override
@@ -648,6 +651,7 @@ class _StopRow extends StatelessWidget {
         PlacePhoto(
           placeName: title,
           photoUrls: photoUrls,
+          placeId: placeId,
           width: 68,
           height: 68,
           borderRadius: 14,

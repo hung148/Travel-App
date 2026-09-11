@@ -32,7 +32,7 @@ import '../../service/ai/shopping_vetting_service.dart';
 import '../../service/ai/trip_ai_service.dart';
 import '../../service/ai/stop_name_matcher.dart';
 import '../../service/planner/destination_place_service.dart';
-import '../../service/planner/mock_places.dart';
+import '../../service/osm_map_service.dart';
 import '../../service/planner/daily_time_schedule_service.dart';
 import '../../service/planner/place_scoring_service.dart';
 import '../../service/planner/plan_refinement_service.dart';
@@ -76,9 +76,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
   );
   final PlanRefinementService _refinementService =
       const PlanRefinementService();
-  late final MapService? _mapService = AppConfig.hasGoogleMapsApiKey
-      ? MapService(apiKey: AppConfig.googleMapsApiKey)
-      : null;
+  late final MapService _osmService = OsmMapService();
+  MapService? get _mapService => _osmService;
 
   /// Reads a candidate's NAME, which no type or review rule can. Without a
   /// configured endpoint it approves everything, so the app still works with
@@ -88,14 +87,13 @@ class _PlanTripPageState extends State<PlanTripPage> {
     idTokenProvider: () async =>
         await FirebaseAuth.instance.currentUser?.getIdToken(),
   );
-  late final DestinationPlaceService? _destinationPlaceService =
-      _mapService != null
-      ? DestinationPlaceService(
-          mapService: _mapService,
+  late final DestinationPlaceService _osmDestinationService = DestinationPlaceService(
+          mapService: _osmService,
           shoppingVetter: _shoppingVetter,
           currencyRates: _currencyRates,
-        )
-      : null;
+        );
+
+  DestinationPlaceService? get _destinationPlaceService => _osmDestinationService;
 
   DateTimeRange? dates;
   int travelers = 2;
@@ -111,9 +109,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
   bool isGenerating = false;
   bool isLoadingPreference = true;
   String selectedPlan = 'Balanced';
-  String placeDataSource = AppConfig.hasGoogleMapsApiKey
-      ? 'Google Places ready'
-      : 'Mock Tokyo data • Google API key not configured';
+  String placeDataSource = 'OpenStreetMap ready';
   Preference? savedPreference;
   String? preferenceError;
 
@@ -512,9 +508,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
           ? double.tryParse(budgetController.text.trim()) ?? 0
           : 0,
       selectedPlan: selectedPlan,
-      placeDataSource: AppConfig.hasGoogleMapsApiKey
-          ? 'Google Places ready'
-          : 'Mock Tokyo data • Google API key not configured',
+      placeDataSource: 'OpenStreetMap ready',
     );
     setState(() {
       _destinations.add(destination);
@@ -617,10 +611,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
     String? originPlaceId,
     String? destinationPlaceId,
   }) async {
-    if (!AppConfig.hasGoogleMapsApiKey) return null;
     try {
       return await _travelTimeEstimator.estimate(
-        mapService: MapService(apiKey: AppConfig.googleMapsApiKey),
+        mapService: OsmMapService(),
         origin: origin,
         destination: destination,
         originPlaceId: originPlaceId,
@@ -842,7 +835,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     if (service == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('A Google Maps API key is required to search an area.'),
+          content: Text('Place search is unavailable.'),
         ),
       );
       return;
@@ -897,7 +890,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       _selectedDestination.savedDays = const [];
       plannerResult = null;
       planGenerated = false;
-      placeDataSource = 'Google Places ready';
+      placeDataSource = 'OpenStreetMap ready';
     });
   }
 
@@ -999,13 +992,11 @@ class _PlanTripPageState extends State<PlanTripPage> {
     setState(() => isGenerating = true);
 
     try {
-      var candidatePlaces = _destinationPlaceService == null
-          ? List<TravelPlace>.of(mockTokyoPlaces)
-          : <TravelPlace>[];
+      var candidatePlaces = <TravelPlace>[];
       var centerLatitude = 35.6762;
       var centerLongitude = 139.6503;
       var nextPlaceDataSource =
-          'Mock Tokyo data • Google API key not configured';
+          'OpenStreetMap';
       var nextHotels = <HotelStay>[];
       String? nextCalibrationNote;
 
@@ -1044,23 +1035,23 @@ class _PlanTripPageState extends State<PlanTripPage> {
             centerLatitude = destinationCandidates.center.latitude;
             centerLongitude = destinationCandidates.center.longitude;
             nextPlaceDataSource = selectedArea == null
-                ? 'Live Google Places • ${candidatePlaces.length} candidates'
+                ? 'Live OpenStreetMap • ${candidatePlaces.length} candidates'
                 : 'Custom ${selectedArea.radiusLabel} map area • '
                       '${candidatePlaces.length} candidates';
             nextHotels = destinationCandidates.hotels;
             nextCalibrationNote = destinationCandidates.calibration.explanation;
           } else {
             nextPlaceDataSource =
-                'Google Places returned no candidates in this area';
+                'OpenStreetMap returned no candidates in this area';
           }
         } catch (error) {
           candidatePlaces = const [];
-          nextPlaceDataSource = 'Google Places unavailable';
+          nextPlaceDataSource = 'OpenStreetMap unavailable';
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  'Could not load Google Places for this area. $error',
+                  'Could not load OpenStreetMap for this area. $error',
                 ),
               ),
             );
@@ -1225,9 +1216,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
         defaultNights:
             dates?.end.difference(dates!.start).inDays.clamp(1, 365) ?? 1,
         defaultRooms: ((travelers + 1) ~/ 2).clamp(1, travelers),
-        mapService: AppConfig.hasGoogleMapsApiKey
-            ? MapService(apiKey: AppConfig.googleMapsApiKey)
-            : null,
+        mapService: _mapService,
         currencyCode: currencyCode,
       ),
     );
@@ -1846,7 +1835,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       replacementPreference: command.replacementPreference,
       routeDurationHours:
           (originLat, originLng, destinationLat, destinationLng) async {
-            final estimate = await _mapService.getDrivingRouteEstimate(
+            final estimate = await _osmService.getDrivingRouteEstimate(
               origin: Coordinates(latitude: originLat, longitude: originLng),
               destination: Coordinates(
                 latitude: destinationLat,
@@ -3043,7 +3032,7 @@ class _HotelStayCard extends StatelessWidget {
                   ? selected?.id
                   : null,
               decoration: const InputDecoration(
-                labelText: 'Recommended Google hotels',
+                labelText: 'Nearby hotels · estimated rates',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.recommend_outlined),
               ),
@@ -3052,7 +3041,7 @@ class _HotelStayCard extends StatelessWidget {
                     (hotel) => DropdownMenuItem(
                       value: hotel.id,
                       child: Text(
-                        '${hotel.name} • ${hotel.rating.toStringAsFixed(1)}★',
+                        hotel.rating > 0 ? '${hotel.name} • ${hotel.rating.toStringAsFixed(1)}★' : '${hotel.name} • Not rated',
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -3146,11 +3135,15 @@ class _HotelEditorDialogState extends State<_HotelEditorDialog> {
   late final roomsController = TextEditingController(
     text: '${widget.initial?.rooms ?? widget.defaultRooms}',
   );
+  late final latitudeController = TextEditingController(text: widget.initial?.latitude.toString() ?? '');
+  late final longitudeController = TextEditingController(text: widget.initial?.longitude.toString() ?? '');
   bool saving = false;
   String? error;
 
   @override
   void dispose() {
+    latitudeController.dispose();
+    longitudeController.dispose();
     nameController.dispose();
     addressController.dispose();
     rateController.dispose();
@@ -3166,22 +3159,11 @@ class _HotelEditorDialogState extends State<_HotelEditorDialog> {
       error = null;
     });
     try {
-      var latitude = widget.initial?.latitude ?? 0;
-      var longitude = widget.initial?.longitude ?? 0;
-      final addressChanged =
-          addressController.text.trim() != widget.initial?.address.trim();
-      if (addressChanged || (latitude == 0 && longitude == 0)) {
-        final service = widget.mapService;
-        if (service == null) {
-          throw Exception(
-            'A Google Maps key is required to locate this hotel.',
-          );
-        }
-        final coordinates = await service.geocodeAddress(
-          addressController.text.trim(),
-        );
-        latitude = coordinates.latitude;
-        longitude = coordinates.longitude;
+      final latitude = double.tryParse(latitudeController.text.trim());
+      final longitude = double.tryParse(longitudeController.text.trim());
+      if (latitude == null || longitude == null || !latitude.isFinite || !longitude.isFinite ||
+          latitude.abs() > 90 || longitude.abs() > 180) {
+        throw Exception('Enter valid latitude and longitude for the hotel.');
       }
       if (!mounted) return;
       Navigator.pop(
@@ -3238,6 +3220,13 @@ class _HotelEditorDialogState extends State<_HotelEditorDialog> {
                       ? 'Enter an address so routes can start here.'
                       : null,
                 ),
+                TextFormField(controller: latitudeController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                  decoration: const InputDecoration(labelText: 'Hotel latitude')),
+                TextFormField(controller: longitudeController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                  decoration: const InputDecoration(labelText: 'Hotel longitude',
+                    helperText: 'Use the exact hotel location. No paid address lookup is made.', helperMaxLines: 2)),
                 TextFormField(
                   controller: rateController,
                   keyboardType: const TextInputType.numberWithOptions(
@@ -3331,6 +3320,7 @@ class _DestinationMapState extends State<_DestinationMap> {
   final Map<int, List<LatLng>> _walkingRoutes = {};
   bool _isLoadingRoutes = false;
   bool _routeFallbackUsed = false;
+  String? _routeError;
   String _loadedSignature = '';
   int? _highlightedDay;
   bool _hotelHighlighted = false;
@@ -3472,7 +3462,7 @@ class _DestinationMapState extends State<_DestinationMap> {
     final signature = _resultSignature();
     if (!mounted) return;
     final days = widget.result?.days ?? const <PlannerDay>[];
-    if (!AppConfig.hasGoogleMapsApiKey || days.isEmpty) {
+    if (days.isEmpty) {
       if (mounted) {
         setState(() {
           _walkingRoutes.clear();
@@ -3488,10 +3478,11 @@ class _DestinationMapState extends State<_DestinationMap> {
       _routeFallbackUsed = false;
       _walkingRoutes.clear();
     });
-    final service = MapService(apiKey: AppConfig.googleMapsApiKey);
+    final service = OsmMapService();
     final hotel = widget.result?.hotel;
     final loadedRoutes = <int, List<LatLng>>{};
     var fallbackUsed = false;
+    String? routeError;
 
     for (var offset = 0; offset < days.length; offset += 4) {
       if (!mounted || _resultSignature() != signature) return;
@@ -3527,7 +3518,8 @@ class _DestinationMapState extends State<_DestinationMap> {
                 loadedRoutes[day.dayNumber] = route
                     .map((point) => LatLng(point.latitude, point.longitude))
                     .toList();
-              } catch (_) {
+              } catch (error) {
+                routeError = error.toString().replaceFirst('Exception: ', '');
                 fallbackUsed = true;
               }
             }),
@@ -3539,7 +3531,11 @@ class _DestinationMapState extends State<_DestinationMap> {
       _routeCache.remove(oldest);
       _fallbackSignatures.remove(oldest);
     }
-    _routeCache[signature] = Map<int, List<LatLng>>.from(loadedRoutes);
+    if (!fallbackUsed) {
+      _routeCache[signature] = Map<int, List<LatLng>>.from(loadedRoutes);
+    } else {
+      _routeCache.remove(signature);
+    }
     if (fallbackUsed) {
       _fallbackSignatures.add(signature);
     } else {
@@ -3550,6 +3546,7 @@ class _DestinationMapState extends State<_DestinationMap> {
     setState(() {
       _walkingRoutes.addAll(loadedRoutes);
       _routeFallbackUsed = fallbackUsed;
+      _routeError = routeError;
       _isLoadingRoutes = false;
     });
   }
@@ -3941,13 +3938,13 @@ class _DestinationMapState extends State<_DestinationMap> {
               ),
             )
           else if (_routeFallbackUsed)
-            const Positioned(
+            Positioned(
               top: 20,
               right: 76,
               child: Card(
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  child: Text('Route API unavailable • showing stop order'),
+                  child: SizedBox(width: 260, child: Column(mainAxisSize: MainAxisSize.min, children: [Text(_routeError ?? 'Street route unavailable; showing stop order.'), TextButton(onPressed: _isLoadingRoutes ? null : _loadWalkingRoutes, child: const Text('Retry route'))])),
                 ),
               ),
             ),
@@ -5092,6 +5089,7 @@ class _GeneratedDayPreview extends StatelessWidget {
                             PlacePhoto(
                               placeName: day.places[stopIndex].place.name,
                               photoUrls: day.places[stopIndex].place.photoUrls,
+          placeId: day.places[stopIndex].place.id,
                               width: 72,
                               height: 72,
                               borderRadius: 14,
