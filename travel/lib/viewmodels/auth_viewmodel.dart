@@ -25,24 +25,47 @@ class AuthViewModel extends ChangeNotifier {
   bool isEmailVerified = false;
 
   AuthViewModel(this._authService, this._deletionService) {
-    _authSubscription = _authService.authStateChanges.listen(
-      (currentUser) {
-        user = currentUser;
-        isNewUser = currentUser != null && !currentUser.onboardingCompleted;
-        isEmailVerified = currentUser != null && _authService.isEmailVerified;
-        isLoading = false;
-        isRestoringSession = false;
-        errorMessage = null;
-        notifyListeners();
-      },
-      onError: (Object error, StackTrace stackTrace) {
-        debugPrint('Failed to restore auth state: $error\n$stackTrace');
-        isLoading = false;
-        isRestoringSession = false;
-        errorMessage = 'Unable to restore your session. Please try again.';
-        notifyListeners();
-      },
-    );
+    _authSubscription = _authService.authStateChanges
+        .asyncMap((currentUser) async {
+          // A restored session can still cache emailVerified=false after the user
+          // confirmed their address. Resolve it behind AuthGate's loading screen
+          // instead of briefly mounting VerifyEmailPage and waiting for its timer.
+          if (isRestoringSession &&
+              currentUser != null &&
+              !_authService.isEmailVerified) {
+            try {
+              await _authService.reloadUser().timeout(
+                const Duration(seconds: 10),
+              );
+            } catch (error) {
+              // Keep the existing cached status if offline or the refresh stalls.
+              // The verification page can retry once the connection recovers.
+              debugPrint(
+                'Could not refresh verification during startup: $error',
+              );
+            }
+          }
+          return currentUser;
+        })
+        .listen(
+          (currentUser) {
+            user = currentUser;
+            isNewUser = currentUser != null && !currentUser.onboardingCompleted;
+            isEmailVerified =
+                currentUser != null && _authService.isEmailVerified;
+            isLoading = false;
+            isRestoringSession = false;
+            errorMessage = null;
+            notifyListeners();
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Failed to restore auth state: $error\n$stackTrace');
+            isLoading = false;
+            isRestoringSession = false;
+            errorMessage = 'Unable to restore your session. Please try again.';
+            notifyListeners();
+          },
+        );
   }
 
   Future<bool> login(String email, String password) async {

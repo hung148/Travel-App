@@ -1,3 +1,6 @@
+import '../../service/planner/booking_guard.dart';
+import '../../widgets/manual_planner_dialog.dart';
+import '../../widgets/booking_info.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -29,7 +32,7 @@ import '../../service/ai/shopping_vetting_service.dart';
 import '../../service/ai/trip_ai_service.dart';
 import '../../service/ai/stop_name_matcher.dart';
 import '../../service/planner/destination_place_service.dart';
-import '../../service/planner/mock_places.dart';
+import '../../service/osm_map_service.dart';
 import '../../service/planner/daily_time_schedule_service.dart';
 import '../../service/planner/place_scoring_service.dart';
 import '../../service/planner/plan_refinement_service.dart';
@@ -73,9 +76,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
   );
   final PlanRefinementService _refinementService =
       const PlanRefinementService();
-  late final MapService? _mapService = AppConfig.hasGoogleMapsApiKey
-      ? MapService(apiKey: AppConfig.googleMapsApiKey)
-      : null;
+  late final MapService _osmService = OsmMapService();
+  MapService? get _mapService => _osmService;
 
   /// Reads a candidate's NAME, which no type or review rule can. Without a
   /// configured endpoint it approves everything, so the app still works with
@@ -85,14 +87,13 @@ class _PlanTripPageState extends State<PlanTripPage> {
     idTokenProvider: () async =>
         await FirebaseAuth.instance.currentUser?.getIdToken(),
   );
-  late final DestinationPlaceService? _destinationPlaceService =
-      _mapService != null
-      ? DestinationPlaceService(
-          mapService: _mapService,
+  late final DestinationPlaceService _osmDestinationService = DestinationPlaceService(
+          mapService: _osmService,
           shoppingVetter: _shoppingVetter,
           currencyRates: _currencyRates,
-        )
-      : null;
+        );
+
+  DestinationPlaceService? get _destinationPlaceService => _osmDestinationService;
 
   DateTimeRange? dates;
   int travelers = 2;
@@ -108,9 +109,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
   bool isGenerating = false;
   bool isLoadingPreference = true;
   String selectedPlan = 'Balanced';
-  String placeDataSource = AppConfig.hasGoogleMapsApiKey
-      ? 'Google Places ready'
-      : 'Mock Tokyo data • Google API key not configured';
+  String placeDataSource = 'OpenStreetMap ready';
   Preference? savedPreference;
   String? preferenceError;
 
@@ -237,17 +236,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     );
   }
 
-  /// Everything the planner needs before it can produce anything.
-  ///
-  /// The generate button appears only once this holds, rather than sitting
-  /// there greyed out - a disabled control tells you that you cannot proceed
-  /// but not why, and the fields it depends on are right above it.
-  /// What the form is still waiting for, named the way the fields are
-  /// labelled, in the order they appear.
-  ///
-  /// The generate button is hidden rather than disabled, so without this the
-  /// form gives no reason - you fill everything in and nothing appears, with
-  /// no way to tell which check is unhappy.
+  /// Missing requirements shared by the setup hint and generate action.
   List<String> get _missingTripSetup {
     final budget = double.tryParse(budgetController.text.trim());
 
@@ -256,7 +245,8 @@ class _PlanTripPageState extends State<PlanTripPage> {
       if (_destinations.isEmpty || destinationController.text.trim().isEmpty)
         'a destination',
       if (dates == null) 'travel dates',
-      if (budget == null || budget <= 0) 'a total budget',
+      if (budget == null || !budget.isFinite || budget <= 0)
+        'a valid total budget greater than zero',
       if (!Money.isValidCode(currencyCode)) 'a currency',
       if (travelers < 1) 'at least one traveler',
     ];
@@ -297,6 +287,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     return DestinationDraft(
       id: segment.id,
       destination: segment.destination,
+      timeZone: segment.timeZone,
       placeId: segment.destinationPlaceId,
       dates: DateTimeRange(start: segment.startDate, end: segment.endDate),
       budget: segment.allocatedBudget,
@@ -342,6 +333,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     final segment = TripSegment(
       id: draft.id,
       destination: draft.destination,
+      timeZone: draft.timeZone,
       destinationPlaceId: draft.placeId,
       startDate: range.start,
       endDate: range.end,
@@ -516,9 +508,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
           ? double.tryParse(budgetController.text.trim()) ?? 0
           : 0,
       selectedPlan: selectedPlan,
-      placeDataSource: AppConfig.hasGoogleMapsApiKey
-          ? 'Google Places ready'
-          : 'Mock Tokyo data • Google API key not configured',
+      placeDataSource: 'OpenStreetMap ready',
     );
     setState(() {
       _destinations.add(destination);
@@ -621,10 +611,9 @@ class _PlanTripPageState extends State<PlanTripPage> {
     String? originPlaceId,
     String? destinationPlaceId,
   }) async {
-    if (!AppConfig.hasGoogleMapsApiKey) return null;
     try {
       return await _travelTimeEstimator.estimate(
-        mapService: MapService(apiKey: AppConfig.googleMapsApiKey),
+        mapService: OsmMapService(),
         origin: origin,
         destination: destination,
         originPlaceId: originPlaceId,
@@ -846,7 +835,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     if (service == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('A Google Maps API key is required to search an area.'),
+          content: Text('Place search is unavailable.'),
         ),
       );
       return;
@@ -901,7 +890,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       _selectedDestination.savedDays = const [];
       plannerResult = null;
       planGenerated = false;
-      placeDataSource = 'Google Places ready';
+      placeDataSource = 'OpenStreetMap ready';
     });
   }
 
@@ -983,50 +972,31 @@ class _PlanTripPageState extends State<PlanTripPage> {
 
   Future<void> _generatePlan() async {
     if (isGenerating) return;
-    if (dates == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Choose travel dates before generating a plan.'),
-        ),
-      );
+    final missing = _missingTripSetup;
+    if (missing.isNotEmpty) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Add ${_readableList(missing)} to generate a schedule.'),
+          ),
+        );
       return;
     }
-    final preference = _preferenceForSelectedPlan();
+
+    final preference = _preferenceForSelectedPlan()!;
     final sourcePreference = savedPreference;
-    if (preference == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Load or save your travel preferences first.'),
-        ),
-      );
-      return;
-    }
-
     final destination = destinationController.text.trim();
-    final budget = double.tryParse(budgetController.text.trim());
-
-    if (destination.isEmpty ||
-        budget == null ||
-        !budget.isFinite ||
-        budget <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Enter a destination and valid budget first.'),
-        ),
-      );
-      return;
-    }
+    final budget = double.parse(budgetController.text.trim());
 
     setState(() => isGenerating = true);
 
     try {
-      var candidatePlaces = _destinationPlaceService == null
-          ? List<TravelPlace>.of(mockTokyoPlaces)
-          : <TravelPlace>[];
+      var candidatePlaces = <TravelPlace>[];
       var centerLatitude = 35.6762;
       var centerLongitude = 139.6503;
       var nextPlaceDataSource =
-          'Mock Tokyo data • Google API key not configured';
+          'OpenStreetMap';
       var nextHotels = <HotelStay>[];
       String? nextCalibrationNote;
 
@@ -1065,23 +1035,23 @@ class _PlanTripPageState extends State<PlanTripPage> {
             centerLatitude = destinationCandidates.center.latitude;
             centerLongitude = destinationCandidates.center.longitude;
             nextPlaceDataSource = selectedArea == null
-                ? 'Live Google Places • ${candidatePlaces.length} candidates'
+                ? 'Live OpenStreetMap • ${candidatePlaces.length} candidates'
                 : 'Custom ${selectedArea.radiusLabel} map area • '
                       '${candidatePlaces.length} candidates';
             nextHotels = destinationCandidates.hotels;
             nextCalibrationNote = destinationCandidates.calibration.explanation;
           } else {
             nextPlaceDataSource =
-                'Google Places returned no candidates in this area';
+                'OpenStreetMap returned no candidates in this area';
           }
         } catch (error) {
           candidatePlaces = const [];
-          nextPlaceDataSource = 'Google Places unavailable';
+          nextPlaceDataSource = 'OpenStreetMap unavailable';
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  'Could not load Google Places for this area. $error',
+                  'Could not load OpenStreetMap for this area. $error',
                 ),
               ),
             );
@@ -1246,9 +1216,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
         defaultNights:
             dates?.end.difference(dates!.start).inDays.clamp(1, 365) ?? 1,
         defaultRooms: ((travelers + 1) ~/ 2).clamp(1, travelers),
-        mapService: AppConfig.hasGoogleMapsApiKey
-            ? MapService(apiKey: AppConfig.googleMapsApiKey)
-            : null,
+        mapService: _mapService,
         currencyCode: currencyCode,
       ),
     );
@@ -1264,11 +1232,11 @@ class _PlanTripPageState extends State<PlanTripPage> {
   }
 
   Future<void> _openManualPlanner() async {
-    if (plannerResult == null || plannerResult!.rankedPlaces.isEmpty) {
+    if (plannerResult == null) {
       await _generatePlan();
     }
     final current = plannerResult;
-    if (!mounted || current == null || current.rankedPlaces.isEmpty) {
+    if (!mounted || current == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1282,7 +1250,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
     final editedDays = await showDialog<List<PlannerDay>>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => _ManualPlannerDialog(result: current),
+      builder: (context) => ManualPlannerDialog(initialDays: current.days, rankedPlaces: current.rankedPlaces, startDate: _selectedDestination.dates?.start, timeZone: _selectedDestination.timeZone),
     );
     if (!mounted || editedDays == null) return;
 
@@ -1694,6 +1662,19 @@ class _PlanTripPageState extends State<PlanTripPage> {
   ).join('\n');
 
   Future<String> _applyAiCommand(TripAiCommand command) async {
+    final before = plannerResult;
+    if (before == null) return 'Create a plan first.';
+    final snapshot = _captureAiUndoSnapshot();
+    final message = await _applyAiCommandUnchecked(command);
+    final after = plannerResult;
+    if (after == null || !preservesConfirmedBookings(before.days, after.days)) {
+      _restoreAiSnapshot(snapshot);
+      return 'That change would alter a confirmed booking. Your plan was kept unchanged. Edit that booking manually if you intend to change it.';
+    }
+    return message;
+  }
+
+  Future<String> _applyAiCommandUnchecked(TripAiCommand command) async {
     final current = plannerResult;
     if (current == null) {
       return 'Generate a plan first, then ask me to refine it.';
@@ -1854,7 +1835,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
       replacementPreference: command.replacementPreference,
       routeDurationHours:
           (originLat, originLng, destinationLat, destinationLng) async {
-            final estimate = await _mapService.getDrivingRouteEstimate(
+            final estimate = await _osmService.getDrivingRouteEstimate(
               origin: Coordinates(latitude: originLat, longitude: originLng),
               destination: Coordinates(
                 latitude: destinationLat,
@@ -2725,7 +2706,6 @@ class _TripSetupCard extends StatelessWidget {
             children: [
               layout,
               const SizedBox(height: 20),
-              if (missingSetup.isEmpty)
                 Align(
                   alignment: wide ? Alignment.centerRight : Alignment.center,
                   child: SizedBox(
@@ -2754,8 +2734,9 @@ class _TripSetupCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                )
-              else
+                ),
+              if (missingSetup.isNotEmpty) ...[
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Icon(
@@ -2779,6 +2760,7 @@ class _TripSetupCard extends StatelessWidget {
                     ),
                   ],
                 ),
+              ],
             ],
           );
         },
@@ -3050,7 +3032,7 @@ class _HotelStayCard extends StatelessWidget {
                   ? selected?.id
                   : null,
               decoration: const InputDecoration(
-                labelText: 'Recommended Google hotels',
+                labelText: 'Nearby hotels · estimated rates',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.recommend_outlined),
               ),
@@ -3059,7 +3041,7 @@ class _HotelStayCard extends StatelessWidget {
                     (hotel) => DropdownMenuItem(
                       value: hotel.id,
                       child: Text(
-                        '${hotel.name} • ${hotel.rating.toStringAsFixed(1)}★',
+                        hotel.rating > 0 ? '${hotel.name} • ${hotel.rating.toStringAsFixed(1)}★' : '${hotel.name} • Not rated',
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -3153,11 +3135,15 @@ class _HotelEditorDialogState extends State<_HotelEditorDialog> {
   late final roomsController = TextEditingController(
     text: '${widget.initial?.rooms ?? widget.defaultRooms}',
   );
+  late final latitudeController = TextEditingController(text: widget.initial?.latitude.toString() ?? '');
+  late final longitudeController = TextEditingController(text: widget.initial?.longitude.toString() ?? '');
   bool saving = false;
   String? error;
 
   @override
   void dispose() {
+    latitudeController.dispose();
+    longitudeController.dispose();
     nameController.dispose();
     addressController.dispose();
     rateController.dispose();
@@ -3173,22 +3159,11 @@ class _HotelEditorDialogState extends State<_HotelEditorDialog> {
       error = null;
     });
     try {
-      var latitude = widget.initial?.latitude ?? 0;
-      var longitude = widget.initial?.longitude ?? 0;
-      final addressChanged =
-          addressController.text.trim() != widget.initial?.address.trim();
-      if (addressChanged || (latitude == 0 && longitude == 0)) {
-        final service = widget.mapService;
-        if (service == null) {
-          throw Exception(
-            'A Google Maps key is required to locate this hotel.',
-          );
-        }
-        final coordinates = await service.geocodeAddress(
-          addressController.text.trim(),
-        );
-        latitude = coordinates.latitude;
-        longitude = coordinates.longitude;
+      final latitude = double.tryParse(latitudeController.text.trim());
+      final longitude = double.tryParse(longitudeController.text.trim());
+      if (latitude == null || longitude == null || !latitude.isFinite || !longitude.isFinite ||
+          latitude.abs() > 90 || longitude.abs() > 180) {
+        throw Exception('Enter valid latitude and longitude for the hotel.');
       }
       if (!mounted) return;
       Navigator.pop(
@@ -3245,6 +3220,13 @@ class _HotelEditorDialogState extends State<_HotelEditorDialog> {
                       ? 'Enter an address so routes can start here.'
                       : null,
                 ),
+                TextFormField(controller: latitudeController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                  decoration: const InputDecoration(labelText: 'Hotel latitude')),
+                TextFormField(controller: longitudeController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                  decoration: const InputDecoration(labelText: 'Hotel longitude',
+                    helperText: 'Use the exact hotel location. No paid address lookup is made.', helperMaxLines: 2)),
                 TextFormField(
                   controller: rateController,
                   keyboardType: const TextInputType.numberWithOptions(
@@ -3338,6 +3320,7 @@ class _DestinationMapState extends State<_DestinationMap> {
   final Map<int, List<LatLng>> _walkingRoutes = {};
   bool _isLoadingRoutes = false;
   bool _routeFallbackUsed = false;
+  String? _routeError;
   String _loadedSignature = '';
   int? _highlightedDay;
   bool _hotelHighlighted = false;
@@ -3424,7 +3407,7 @@ class _DestinationMapState extends State<_DestinationMap> {
     final hotelId =
         '${result?.hotel?.id}:${result?.hotel?.latitude}:${result?.hotel?.longitude}';
     final places = (result?.days ?? const <PlannerDay>[])
-        .expand((day) => day.places)
+        .expand((day) => day.places).where((item) => item.place.hasLocation)
         .map(
           (item) =>
               '${item.place.id}:${item.place.latitude}:${item.place.longitude}',
@@ -3442,7 +3425,7 @@ class _DestinationMapState extends State<_DestinationMap> {
     return [
       if (hotel != null) LatLng(hotel.latitude, hotel.longitude),
       ...(result?.days ?? const <PlannerDay>[])
-          .expand((day) => day.places)
+          .expand((day) => day.places).where((item) => item.place.hasLocation)
           .map((item) => LatLng(item.place.latitude, item.place.longitude)),
     ];
   }
@@ -3479,7 +3462,7 @@ class _DestinationMapState extends State<_DestinationMap> {
     final signature = _resultSignature();
     if (!mounted) return;
     final days = widget.result?.days ?? const <PlannerDay>[];
-    if (!AppConfig.hasGoogleMapsApiKey || days.isEmpty) {
+    if (days.isEmpty) {
       if (mounted) {
         setState(() {
           _walkingRoutes.clear();
@@ -3495,10 +3478,11 @@ class _DestinationMapState extends State<_DestinationMap> {
       _routeFallbackUsed = false;
       _walkingRoutes.clear();
     });
-    final service = MapService(apiKey: AppConfig.googleMapsApiKey);
+    final service = OsmMapService();
     final hotel = widget.result?.hotel;
     final loadedRoutes = <int, List<LatLng>>{};
     var fallbackUsed = false;
+    String? routeError;
 
     for (var offset = 0; offset < days.length; offset += 4) {
       if (!mounted || _resultSignature() != signature) return;
@@ -3508,7 +3492,7 @@ class _DestinationMapState extends State<_DestinationMap> {
             .take(4)
             .where(
               (day) =>
-                  hotel == null ? day.places.length > 1 : day.places.isNotEmpty,
+                  hotel == null ? day.places.where((item) => item.place.hasLocation).length > 1 : day.places.any((item) => item.place.hasLocation),
             )
             .map((day) async {
               try {
@@ -3518,7 +3502,7 @@ class _DestinationMapState extends State<_DestinationMap> {
                       latitude: hotel.latitude,
                       longitude: hotel.longitude,
                     ),
-                  ...day.places.map(
+                  ...day.places.where((item) => item.place.hasLocation).map(
                     (item) => Coordinates(
                       latitude: item.place.latitude,
                       longitude: item.place.longitude,
@@ -3534,7 +3518,8 @@ class _DestinationMapState extends State<_DestinationMap> {
                 loadedRoutes[day.dayNumber] = route
                     .map((point) => LatLng(point.latitude, point.longitude))
                     .toList();
-              } catch (_) {
+              } catch (error) {
+                routeError = error.toString().replaceFirst('Exception: ', '');
                 fallbackUsed = true;
               }
             }),
@@ -3546,7 +3531,11 @@ class _DestinationMapState extends State<_DestinationMap> {
       _routeCache.remove(oldest);
       _fallbackSignatures.remove(oldest);
     }
-    _routeCache[signature] = Map<int, List<LatLng>>.from(loadedRoutes);
+    if (!fallbackUsed) {
+      _routeCache[signature] = Map<int, List<LatLng>>.from(loadedRoutes);
+    } else {
+      _routeCache.remove(signature);
+    }
     if (fallbackUsed) {
       _fallbackSignatures.add(signature);
     } else {
@@ -3557,6 +3546,7 @@ class _DestinationMapState extends State<_DestinationMap> {
     setState(() {
       _walkingRoutes.addAll(loadedRoutes);
       _routeFallbackUsed = fallbackUsed;
+      _routeError = routeError;
       _isLoadingRoutes = false;
     });
   }
@@ -3593,7 +3583,7 @@ class _DestinationMapState extends State<_DestinationMap> {
     final routeDays = days
         .where(
           (day) =>
-              hotel == null ? day.places.length > 1 : day.places.isNotEmpty,
+              hotel == null ? day.places.where((item) => item.place.hasLocation).length > 1 : day.places.any((item) => item.place.hasLocation),
         )
         .toList();
     routeDays.sort((a, b) {
@@ -3668,7 +3658,7 @@ class _DestinationMapState extends State<_DestinationMap> {
                                 <LatLng>[
                                   if (hotel != null)
                                     LatLng(hotel.latitude, hotel.longitude),
-                                  ...day.places.map(
+                                  ...day.places.where((item) => item.place.hasLocation).map(
                                     (item) => LatLng(
                                       item.place.latitude,
                                       item.place.longitude,
@@ -3712,7 +3702,7 @@ class _DestinationMapState extends State<_DestinationMap> {
                               <LatLng>[
                                 if (hotel != null)
                                   LatLng(hotel.latitude, hotel.longitude),
-                                ...highlightedRoute.places.map(
+                                ...highlightedRoute.places.where((item) => item.place.hasLocation).map(
                                   (item) => LatLng(
                                     item.place.latitude,
                                     item.place.longitude,
@@ -3738,7 +3728,7 @@ class _DestinationMapState extends State<_DestinationMap> {
                         stopIndex < day.places.length;
                         stopIndex++
                       )
-                        Marker(
+                        if (day.places[stopIndex].place.hasLocation) Marker(
                           point: LatLng(
                             day.places[stopIndex].place.latitude,
                             day.places[stopIndex].place.longitude,
@@ -3948,13 +3938,13 @@ class _DestinationMapState extends State<_DestinationMap> {
               ),
             )
           else if (_routeFallbackUsed)
-            const Positioned(
+            Positioned(
               top: 20,
               right: 76,
               child: Card(
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  child: Text('Route API unavailable • showing stop order'),
+                  child: SizedBox(width: 260, child: Column(mainAxisSize: MainAxisSize.min, children: [Text(_routeError ?? 'Street route unavailable; showing stop order.'), TextButton(onPressed: _isLoadingRoutes ? null : _loadWalkingRoutes, child: const Text('Retry route'))])),
                 ),
               ),
             ),
@@ -4132,332 +4122,6 @@ class _PlanOptions extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ManualPlannerDialog extends StatefulWidget {
-  final PlannerResult result;
-
-  const _ManualPlannerDialog({required this.result});
-
-  @override
-  State<_ManualPlannerDialog> createState() => _ManualPlannerDialogState();
-}
-
-class _ManualPlannerDialogState extends State<_ManualPlannerDialog> {
-  final searchController = TextEditingController();
-  late final List<PlannerDay> days = widget.result.days
-      .map(
-        (day) => PlannerDay(
-          dayNumber: day.dayNumber,
-          places: List<ScoredPlace>.of(day.places),
-        ),
-      )
-      .toList();
-
-  @override
-  void dispose() {
-    searchController.dispose();
-    super.dispose();
-  }
-
-  Set<String> get _usedPlaceIds =>
-      days.expand((day) => day.places).map((item) => item.place.id).toSet();
-
-  List<ScoredPlace> get _availablePlaces {
-    final query = searchController.text.trim().toLowerCase();
-    final used = _usedPlaceIds;
-    return widget.result.rankedPlaces.where((item) {
-      if (used.contains(item.place.id)) return false;
-      if (query.isEmpty) return true;
-      return item.place.name.toLowerCase().contains(query) ||
-          item.place.category.toLowerCase().contains(query);
-    }).toList();
-  }
-
-  void _addPlace(ScoredPlace place, int dayIndex) {
-    setState(() => days[dayIndex].places.add(place));
-  }
-
-  void _removePlace(int dayIndex, int stopIndex) {
-    setState(() => days[dayIndex].places.removeAt(stopIndex));
-  }
-
-  void _movePlace(int dayIndex, int stopIndex, int offset) {
-    final nextIndex = stopIndex + offset;
-    if (nextIndex < 0 || nextIndex >= days[dayIndex].places.length) return;
-    setState(() {
-      final item = days[dayIndex].places.removeAt(stopIndex);
-      days[dayIndex].places.insert(nextIndex, item);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      insetPadding: const EdgeInsets.all(20),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1180, maxHeight: 820),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.edit_calendar_outlined),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Create itinerary manually',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        Text(
-                          'Add places to any day, then reorder them into the sequence you want.',
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final compact = constraints.maxWidth < 760;
-                    final available = _AvailableManualPlaces(
-                      searchController: searchController,
-                      places: _availablePlaces,
-                      dayCount: days.length,
-                      onSearchChanged: (_) => setState(() {}),
-                      onAdd: _addPlace,
-                    );
-                    final itinerary = _ManualDayEditor(
-                      days: days,
-                      onRemove: _removePlace,
-                      onMove: _movePlace,
-                    );
-                    if (compact) {
-                      return Column(
-                        children: [
-                          Expanded(child: available),
-                          const Divider(height: 24),
-                          Expanded(child: itinerary),
-                        ],
-                      );
-                    }
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(child: available),
-                        const VerticalDivider(width: 28),
-                        Expanded(child: itinerary),
-                      ],
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: () => Navigator.pop(context, days),
-                    icon: const Icon(Icons.check_rounded),
-                    label: const Text('Use manual plan'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AvailableManualPlaces extends StatelessWidget {
-  final TextEditingController searchController;
-  final List<ScoredPlace> places;
-  final int dayCount;
-  final ValueChanged<String> onSearchChanged;
-  final void Function(ScoredPlace place, int dayIndex) onAdd;
-
-  const _AvailableManualPlaces({
-    required this.searchController,
-    required this.places,
-    required this.dayCount,
-    required this.onSearchChanged,
-    required this.onAdd,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Available places (${places.length})',
-          style: const TextStyle(fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: searchController,
-          onChanged: onSearchChanged,
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.search_rounded),
-            hintText: 'Search name or category',
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Expanded(
-          child: places.isEmpty
-              ? const Center(child: Text('No unused places match this search.'))
-              : ListView.separated(
-                  itemCount: places.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 6),
-                  itemBuilder: (context, index) {
-                    final item = places[index];
-                    return Card(
-                      margin: EdgeInsets.zero,
-                      child: ListTile(
-                        dense: true,
-                        title: Text(
-                          item.place.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          '${item.place.category} • '
-                          '${item.place.estimatedVisitMinutes} min',
-                        ),
-                        trailing: PopupMenuButton<int>(
-                          tooltip: 'Add to day',
-                          icon: const Icon(Icons.add_circle_outline_rounded),
-                          onSelected: (dayIndex) => onAdd(item, dayIndex),
-                          itemBuilder: (context) => List.generate(
-                            dayCount,
-                            (dayIndex) => PopupMenuItem(
-                              value: dayIndex,
-                              child: Text('Add to Day ${dayIndex + 1}'),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ManualDayEditor extends StatelessWidget {
-  final List<PlannerDay> days;
-  final void Function(int dayIndex, int stopIndex) onRemove;
-  final void Function(int dayIndex, int stopIndex, int offset) onMove;
-
-  const _ManualDayEditor({
-    required this.days,
-    required this.onRemove,
-    required this.onMove,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Your days', style: TextStyle(fontWeight: FontWeight.w900)),
-        const SizedBox(height: 8),
-        Expanded(
-          child: ListView.builder(
-            itemCount: days.length,
-            itemBuilder: (context, dayIndex) {
-              final day = days[dayIndex];
-              return Card(
-                child: ExpansionTile(
-                  initiallyExpanded: dayIndex < 2,
-                  title: Text(
-                    'Day ${day.dayNumber} • ${day.places.length} stops',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  children: day.places.isEmpty
-                      ? const [
-                          Padding(
-                            padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text('No places added yet.'),
-                            ),
-                          ),
-                        ]
-                      : List.generate(day.places.length, (stopIndex) {
-                          final item = day.places[stopIndex];
-                          return ListTile(
-                            dense: true,
-                            leading: CircleAvatar(
-                              radius: 14,
-                              child: Text('${stopIndex + 1}'),
-                            ),
-                            title: Text(item.place.name),
-                            subtitle: Text(item.place.category),
-                            trailing: Wrap(
-                              spacing: 0,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Move earlier',
-                                  onPressed: stopIndex == 0
-                                      ? null
-                                      : () => onMove(dayIndex, stopIndex, -1),
-                                  icon: const Icon(Icons.arrow_upward_rounded),
-                                ),
-                                IconButton(
-                                  tooltip: 'Move later',
-                                  onPressed: stopIndex == day.places.length - 1
-                                      ? null
-                                      : () => onMove(dayIndex, stopIndex, 1),
-                                  icon: const Icon(
-                                    Icons.arrow_downward_rounded,
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Remove',
-                                  onPressed: () =>
-                                      onRemove(dayIndex, stopIndex),
-                                  icon: const Icon(
-                                    Icons.delete_outline_rounded,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
     );
   }
 }
@@ -5008,7 +4672,7 @@ class _PlannerValidationSummary extends StatelessWidget {
                 ] else ...[
                   const SizedBox(height: 4),
                   Text(
-                    'No duplicates or budget, time, place-count, empty-day, or total-cost problems found.',
+                    'No repeated activities or budget, time, place-count, empty-day, or total-cost problems found. Restaurants may repeat when needed.',
                     style: TextStyle(color: foregroundColor),
                   ),
                 ],
@@ -5425,6 +5089,7 @@ class _GeneratedDayPreview extends StatelessWidget {
                             PlacePhoto(
                               placeName: day.places[stopIndex].place.name,
                               photoUrls: day.places[stopIndex].place.photoUrls,
+          placeId: day.places[stopIndex].place.id,
                               width: 72,
                               height: 72,
                               borderRadius: 14,
@@ -5440,6 +5105,7 @@ class _GeneratedDayPreview extends StatelessWidget {
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),
+                                  BookingInfo(place: day.places[stopIndex].place),
                                   const SizedBox(height: 2),
                                   Wrap(
                                     spacing: 7,

@@ -282,6 +282,16 @@ export function validateCommand(value, expectedDestinationId) {
 export function recoverExplicitArguments(value, instruction) {
   if (!value || typeof value !== "object" || !value.arguments) return value;
   const text = typeof instruction === "string" ? instruction.trim() : "";
+  // Recover a complete, explicit timed move even if the model chose day-only.
+  const timed = text.match(/^move\s+(.+?)\s+on\s+day\s+(\d+)\s+to\s+(\d{1,2}):(\d{2})\s*[.!?]*$/i);
+  if (["move_stop", "move_stop_time"].includes(value.command) && timed &&
+      Number(timed[2]) > 0 && Number(timed[3]) < 24 && Number(timed[4]) < 60) {
+    return {...value, command: "move_stop_time", arguments: {
+      sourceStop: {activityName: timed[1].trim(), dayNumber: Number(timed[2])},
+      targetDayNumber: Number(timed[2]),
+      startMinutes: Number(timed[3]) * 60 + Number(timed[4]),
+    }, explanation: `Move ${timed[1].trim()} on day ${timed[2]} to ${timed[3].padStart(2, "0")}:${timed[4]}.`};
+  }
   if (value.command === "move_stop") {
     const match = text.match(
       /^\s*move\s+(.+?)(?:\s+from\s+day\s+\d+)?\s+to\s+day\s+(\d+)\s*[.!?]*$/i,

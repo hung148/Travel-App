@@ -1,10 +1,19 @@
 class AppConfig {
+  static const String osmPlacesUrl = String.fromEnvironment(
+    'OSM_PLACES_URL',
+    defaultValue: String.fromEnvironment('ENV', defaultValue: 'dev') == 'prod'
+        ? 'https://us-central1-travel-app-production-5e372.cloudfunctions.net/searchOsmPlaces'
+        : 'https://us-central1-travel-plan-5f810.cloudfunctions.net/searchOsmPlaces',
+  );
   static const bool isDebug = true; // flip to false for production
   static const String googleMapsApiKey = String.fromEnvironment(
     'GOOGLE_MAPS_API_KEY',
   );
   static const String aiAssistantUrl = String.fromEnvironment(
     'AI_ASSISTANT_URL',
+    defaultValue: String.fromEnvironment('ENV', defaultValue: 'dev') == 'prod'
+        ? 'https://us-central1-travel-app-production-5e372.cloudfunctions.net/interpretTripRequest'
+        : 'https://us-central1-travel-plan-5f810.cloudfunctions.net/interpretTripRequest',
   );
 
   /// Endpoint for the shopping-place vetting function.
@@ -18,6 +27,16 @@ class AppConfig {
   );
 
   static bool get hasGoogleMapsApiKey => googleMapsApiKey.trim().isNotEmpty;
+  static String get itineraryImportUrl {
+    const override = String.fromEnvironment('ITINERARY_IMPORT_URL');
+    if (override.isNotEmpty) return override;
+    final endpoint = aiAssistantUrl.trim();
+    final swapped = endpoint.replaceFirst(
+      RegExp(r'interpretTripRequest(?=$|[?#])'),
+      'importItinerary',
+    );
+    return swapped == endpoint ? '' : swapped;
+  }
 
   static String get placeVettingUrl {
     final override = _placeVettingUrlOverride.trim();

@@ -1,3 +1,4 @@
+import { importWithGroq } from './itinerary-import.js';
 import http from "node:http";
 import { fileURLToPath } from "node:url";
 
@@ -247,6 +248,15 @@ export function createLocalServer(
           error: "Unable to vet places",
           detail: error instanceof Error ? error.message : "Unknown error",
         });
+      }
+      return;
+    }
+    if (request.method === "POST" && request.url === "/importItinerary") {
+      try {
+        const body = await readJson(request);
+        send(response, 200, await importWithGroq({text: body.text, apiKey}));
+      } catch (error) {
+        send(response, error.status ?? 400, {error: error.message});
       }
       return;
     }

@@ -37,7 +37,12 @@ class ItineraryService {
   // READ - get list of itinerary
   Future<List<Itinerary>> getItinerary(String tripId) async {
     try {
+      final ownerId = FirebaseAuth.instance.currentUser?.uid;
+      if (ownerId == null) {
+        throw Exception('Cannot load an itinerary while signed out.');
+      }
       final snapshot = await itineraryRef
+          .where('ownerId', isEqualTo: ownerId)
           .where('tripId', isEqualTo: tripId)
           .orderBy('dayNumber') // need a Firestore index for this query.
           .get();
@@ -46,7 +51,7 @@ class ItineraryService {
         return Itinerary.fromMap(doc.data() as Map<String, dynamic>, doc.id);
       }).toList();
     } catch (e) {
-      throw Exception('Failt to laod itinerary: $e');
+      throw Exception('Failed to load itinerary: $e');
     }
   }
 }

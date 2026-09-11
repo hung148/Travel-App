@@ -10,9 +10,10 @@ import '../../service/feedback_service.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 
 class ReviewWidget extends StatefulWidget {
-  const ReviewWidget({super.key, this.trip});
+  const ReviewWidget({super.key, this.trip, this.feedbackService});
 
   final Trip? trip;
+  final FeedbackService? feedbackService;
 
   @override
   State<ReviewWidget> createState() => _ReviewWidgetState();
@@ -24,6 +25,7 @@ class _ReviewWidgetState extends State<ReviewWidget> {
   final Set<String> _improve = {};
   final _reviewController = TextEditingController();
   bool _saving = false;
+  String? _saveError;
 
   static const likedOptions = [
     'Food',
@@ -147,8 +149,17 @@ class _ReviewWidgetState extends State<ReviewWidget> {
             ),
           ),
           const SizedBox(height: 20),
+          if (widget.trip == null)
+            const Text('Save your trip before submitting feedback.'),
+          if (_saveError != null)
+            Text(
+              _saveError!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           FilledButton.icon(
-            onPressed: _rating == 0 || _saving ? null : _submit,
+            onPressed: _rating == 0 || _saving || widget.trip == null
+                ? null
+                : _submit,
             icon: _saving
                 ? const SizedBox(
                     width: 18,
@@ -164,9 +175,9 @@ class _ReviewWidgetState extends State<ReviewWidget> {
   }
 
   Future<void> _submit() async {
+    if (_saving || _rating == 0 || widget.trip == null) return;
     final user = context.read<AuthViewModel>().user;
-    final firebaseUser = FirebaseAuth.instance.currentUser;
-    final uid = user?.uid ?? firebaseUser?.uid;
+    final uid = user?.uid ?? FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       _showMessage('Please sign in before submitting feedback.');
       return;
@@ -178,8 +189,16 @@ class _ReviewWidgetState extends State<ReviewWidget> {
       return;
     }
 
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
     final publish = await _askPublishChoice();
-    if (publish == null) return;
+    if (!mounted) return;
+    if (publish == null) {
+      setState(() => _saving = false);
+      return;
+    }
 
     final trip = widget.trip;
     if (trip == null) {
@@ -191,9 +210,8 @@ class _ReviewWidgetState extends State<ReviewWidget> {
       return;
     }
 
-    setState(() => _saving = true);
     try {
-      await FeedbackService().saveFeedback(
+      await (widget.feedbackService ?? FeedbackService()).saveFeedback(
         feedback: model.Feedback(
           id: _documentId(uid),
           userId: uid,
@@ -206,6 +224,7 @@ class _ReviewWidgetState extends State<ReviewWidget> {
           worst: _improve.isEmpty ? '' : _improve.join(', '),
         ),
       );
+      if (!mounted) return;
 
       if (publish) {
         final segment = trip.segments.isNotEmpty ? trip.segments.first : null;
@@ -235,6 +254,7 @@ class _ReviewWidgetState extends State<ReviewWidget> {
         _showMessage('Private feedback saved.');
       }
 
+      if (!mounted) return;
       _reviewController.clear();
       setState(() {
         _rating = 0;
@@ -242,7 +262,8 @@ class _ReviewWidgetState extends State<ReviewWidget> {
         _improve.clear();
       });
     } catch (error) {
-      _showMessage('Could not submit feedback: $error');
+      if (!mounted) return;
+      setState(() => _saveError = 'Could not save feedback. Please try again.');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -271,10 +292,11 @@ class _ReviewWidgetState extends State<ReviewWidget> {
   }
 
   String _documentId(String uid) {
-    return '${uid}_${DateTime.now().microsecondsSinceEpoch}';
+    return '${widget.trip!.id}_$uid';
   }
 
   void _showMessage(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));

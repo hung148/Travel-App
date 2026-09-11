@@ -1,5 +1,12 @@
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import '../../widgets/booking_info.dart';
+import '../existing_plan/existing_plan_page.dart';
+import 'today_view.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../viewmodels/trip_viewmodel.dart';
+import '../plan_trip/plan_trip_page.dart';
 
 import '../../core/utils/money.dart';
 import '../../models/planner_result.dart';
@@ -7,10 +14,8 @@ import '../../models/score_place.dart';
 import '../../models/trip/trip.dart';
 import '../../models/trip/trip_segment.dart';
 import '../../service/planner/daily_time_schedule_service.dart';
-import '../../viewmodels/trip_viewmodel.dart';
 import '../../widgets/place_photo.dart';
 import '../community/destination_community_panel.dart';
-import '../plan_trip/plan_trip_page.dart';
 import '../summary/review_widget.dart';
 
 class SavedTripDetailsPage extends StatefulWidget {
@@ -28,11 +33,12 @@ class SavedTripDetailsPage extends StatefulWidget {
 }
 
 class _SavedTripDetailsPageState extends State<SavedTripDetailsPage> {
-  late int _selectedTab = widget.initialTab.clamp(0, 3);
+  late Trip _trip = widget.trip;
+  late int _selectedTab = widget.initialTab.clamp(0, 4);
 
   @override
   Widget build(BuildContext context) {
-    final trip = widget.trip;
+    final trip = _trip;
     final segments = trip.segments;
     final plannedStops = segments.fold<int>(
       0,
@@ -59,16 +65,27 @@ class _SavedTripDetailsPageState extends State<SavedTripDetailsPage> {
                     child: _TopBar(
                       title: trip.title ?? trip.destination,
                       onBack: () => Navigator.maybePop(context),
-                      onEdit: () async {
-                        final viewModel = context.read<TripViewModel>();
-                        await viewModel.loadTripById(trip.id);
-                        if (!context.mounted) return;
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const PlanTripPage(),
-                          ),
-                        );
+                      onEdit: (action) async {
+                        if (action == 'planner') {
+                          final viewModel = context.read<TripViewModel>();
+                          await viewModel.loadTripById(trip.id);
+                          if (!context.mounted) return;
+                          if (viewModel.errorMessage != null || viewModel.currentTrip?.id != trip.id) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Could not load the trip. Please try again.')),
+                            );
+                            return;
+                          }
+                          await Navigator.push<void>(context,
+                            MaterialPageRoute(builder: (_) => const PlanTripPage()));
+                          if (mounted && viewModel.currentTrip?.id == trip.id) {
+                            setState(() => _trip = viewModel.currentTrip!);
+                          }
+                          return;
+                        }
+                        final updated = await Navigator.push<Trip>(context,
+                          MaterialPageRoute(builder: (_) => ExistingPlanPage(trip: trip)));
+                        if (mounted && updated != null) setState(() => _trip = updated);
                       },
                     ),
                   ),
@@ -123,6 +140,7 @@ class _SelectedTripTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (selected) {
+      4 => TodayView(key: ValueKey(trip), trip: trip),
       0 => _OverviewTab(trip: trip),
       1 => _ItineraryTab(
         segments: segments,
@@ -144,7 +162,7 @@ class _TopBar extends StatelessWidget {
 
   final String title;
   final VoidCallback onBack;
-  final VoidCallback onEdit;
+  final ValueChanged<String> onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -166,10 +184,22 @@ class _TopBar extends StatelessWidget {
             ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
         ),
-        FilledButton.icon(
-          onPressed: onEdit,
-          icon: const Icon(Icons.edit_outlined),
-          label: const Text('Edit plan'),
+        PopupMenuButton<String>(
+          tooltip: 'Edit plan',
+          onSelected: onEdit,
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'bookings', child: Text('Edit bookings and schedule')),
+            PopupMenuItem(value: 'planner', child: Text('Refine with planner')),
+          ],
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.edit_outlined),
+              SizedBox(width: 8),
+              Text('Edit plan'),
+              Icon(Icons.arrow_drop_down),
+            ]),
+          ),
         ),
       ],
     );
@@ -395,6 +425,7 @@ class _SegmentedTabs extends StatelessWidget {
       (Icons.view_day_outlined, 'Itinerary'),
       (Icons.map_outlined, 'Map'),
       (Icons.rate_review_outlined, 'Review'),
+      (Icons.today_outlined, 'Today'),
     ];
     return Container(
       padding: const EdgeInsets.all(5),
@@ -455,11 +486,15 @@ class _TabButton extends StatelessWidget {
                 color: selected ? Colors.white : const Color(0xFF4C3A32),
               ),
               const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected ? Colors.white : const Color(0xFF4C3A32),
-                  fontWeight: FontWeight.w800,
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected ? Colors.white : const Color(0xFF4C3A32),
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],
@@ -681,6 +716,7 @@ class _ItineraryTab extends StatelessWidget {
             destination: segment.destination,
             day: day,
             dayNumber: dayOffset + day.dayNumber,
+            startTimeOverrides: segment.startTimeOverrides,
             travelers: travelers,
             currencyCode: currencyCode,
           ),
@@ -699,6 +735,7 @@ class _DayCard extends StatelessWidget {
     required this.destination,
     required this.day,
     required this.dayNumber,
+    this.startTimeOverrides = const {},
     required this.travelers,
     required this.currencyCode,
   });
@@ -706,12 +743,13 @@ class _DayCard extends StatelessWidget {
   final String destination;
   final PlannerDay day;
   final int dayNumber;
+  final Map<String, int> startTimeOverrides;
   final int travelers;
   final String currencyCode;
 
   @override
   Widget build(BuildContext context) {
-    final scheduled = const DailyTimeScheduleService().schedule(day.places);
+    final scheduled = const DailyTimeScheduleService().schedule(day.places, startTimeOverrides: startTimeOverrides);
     return _Panel(
       title: 'Day $dayNumber',
       subtitle: destination,
@@ -725,7 +763,7 @@ class _DayCard extends StatelessWidget {
           for (var index = 0; index < day.places.length; index++) ...[
             _StopTile(
               index: index + 1,
-              time: scheduled[index].formattedStartTime,
+              time: day.places[index].place.isCustom && day.places[index].place.booking?.startMinutes == null ? 'Time unknown' : scheduled[index].formattedStartTime,
               role: scheduled[index].roleLabel,
               place: day.places[index],
               travelers: travelers,
@@ -782,6 +820,7 @@ class _StopTile extends StatelessWidget {
         PlacePhoto(
           placeName: travelPlace.name,
           photoUrls: travelPlace.photoUrls,
+          placeId: travelPlace.id,
           width: 78,
           height: 78,
           borderRadius: 8,
@@ -806,6 +845,7 @@ class _StopTile extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                 ),
               ),
+              BookingInfo(place: travelPlace),
               const SizedBox(height: 4),
               Wrap(
                 spacing: 8,
@@ -825,13 +865,7 @@ class _StopTile extends StatelessWidget {
             ],
           ),
         ),
-        IconButton(
-          tooltip: 'Replace later',
-          onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('AI replacement is coming next.')),
-          ),
-          icon: const Icon(Icons.swap_horiz_rounded),
-        ),
+
       ],
     );
   }
@@ -839,173 +873,23 @@ class _StopTile extends StatelessWidget {
 
 class _MapTab extends StatelessWidget {
   const _MapTab({required this.segments});
-
   final List<TripSegment> segments;
-
   @override
   Widget build(BuildContext context) {
-    final mappedSegments = segments
-        .where(
-          (segment) =>
-              segment.searchCenterLatitude != null &&
-              segment.searchCenterLongitude != null,
-        )
-        .toList();
-
-    if (mappedSegments.isEmpty) {
-      return const _EmptyState(
-        icon: Icons.map_outlined,
-        title: 'Map area not saved yet',
-        message:
-            'When you plan from a selected map area, this page will show the circle and route context.',
-      );
-    }
-
-    return _Panel(
-      title: 'Map planning areas',
-      subtitle: 'Saved search circles and route anchors',
-      icon: Icons.radar_outlined,
-      child: Column(
-        children: [
-          Container(
-            height: 260,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF4EFEA),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFD1B9AA)),
-            ),
-            child: Stack(
-              children: [
-                const Positioned.fill(child: _MapGrid()),
-                for (var index = 0; index < mappedSegments.length; index++)
-                  _MapCircle(index: index, segment: mappedSegments[index]),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          for (final segment in mappedSegments) _MapAreaRow(segment: segment),
-        ],
-      ),
-    );
-  }
-}
-
-class _MapGrid extends StatelessWidget {
-  const _MapGrid();
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(painter: _MapGridPainter());
-  }
-}
-
-class _MapGridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFD8C8BD)
-      ..strokeWidth = 1;
-    for (var x = 24.0; x < size.width; x += 48) {
-      canvas.drawLine(Offset(x, 0), Offset(x - 36, size.height), paint);
-    }
-    for (var y = 28.0; y < size.height; y += 42) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y + 24), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _MapCircle extends StatelessWidget {
-  const _MapCircle({required this.index, required this.segment});
-
-  final int index;
-  final TripSegment segment;
-
-  @override
-  Widget build(BuildContext context) {
-    final left = 42.0 + (index % 3) * 150;
-    final top = 34.0 + (index % 2) * 82;
-    return Positioned(
-      left: left,
-      top: top,
-      child: Column(
-        children: [
-          Container(
-            width: 128,
-            height: 128,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: const Color(0xFFB78050).withValues(alpha: 0.18),
-              shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFF8B5A3D), width: 2),
-            ),
-            child: Container(
-              width: 34,
-              height: 34,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: Color(0xFF241C18),
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                '${index + 1}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: const Color(0xFFD1B9AA)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              child: Text(
-                segment.destination,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MapAreaRow extends StatelessWidget {
-  const _MapAreaRow({required this.segment});
-
-  final TripSegment segment;
-
-  @override
-  Widget build(BuildContext context) {
-    final radius = segment.searchRadiusMeters == null
-        ? 'Custom area'
-        : '${(segment.searchRadiusMeters! / 1000).toStringAsFixed(1)} km radius';
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          const Icon(Icons.trip_origin_rounded, color: Color(0xFF6B4A3B)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              segment.destination,
-              style: const TextStyle(fontWeight: FontWeight.w900),
-            ),
-          ),
-          Text(radius),
-        ],
-      ),
-    );
+    final places = segments.expand((s) => s.days).expand((d) => d.places)
+      .map((s) => s.place).where((p) => p.hasLocation).toList();
+    if (places.isEmpty) return const Text('No located items yet. Edit an item to add coordinates, then open directions.');
+    final points = places.map((p) => LatLng(p.latitude, p.longitude)).toList();
+    return SizedBox(height: 420, child: FlutterMap(
+      options: MapOptions(initialCenter: points.first, initialZoom: 12,
+        initialCameraFit: points.length > 1 ? CameraFit.bounds(bounds: LatLngBounds.fromPoints(points), padding: const EdgeInsets.all(40)) : null),
+      children: [
+        TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.hungson.travelapp'),
+        MarkerLayer(markers: [for (var i = 0; i < places.length; i++) Marker(point: points[i], width: 44, height: 44,
+          child: Tooltip(message: places[i].name, child: const Icon(Icons.location_on, color: Colors.red, size: 36)))]),
+        const RichAttributionWidget(attributions: [TextSourceAttribution('OpenStreetMap contributors')]),
+      ],
+    ));
   }
 }
 

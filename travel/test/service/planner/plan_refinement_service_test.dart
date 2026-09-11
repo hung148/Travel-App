@@ -11,6 +11,28 @@ import 'package:travel/service/planner/plan_refinement_service.dart';
 void main() {
   const service = PlanRefinementService();
 
+  for (final confirmed in [true, false]) {
+    test('timed move respects booking confirmation ($confirmed)', () {
+      final original = _place('pickup');
+      final pickup = ScoredPlace.fromMap({...original.toMap(), 'place': {
+        ...original.place.toMap(), 'booking': {
+          'confirmed': confirmed, 'startMinutes': 540,
+          'localDate': '2026-09-18', 'timeZone': 'Asia/Ho_Chi_Minh',
+        },
+      }});
+      final plan = _plan(days: [PlannerDay(dayNumber: 1, places: [pickup])]);
+      final result = service.moveStopToTime(plan, 'pickup', 1, 600);
+      expect(result.changed, !confirmed);
+      expect(result.plan.days.single.places.single.place.booking!.startMinutes,
+          confirmed ? 540 : 600);
+      if (confirmed) {
+        expect(result.message, contains('confirmed booking'));
+        expect(result.message, contains('edit the booking manually'));
+        expect(result.plan, same(plan));
+      }
+    });
+  }
+
   test('makes only the requested day more relaxing', () {
     final plan = _plan(
       days: [

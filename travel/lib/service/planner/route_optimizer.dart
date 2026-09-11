@@ -11,6 +11,9 @@ class RouteOptimizer {
     required double startLongitude,
   }) {
     if (places.length < 2) return List.of(places);
+    // Unknown locations cannot participate in distance ordering. Keep the
+    // user's sequence rather than routing a custom item through (0, 0).
+    if (places.any((item) => !item.place.hasLocation)) return List.of(places);
 
     final remaining = List<ScoredPlace>.of(places);
     final ordered = <ScoredPlace>[];

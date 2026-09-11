@@ -1,11 +1,11 @@
 {
-    "name": "travel",
-    "short_name": "travel",
+    "name": "NghienTravel",
+    "short_name": "NghienTravel",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Your trips, schedules, and booking details in one place.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -134,7 +134,7 @@ class DestinationPlaceService {
   /// every candidate survives.
   Future<List<NearbyPlace>> _vetted(List<NearbyPlace> candidates) async {
     final vetter = shoppingVetter;
-    if (vetter == null || candidates.isEmpty) return candidates;
+    if (vetter == null || candidates.isEmpty || candidates.every((p) => p.placeId.startsWith('osm:'))) return candidates;
 
     final approved = await vetter.approve([
       for (final place in candidates)
@@ -298,7 +298,7 @@ class DestinationPlaceService {
             {'cafe', 'bakery', 'meal_takeaway', 'snack_bar'}.contains(type),
       );
       // Require a meaningful review history for automatically selected sights.
-      if (!dining &&
+      if (!nearbyPlace.placeId.startsWith('osm:') && !dining &&
           !types.any(_accommodationTypes.contains) &&
           (nearbyPlace.rating < 4 || nearbyPlace.userRatingsTotal < 100)) {
         continue;
@@ -339,7 +339,7 @@ class DestinationPlaceService {
       (busiest * shoppingReviewShareOfBusiest).round(),
     );
     final shoppingStops = rankedShopping
-        .where((place) => place.userRatingsTotal >= reviewFloor)
+        .where((place) => place.placeId.startsWith('osm:') || place.userRatingsTotal >= reviewFloor)
         .take(shoppingQuota)
         .toList();
 
@@ -437,7 +437,7 @@ class DestinationPlaceService {
             (place) => mapper.fromNearbyPlace(
               priced(place),
               calibration: calibration,
-              luxuryDiningSearchMatch: results[3].any(
+              luxuryDiningSearchMatch: !place.placeId.startsWith('osm:') && results[3].any(
                 (match) => match.placeId == place.placeId,
               ),
               destinationHighlight:

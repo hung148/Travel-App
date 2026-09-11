@@ -103,10 +103,13 @@ class TripService {
   // DELETE
   Future<TripResult> deleteTrip(String id) async {
     try {
+      final ownerId = FirebaseAuth.instance.currentUser?.uid;
+      if (ownerId == null) throw Exception('Cannot delete a trip while signed out.');
       final database = FirebaseFirestore.instance;
       final batch = database.batch();
       final itinerary = await database
           .collection('itineraries')
+          .where('ownerId', isEqualTo: ownerId)
           .where('tripId', isEqualTo: id)
           .get();
       final feedback = await database

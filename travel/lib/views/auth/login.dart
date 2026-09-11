@@ -16,6 +16,8 @@ class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
+  final _emailFocus = FocusNode();
+  final _passwordFocus = FocusNode();
   bool hidePassword = true;
 
   @override
@@ -34,6 +36,8 @@ class _LoginPageState extends State<LoginPage> {
   void dispose() {
     emailController.dispose();
     passwordController.dispose();
+    _emailFocus.dispose();
+    _passwordFocus.dispose();
     super.dispose();
   }
 
@@ -49,10 +53,17 @@ class _LoginPageState extends State<LoginPage> {
     // A failure lands in AuthViewModel.errorMessage, which AuthErrorBanner
     // renders above the form. No SnackBar here, so the same message is not
     // shown to the user twice.
-    await authViewModel.login(
+    // Disconnect the browser text-input session while authentication runs.
+    FocusScope.of(context).unfocus();
+    final succeeded = await authViewModel.login(
       emailController.text.trim(),
       passwordController.text,
     );
+    if (!mounted || succeeded) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _passwordFocus.requestFocus();
+    });
   }
 
   void openForgotPassword() {
@@ -81,6 +92,9 @@ class _LoginPageState extends State<LoginPage> {
             ),
             TextFormField(
               controller: emailController,
+              focusNode: _emailFocus,
+              onTap: () => _emailFocus.requestFocus(),
+              onFieldSubmitted: (_) => _passwordFocus.requestFocus(),
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               autofillHints: const [AutofillHints.email],
@@ -98,6 +112,8 @@ class _LoginPageState extends State<LoginPage> {
             const SizedBox(height: 16),
             TextFormField(
               controller: passwordController,
+              focusNode: _passwordFocus,
+              onTap: () => _passwordFocus.requestFocus(),
               obscureText: hidePassword,
               textInputAction: TextInputAction.done,
               autofillHints: const [AutofillHints.password],
@@ -151,8 +167,9 @@ class _LoginPageState extends State<LoginPage> {
               },
             ),
             const SizedBox(height: 22),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
                   'New to Travel App?',

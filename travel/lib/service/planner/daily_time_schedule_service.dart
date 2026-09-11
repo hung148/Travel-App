@@ -42,6 +42,7 @@ class DailyTimeScheduleService {
         label = role.label;
       }
       start = startTimeOverrides[item.place.id] ?? start;
+      start = item.place.booking?.startMinutes ?? start;
 
       result.add(
         ScheduledStop(scoredPlace: item, startMinutes: start, roleLabel: label),

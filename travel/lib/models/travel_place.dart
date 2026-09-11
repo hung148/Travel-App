@@ -1,6 +1,8 @@
 import 'cost_estimate.dart';
+import 'booking_details.dart';
 
 class TravelPlace {
+  String get dataSource => id.startsWith('osm:') ? 'openstreetmap' : isCustom ? 'custom' : 'google';
   final String id;
   final String name;
   final String category;
@@ -19,6 +21,9 @@ class TravelPlace {
 
   final double latitude;
   final double longitude;
+  final bool hasLocation;
+  final bool isCustom;
+  final BookingDetails? booking;
 
   final int estimatedVisitMinutes;
 
@@ -40,6 +45,9 @@ class TravelPlace {
     required this.longitude,
     required this.estimatedVisitMinutes,
     this.photoUrls = const [],
+    this.hasLocation = true,
+    this.isCustom = false,
+    this.booking,
   });
 
   /// Planning cost for ONE person, in the trip currency.
@@ -84,6 +92,7 @@ class TravelPlace {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'dataSource': dataSource,
       'name': name,
       'category': category,
       'tags': tags,
@@ -97,6 +106,9 @@ class TravelPlace {
       'longitude': longitude,
       'estimatedVisitMinutes': estimatedVisitMinutes,
       'photoUrls': photoUrls,
+      'hasLocation': hasLocation,
+      'isCustom': isCustom,
+      'booking': booking?.toMap(),
     };
   }
 
@@ -127,6 +139,11 @@ class TravelPlace {
           (data['estimatedVisitMinutes'] as num?)?.toInt() ?? 0,
       // Plans saved before stops had a gallery stored a single photoUrl.
       photoUrls: _photoUrlsFromMap(data),
+      hasLocation: data['hasLocation'] as bool? ??
+          (data['latitude'] is num && data['longitude'] is num),
+      isCustom: data['isCustom'] == true,
+      booking: data['booking'] is Map
+          ? BookingDetails.fromMap(Map<String, dynamic>.from(data['booking'] as Map)) : null,
     );
   }
 }

@@ -357,6 +357,16 @@ class PlanRefinementService {
     }
     final source = _findScheduledPlace(plan, sourceName);
     if (source == null) return _placeNotFound(plan, sourceName);
+    final booking = plan.days[source.dayIndex].places[source.stopIndex].place.booking;
+    if (booking?.confirmed == true) {
+      final fixedTime = booking!.startMinutes;
+      return PlanRefinementResult(
+        plan: plan,
+        changed: false,
+        message: '$sourceName is a confirmed booking${fixedTime == null ? '' : ' at ${_formatMinutes(fixedTime)}'}. '
+            'To change it to ${_formatMinutes(startMinutes)}, edit the booking manually. Your plan was kept unchanged.',
+      );
+    }
     final targetDayIndex = plan.days.indexWhere(
       (day) => day.dayNumber == dayNumber,
     );
@@ -368,7 +378,17 @@ class PlanRefinementService {
       );
     }
     final days = _copyDays(plan.days);
-    final moved = days[source.dayIndex].places.removeAt(source.stopIndex);
+    var moved = days[source.dayIndex].places.removeAt(source.stopIndex);
+    if (booking != null) {
+      final date = DateTime.tryParse(booking.localDate ?? '');
+      final targetDate = date?.add(Duration(days: dayNumber - plan.days[source.dayIndex].dayNumber));
+      moved = ScoredPlace.fromMap({...moved.toMap(), 'place': {
+        ...moved.place.toMap(), 'booking': {...booking.toMap(),
+          'startMinutes': startMinutes,
+          if (targetDate != null) 'localDate': targetDate.toIso8601String().substring(0, 10),
+        },
+      }});
+    }
     final targetSchedule = const DailyTimeScheduleService().schedule(
       days[targetDayIndex].places,
       startTimeOverrides: plan.startTimeOverrides,
@@ -631,6 +651,11 @@ class PlanRefinementService {
         .map((item) => item.place.id)
         .toSet();
     final preference = replacementPreference?.toLowerCase().trim();
+    if ((replacementCriterion == 'higher_rated' || replacementCriterion == 'more_popular') &&
+        plan.rankedPlaces.every((candidate) => candidate.place.id.startsWith('osm:'))) {
+      return PlanRefinementResult(plan: plan, changed: false,
+        message: 'Ratings and review counts are unavailable for these OpenStreetMap places. Try a closer place or a different category.');
+    }
     final candidates = plan.rankedPlaces.where((candidate) {
       if (scheduledIds.contains(candidate.place.id)) return false;
       if (candidate.place.isDining != match.place.place.isDining) return false;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'osm_place_photo.dart';
 
 /// A stop's thumbnail, which opens the stop's full set of photos.
 ///
@@ -10,21 +11,37 @@ class PlacePhoto extends StatelessWidget {
     super.key,
     required this.placeName,
     required this.photoUrls,
+    this.placeId,
     this.width = 76,
     this.height = 76,
     this.borderRadius = 16,
   });
 
   final String placeName;
+  final String? placeId;
   final List<String> photoUrls;
   final double width;
   final double height;
   final double borderRadius;
 
-  String? get _thumbnail => photoUrls.isEmpty ? null : photoUrls.first;
+  // Legacy saved trips may contain billable Google media URLs. Never render
+  // them, including gallery prefetch. Only explicitly supplied non-Google images.
+  List<String> get _safePhotos => photoUrls.where((url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.scheme != 'https') return false;
+    final host = uri.host.toLowerCase();
+    return !(host == 'googleapis.com' || host.endsWith('.googleapis.com') ||
+      host == 'google.com' || host.endsWith('.google.com') ||
+      host == 'gstatic.com' || host.endsWith('.gstatic.com') ||
+      host == 'googleusercontent.com' || host.endsWith('.googleusercontent.com'));
+  }).toList();
+  String? get _thumbnail => _safePhotos.isEmpty ? null : _safePhotos.first;
 
   @override
   Widget build(BuildContext context) {
+    if (placeId?.startsWith('osm:') == true) {
+      return OsmPlacePhoto(placeId: placeId!, width: width, height: height);
+    }
     final url = _thumbnail;
     final image = url == null || url.isEmpty
         ? _placeholder(context)
@@ -46,9 +63,9 @@ class PlacePhoto extends StatelessWidget {
       button: url != null,
       label: url == null
           ? 'No photo for $placeName'
-          : photoUrls.length == 1
+          : _safePhotos.length == 1
           ? 'View photo of $placeName'
-          : 'View ${photoUrls.length} photos of $placeName',
+          : 'View ${_safePhotos.length} photos of $placeName',
       child: Material(
         color: Colors.transparent,
         clipBehavior: Clip.antiAlias,
@@ -71,7 +88,7 @@ class PlacePhoto extends StatelessWidget {
                 ),
                 // Without this the extra photos are invisible - the thumbnail
                 // looks like the only one there is.
-                if (photoUrls.length > 1)
+                if (_safePhotos.length > 1)
                   Positioned(
                     right: 4,
                     bottom: 4,
@@ -95,7 +112,7 @@ class PlacePhoto extends StatelessWidget {
                             ),
                             const SizedBox(width: 3),
                             Text(
-                              '${photoUrls.length}',
+                              '${_safePhotos.length}',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 11,
@@ -136,7 +153,7 @@ class PlacePhoto extends StatelessWidget {
     showDialog<void>(
       context: context,
       builder: (dialogContext) =>
-          _PhotoGalleryDialog(placeName: placeName, photoUrls: photoUrls),
+          _PhotoGalleryDialog(placeName: placeName, photoUrls: _safePhotos),
     );
   }
 }

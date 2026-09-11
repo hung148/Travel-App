@@ -395,7 +395,8 @@ class TripViewModel extends ChangeNotifier {
       _setError(null);
       _setSuccess(null);
 
-      await _tripService.updateTrip(updatedTrip);
+      final result = await _tripService.updateTrip(updatedTrip);
+      if (!result.success) throw StateError(result.error ?? 'Trip update failed');
 
       final index = _tripHistory.indexWhere(
         (trip) => trip.id == updatedTrip.id,

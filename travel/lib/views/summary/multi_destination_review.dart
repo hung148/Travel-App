@@ -148,6 +148,7 @@ class MultiDestinationReview extends StatelessWidget {
                           PlacePhoto(
                             placeName: place.place.name,
                             photoUrls: place.place.photoUrls,
+          placeId: place.place.id,
                             width: 52,
                             height: 52,
                             borderRadius: 12,
