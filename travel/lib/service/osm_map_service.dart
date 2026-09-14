@@ -87,8 +87,27 @@ class OsmMapService extends MapService {
         )
         .timeout(const Duration(seconds: 35));
     if (response.statusCode != 200) {
+      // Preserve actionable backend errors without displaying arbitrary proxy bodies.
+      const publicErrors = {
+        'The production place provider is not configured yet.',
+        'OpenStreetMap search is temporarily unavailable.',
+        'Place search could not finish. Try a smaller area.',
+        'Place search is busy. Try again shortly.',
+        'Place discovery daily limit reached. Try again after 00:00 UTC.',
+        'Destination search daily limit reached. Try again after 00:00 UTC.',
+      };
+      String? reason;
+      try {
+        final body = jsonDecode(response.body);
+        if (body is Map && publicErrors.contains(body['error'])) {
+          reason = body['error'] as String;
+        }
+      } on FormatException {
+        // Non-JSON gateway errors use the fallback below.
+      }
       throw Exception(
-        'Place search unavailable (${response.statusCode}). Try again shortly or enter your plan manually.',
+        reason ??
+            'Place search unavailable (${response.statusCode}). Try again shortly or enter your plan manually.',
       );
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -210,6 +229,17 @@ class OsmMapService extends MapService {
     'radius': radius.clamp(100, 20000),
   });
 
+  Future<List<NearbyPlace>> discoverActivities(
+    Coordinates center,
+    int radius,
+  ) => _lookup({
+    'action': 'area',
+    'scope': 'activities',
+    'latitude': center.latitude,
+    'longitude': center.longitude,
+    'radius': radius.clamp(100, 20000),
+  });
+
   @override
   Future<List<NearbyPlace>> getNearbyPlaces({
     required double latitude,
@@ -241,7 +271,19 @@ class OsmMapService extends MapService {
         ? {'market'}
         : q.contains('nightlife') || q.contains('bars')
         ? {'bar'}
-        : {'tourist_attraction', 'museum', 'park', 'beach'};
+        : {
+            'tourist_attraction',
+            'museum',
+            'art_gallery',
+            'historical_landmark',
+            'park',
+            'beach',
+            'garden',
+            'national_park',
+            'zoo',
+            'aquarium',
+            'amusement_park',
+          };
     return (await _area(
       latitude,
       longitude,

@@ -1,4 +1,5 @@
 import {photoPlaceHint} from './photo-place-hint.js';
+import {approvedFallback} from './approved-photos.js';
 import {readLookupCache, writeLookupCache} from './lookup-cache.js';
 import { groqJson } from './groq-provider.js';
 import { createOsmProvider, consumePlaceQuota, osmRequest } from './osm-places.js';
@@ -72,15 +73,38 @@ export const searchOsmPlaces = onRequest(
         const body = {action: 'details', id: request.body.id};
         osmRequest(body);
         await consumePlaceQuota(getFirestore(), uid, 'photo');
-        const ref = getFirestore().collection('osmPhotoCache').doc('v4-' + createHash('sha256').update(JSON.stringify({id:body.id,place:request.body.place ?? null})).digest('hex'));
+        const approvedRecord = (await getFirestore().collection('approvedPlacePhotos').doc(body.id).get()).data() ?? null;
+        const ref = getFirestore().collection('osmPhotoCache').doc('v5-' + createHash('sha256').update(JSON.stringify({id:body.id,place:request.body.place ?? null, approvedRecord})).digest('hex'));
         const cached = (await ref.get()).data();
         if (cached?.expires > Date.now()) return response.json({photos: cached.photos, photo: cached.photos?.[0] ?? null});
-        await consumePlaceQuota(getFirestore(), 'shared-photo-provider-budget');
+        try { await consumePlaceQuota(getFirestore(), 'shared-photo-provider-budget'); }
+        catch (error) {
+          const approved = approvedFallback(approvedRecord, body.id);
+          if (error.status !== 429 || !approved.length) throw error;
+          return response.json({photos:approved,photo:approved[0]});
+        }
         const hint = photoPlaceHint(request.body.place, body.id);
-        const places = hint ? [hint] : await osmLookup(getFirestore(), body);
+        const identity = (await getFirestore().collection('osmPhotoIdentities').doc(body.id).get()).data();
+        let places;
+        if (identity?.expires > Date.now()) places = [identity.place];
+        else {
+          try { places = await osmLookup(getFirestore(), body); }
+          catch (error) {
+            if (!hint) {
+              const approved = approvedFallback(approvedRecord, body.id);
+              if (!approved.length) throw error;
+              return response.json({photos:approved,photo:approved[0]});
+            }
+            // Hints may support strict geographic lookup, never verified-link lookup.
+            places = [hint];
+          }
+        }
         const photos = places.length ? await findPlacePhotos(places[0],
-          {mapillaryToken: mapillaryEnabled ? mapillaryToken.value() : ''}) : [];
-        try { await ref.set({photos, expires: Date.now() + (photos.length ? 3600000 : 30000)}); }
+          {mapillaryToken: mapillaryEnabled ? mapillaryToken.value() : '', approvedRecord,
+            userAgent: process.env.WIKIMEDIA_USER_AGENT || undefined}) : approvedFallback(approvedRecord, body.id);
+        const permissionExpiry = Math.min(Infinity, ...(approvedRecord?.photos ?? [])
+          .map(p => p.permission?.expiresAt).filter(Number.isFinite));
+        try { await ref.set({photos, expires: Math.min(permissionExpiry, Date.now() + (photos.length ? 3600000 : 30000))}); }
         catch { console.warn('Photo cache write failed; returning images.'); }
         return response.json({photos, photo: photos[0] ?? null});
       }

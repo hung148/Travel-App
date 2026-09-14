@@ -17,6 +17,14 @@ COMPLETED / VERIFIED
 [x] Google fallback remains OFF; stored Google photo URLs blocked in normal OSM flows.
 
 NEXT — BEFORE MERGING / PRODUCTION
+[x] Da Nang generation recovered: owner confirmed it works on 2026-09-13. Earlier issue:
+    destination suggestions worked, but Generate schedule failed during
+    area discovery with HTTP 503 (owner screenshot, 2026-09-13). Development logs confirm
+    two failures at 23:13 UTC but only log status, not the underlying provider cause.
+    Client now preserves known actionable backend errors; four targeted service tests pass.
+    Restart client and capture the failed area's response reason, center and radius; distinguish
+    Overpass timeout/outage from configuration or infrastructure failure before changing queries.
+    Owner confirmed successful generation; the original transient provider cause remains unknown.
 [ ] BLOCKER — Photos remain broken in live development after the latest changes: most
     stops show no-photo icons; others show retry arrows. Owner clicked retry repeatedly
     with no image. Earlier single-photo success does NOT verify the automatic gallery.
@@ -42,10 +50,45 @@ NEXT — BEFORE MERGING / PRODUCTION
     until its secret binding, Google display/storage terms and bounded opt-in behavior are reviewed.
 [ ] Real traveler testing using TRAVELER_TEST.md; production shopping vetting only if still used.
 
+PRODUCTION API CHECKLIST — BEFORE PUBLIC DEPLOYMENT (2026-09-13)
+[ ] Confirm production endpoints and account plans for Photon, Overpass, map tiles,
+    openrouteservice, Wikimedia Commons and optional Mapillary/Google. Record permitted
+    usage, daily and burst limits, attribution requirements and an operator contact.
+    Local 100/day caps are app safeguards, not provider-promised allowances.
+[ ] Choose production-capable Photon and tile hosting, and permitted Overpass hosting,
+    sized for expected traffic. Photon public demo may throttle/ban extensive use;
+    public OSM tiles may block heavy use without notice. Review options before purchase.
+[ ] Add shared per-second/per-minute provider limits and bounded request queues across
+    function instances; daily caps alone do not prevent bursts. Coalesce duplicate work.
+[ ] Handle provider 429/temporary failures with bounded backoff and Retry-After where
+    supplied; prevent automatic retry storms and show clear retry/limit states to users.
+[ ] Size per-user and shared daily budgets against verified provider plans and expected
+    users. Current shared budgets allow only 100 uncached destination, route and photo
+    requests per category/day across all users; Overpass has its own 200/day cap.
+    Verify the separate per-feature quota fix is deployed and resets at 00:00 UTC.
+[ ] Keep server/client caching and visible-photo scheduling; verify tile caching separately
+    because tile traffic bypasses backend quotas. Honour tile cache headers (or the policy's
+    minimum retention), identify the app, show attribution and prohibit bulk/offline prefetch
+    on public OSM tiles. Check requirements on every supported platform.
+[ ] Add a real operator contact URL/email to Wikimedia User-Agent identification; verify
+    Commons/Mapillary image credits and applicable usage terms before release.
+[ ] Monitor provider request counts, cache hits, 429/403/5xx errors, latency and Firebase/API
+    costs with actionable alerts and safe logs. Configure a way to disable failing features.
+[ ] Test concurrency, quota exhaustion and retry behavior with mocks/emulators; do not
+    load-test public community endpoints. Run a small permitted production smoke test for
+    destination search, photos, routes and tiles; verify secrets/configuration and rollback.
+    Keep release controlled until capacity and the existing production blockers are resolved.
+    Policy references:
+    https://github.com/komoot/photon
+    https://operations.osmfoundation.org/policies/tiles/
+    https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_API_Usage_Guidelines
+    https://account.heigit.org/info/plans
+
 NEW FOLLOW-UP TASKS FROM THIS WORK
 [ ] Photo performance: visible-only scheduling (current queue covers mounted widgets), request
     coalescing across instances, cancellation, and per-feature quotas; test multi-day photo load
-    against shared 100/day user budget and Overpass busy lease before scaling.
+    against separate 100/day per-feature user quotas, shared provider budgets and the
+    Overpass busy lease before scaling.
 [ ] Add widget tests for auto-loading gallery, retry, five-photo navigation, credits and narrow layouts.
 [ ] Improve Commons coverage using vetted Wikidata/category links and bilingual names; retain
     identity/location and license checks. Test Mapillary coverage/diversity, avoid repeated frames.
@@ -65,6 +108,7 @@ LATER / DEFERRED
     activity/transport reminders, only after traveler feedback.
 - First release iOS; domain deferred. No database-region migration or hosting purchase authorized.
 - Agent marketplace/dashboard and direct booking integrations deferred.
+[ ] Add 4 to 5 sentences introduce each place
 
 DEPLOY / HANDOFF
 See OSM_ROLLOUT.md. Never commit secrets or functions/.env.* files.
@@ -94,7 +138,7 @@ PHOTO QUERY AUDIT
     with imageinfo and coordinates in the same call. Strict venue/credit checks retained.
 [x] Added safe provider HTTP-status logging; no credentials or raw response bodies logged.
 [x] Eight photo tests pass. Live empty results remain unresolved until measured on actual stops.
-[ ] Add verified OSM-linked Wikidata P18 resolution; do not guess entity identity from names alone.
+[x] Add verified OSM-linked Wikidata P18 and Wikipedia article resolution; no name-based guesses.
 [ ] Measure returned candidate count vs rejected candidates and HTTP failures on an actual failing stop.
 
 QUOTA FIX
@@ -104,3 +148,49 @@ QUOTA FIX
     budgets unchanged. Six OSM tests pass including photo exhaustion/search isolation.
 [ ] Deploy quota fix; confirm suggestions recover. Provider/shared photo limits can still
     prevent photos independently. This confirms one failure cause, not all empty-photo causes.
+
+PHOTO SOURCE ORDER — 2026-09-13
+[x] Implement linked Commons + strict geographic fallback, approved website photos,
+    admin-imported owner files, then Mapillary. Preserve trusted OSM links on the server.
+[x] Add permission/credit validation, expiry checks, bounded exact-URL website import and
+    owner file upload tool. See PHOTO_SOURCES.md for schema, dry run and publishing steps.
+[x] Research tourism sources: Vietnam Tourism detailed terms restrict photos to non-commercial
+    use; no eligible app-specific permission or owner files supplied, so no records imported.
+[x] Validation: 83 backend tests passed, one emulator-only test skipped; six targeted Flutter
+    tests passed. Photo widget analysis, backend syntax checks and git diff --check passed.
+[ ] Obtain a tourism/venue photo grant covering app use, hosting and gallery credit placement;
+    import verified place photos. No permission-request email has been sent.
+[ ] Deploy photo-source backend to development and verify on actual Da Nang trip stops.
+    Admin Storage upload has not been exercised against a live bucket; no public upload UI.
+
+FOOD-ONLY ACTIVITY FIX — 2026-09-13
+[x] Follow-up staged search: automatic OSM destination discovery starts at 5 km, then
+    requests activities only at 10/15 km if fewer than four candidates/day (max 60).
+    Keep initial meals/hotels, deduplicate activities, stop after an expansion failure,
+    preserve nearby results and respect manually chosen map areas without expansion.
+[x] Separate dining outputs: 100 restaurants, 30 cafes, 20 other dining; total full-area
+    cap remains 500. Activity-only expansion returns at most 220 records per request.
+[x] Staged-search regression cases passed for sufficient coverage, 10 km, 15 km,
+    failure preservation and manual area; existing destination tests passed. Backend
+    suite: 84 passed, one emulator skip. New staged query not yet live-verified/deployed.
+[x] Replace one mixed 500-record Overpass output with separate bounded outputs:
+    220 activities, 150 dining, 80 lodging, 50 shopping. Total remains at most 500;
+    food/hotel records cannot consume the activity allowance. New query changes cache key.
+[x] Include historic landmarks, gardens/nature reserves, galleries, zoos, aquariums and
+    theme parks; preserve these categories through client discovery. Keep unknown OSM
+    ratings/prices honest and retain budget/time validation.
+[x] Distinguish no discovered activities from no remaining activity fitting budget/time;
+    log safe area category counts for future diagnosis.
+[x] Regression: 4 days, 2 travelers, USD 2,000, default 15 km radius, synthetic OSM pool:
+    activities on every day, three meals/day, no repeated activity IDs, valid budget/timing.
+    All 92 planner/service tests passed; backend suite passed (84 passed, one emulator skip).
+    Analysis of four modified Dart files passed.
+[ ] Deploy backend and restart Flutter; regenerate the owner's Da Nang plan. Actual radius
+    remains unknown. Live Overpass probe returned HTML and a subsequent probe timed out;
+    live query results and the exact original failure cause are not yet verified.
+
+
+I found this is our app doing this: OpenStreetMap (OSM) Tag Scraping / Cross-Referencing
+OpenStreetMap itself does not host images on its servers to save bandwidth. However, many businesses on OSM have a wikidata, wikipedia, or website tag attached to them. [[1](https://dev.to/marketoracle/free-google-places-api-alternative-37-business-categories-no-api-key-2m9e), [2](https://help.openstreetmap.org/questions/72126/can-i-get-photos-of-places-on-the-map-using-rest-api/)]
+- You can use the free [Overpass API](https://dev.to/0012303/openstreetmap-has-a-free-api-build-maps-without-google-no-key-no-billing-1j1c) to pull business details.
+- If a venue has a wikidata tag, your app can automatically execute a fast, free secondary API call to Wikidata to grab the official image URL associated with that entity.

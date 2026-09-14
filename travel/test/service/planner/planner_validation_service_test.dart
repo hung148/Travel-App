@@ -19,6 +19,32 @@ void main() {
     buffer: 50,
   );
 
+  test(
+    'food-only discovery asks for a wider area without blaming the budget',
+    () {
+      final meals = [
+        for (var i = 0; i < 3; i++)
+          _scoredPlace(
+            'meal-$i',
+            cost: 10,
+            minutes: 60,
+            category: 'restaurant',
+          ),
+      ];
+      final result = validator.validate(
+        days: [PlannerDay(dayNumber: 1, places: meals)],
+        rankedPlaces: meals,
+        profile: PlannerProfile.balanced,
+        budgetAllocation: allocation,
+      );
+      final issue = result.issues.singleWhere(
+        (i) => i.code == PlannerValidationCode.unavoidableFoodOnlyDay,
+      );
+      expect(issue.message, contains('none were found in the selected area'));
+      expect(issue.message, contains('Expand the map area'));
+    },
+  );
+
   test('reports every hard itinerary constraint violation', () {
     final duplicate = _scoredPlace('duplicate', cost: 60, minutes: 100);
     final eligible = _scoredPlace('eligible', cost: 10, minutes: 60);

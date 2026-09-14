@@ -7,6 +7,27 @@ import 'package:travel/service/planner/destination_place_service.dart';
 import 'package:travel/service/map_service.dart';
 
 void main() {
+  test('area failures preserve actionable errors and hide unknown bodies', () async {
+    for (final message in [
+      'Place search could not finish. Try a smaller area.',
+      'The production place provider is not configured yet.',
+      'internal diagnostic that must not appear',
+    ]) {
+      final service = OsmMapService(
+        endpoint: 'https://example.test/osm',
+        tokenProvider: () async => 'token',
+        client: MockClient((_) async =>
+            http.Response(jsonEncode({'error': message}), 503)),
+      );
+      await expectLater(
+        service.getNearbyPlaces(latitude: 16, longitude: 108, radius: 1000, type: 'museum'),
+        throwsA(predicate((error) => message.startsWith('internal')
+            ? error.toString().contains('Place search unavailable (503)') &&
+                !error.toString().contains(message)
+            : error.toString().contains(message))),
+      );
+    }
+  });
   test('planner retains OSM sights and shopping without Google review counts', () async {
     final service = OsmMapService(endpoint: 'https://example.test/osm', tokenProvider: () async => 'token',
       client: MockClient((request) async => http.Response(jsonEncode({'places': [

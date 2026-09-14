@@ -1,4 +1,6 @@
 import {HttpError} from './endpoint-security.js';
+import {linkedCommonsFiles} from './linked-commons.js';
+import {approvedPhotos} from './approved-photos.js';
 const text = value => String(value ?? '').replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, ' ').trim();
 const https = value => { try { return new URL(value).protocol === 'https:'; } catch { return false; } };
 const normalized = value => text(value).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -23,35 +25,50 @@ export function commonsPhoto(page, place, directlyLinked = false) {
     author, authorUrl: info.descriptionurl, license, licenseUrl, title, nearby: false};
 }
 
-export async function findPlacePhotos(place, {fetchImpl = fetch, mapillaryToken = ''} = {}) {
+export async function findPlacePhotos(place, {fetchImpl = fetch, mapillaryToken = '', approvedRecord = null,
+  userAgent = 'NghienTravel/1.0 (place photo lookup)'} = {}) {
   const failures = [];
   const photos = [];
   async function json(url, headers = {}) {
-    const response = await fetchImpl(url, {headers: {'User-Agent': 'NghienTravel/1.0 (place photo lookup)', ...headers},
-      signal: AbortSignal.timeout(8000)});
+    const response = await fetchImpl(url, {headers: {'User-Agent': userAgent, ...headers},
+      signal: AbortSignal.timeout(5000)});
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     if (data.error) throw new Error('Provider API error');
     return data;
   }
-  try {
+  async function commons(files = []) {
     const url = new URL('https://commons.wikimedia.org/w/api.php');
     url.search = new URLSearchParams({action: 'query', format: 'json',
-      ...(place.commonsFile ? {titles:place.commonsFile} : {generator:'geosearch',
+      ...(files.length ? {titles:files.join('|')} : {generator:'geosearch',
       ggscoord: `${place.latitude}|${place.longitude}`, ggsradius:'500',
       ggsnamespace:'6', ggsprimary:'all', ggslimit:'20'}),
       prop: 'imageinfo|coordinates', colimit:'1', iiprop: 'url|extmetadata|mime', iiurlwidth: '800'});
     const data = await json(url);
     for (const page of Object.values(data.query?.pages ?? {})) {
-      const photo = commonsPhoto(page, place, Boolean(place.commonsFile));
+      const photo = commonsPhoto(page, place, files.length > 0);
       if (photo && !photos.some(p => p.sourceUrl === photo.sourceUrl)) photos.push(photo);
       if (photos.length === 5) break;
     }
+  }
+  try {
+    const files = await linkedCommonsFiles(place, json);
+    if (files.length) await commons(files);
+  } catch (error) {
+    console.warn('Photo provider failure', {provider:'linked-commons', reason:/^HTTP \d{3}$/.test(error.message) ? error.message : 'network_or_api_error'});
+    failures.push('Linked Commons');
+  }
+  try {
+    if (!photos.length) await commons();
   } catch (error) {
     console.warn('Photo provider failure', {provider:'commons', reason:/^HTTP \d{3}$/.test(error.message) ? error.message : 'network_or_api_error'});
     failures.push('Wikimedia Commons');
   }
   if (photos.length) return photos;
+  for (const kind of ['website', 'owner']) {
+    const approved = approvedPhotos(approvedRecord, place.id, kind);
+    if (approved.length) return approved;
+  }
   mapillaryToken = mapillaryToken.trim();
   if (!mapillaryToken) {
     if (failures.length) throw new HttpError(503, 'Wikimedia Commons is unavailable. Please retry later.');

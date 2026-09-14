@@ -177,7 +177,9 @@ class PlannerValidationService {
           dayNumber: day.dayNumber,
           message: hasNonDiningThatCouldFit
               ? 'Day ${day.dayNumber} contains only food stops even though another activity fits.'
-              : 'Day ${day.dayNumber} contains only food stops because no other activity fits.',
+              : rankedPlaces.every((item) => item.place.isDining)
+              ? 'Day ${day.dayNumber} has no activities because none were found in the selected area. Expand the map area and search again.'
+              : 'Day ${day.dayNumber} contains only food stops because no remaining activity fits the budget and time limits.',
         ),
       );
     }

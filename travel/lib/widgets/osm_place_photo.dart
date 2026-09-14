@@ -94,8 +94,18 @@ class _OsmPlacePhotoState extends State<OsmPlacePhoto> {
               .toList();
           if (_cache.length >= 100) _cache.remove(_cache.keys.first);
           _cache[key] = (
-            expires: DateTime.now().add(
-              Duration(minutes: photos.isEmpty ? 0 : 30),
+            expires: photos.fold<DateTime>(
+              DateTime.now().add(Duration(minutes: photos.isEmpty ? 0 : 30)),
+              (expiry, photo) {
+                final milliseconds = photo['expiresAt'];
+                if (milliseconds is! num) return expiry;
+                final permissionExpiry = DateTime.fromMillisecondsSinceEpoch(
+                  milliseconds.toInt(),
+                );
+                return permissionExpiry.isBefore(expiry)
+                    ? permissionExpiry
+                    : expiry;
+              },
             ),
             photos: photos,
           );

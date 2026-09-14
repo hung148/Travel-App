@@ -9,6 +9,7 @@ import '../../models/price_calibration.dart';
 import '../budget_service.dart';
 import '../currency_rate_service.dart';
 import '../map_service.dart';
+import '../osm_map_service.dart';
 import 'preference_normalizer.dart';
 import 'price_calibration_service.dart';
 import 'shopping_vetter.dart';
@@ -134,7 +135,10 @@ class DestinationPlaceService {
   /// every candidate survives.
   Future<List<NearbyPlace>> _vetted(List<NearbyPlace> candidates) async {
     final vetter = shoppingVetter;
-    if (vetter == null || candidates.isEmpty || candidates.every((p) => p.placeId.startsWith('osm:'))) return candidates;
+    if (vetter == null ||
+        candidates.isEmpty ||
+        candidates.every((p) => p.placeId.startsWith('osm:')))
+      return candidates;
 
     final approved = await vetter.approve([
       for (final place in candidates)
@@ -171,19 +175,57 @@ class DestinationPlaceService {
     String destination, {
     required PriceContext priceContext,
     String? placeId,
-    int radiusMeters = 15000,
+    int radiusMeters = 5000,
     Set<String> styleTags = const {},
   }) async {
     final center = await mapService.resolveDestinationCenter(
       destination,
       placeId: placeId,
     );
-    return loadForArea(
+    final nearby = await loadForArea(
       center: center,
       radiusMeters: radiusMeters,
       priceContext: priceContext,
       styleTags: styleTags,
       destinationName: destination,
+    );
+    if (mapService is! OsmMapService) return nearby;
+    final places = {for (final place in nearby.places) place.id: place};
+    // Four candidates per day allow variety without scanning the wider region
+    // when the nearby pool already suffices. This is coverage, not a quality rating.
+    final target = (priceContext.days * 4).clamp(4, 60);
+    for (final radius in [10000, 15000]) {
+      if (radius <= radiusMeters) continue;
+      if (places.values.where((p) => !p.isDining).length >= target) break;
+      try {
+        final candidates = await (mapService as OsmMapService)
+            .discoverActivities(center, radius);
+        for (final candidate in candidates) {
+          if (_distanceMeters(center, candidate) > radius ||
+              const PlaceQualityService().excluded(
+                name: candidate.name,
+                types: candidate.types,
+              ) ||
+              candidate.types.any(_accommodationTypes.contains) ||
+              isRetailPlace(candidate.types))
+            continue;
+          final mapped = mapper.fromNearbyPlace(
+            candidate,
+            calibration: nearby.calibration,
+          );
+          if (!mapped.isDining) places.putIfAbsent(mapped.id, () => mapped);
+        }
+      } catch (_) {
+        // Keep the successful nearby pool; don't hammer an overloaded provider.
+        break;
+      }
+    }
+    return DestinationCandidates(
+      center: nearby.center,
+      places: places.values.toList(),
+      hotels: nearby.hotels,
+      calibration: nearby.calibration,
+      detectedCurrencyCode: nearby.detectedCurrencyCode,
     );
   }
 
@@ -298,7 +340,8 @@ class DestinationPlaceService {
             {'cafe', 'bakery', 'meal_takeaway', 'snack_bar'}.contains(type),
       );
       // Require a meaningful review history for automatically selected sights.
-      if (!nearbyPlace.placeId.startsWith('osm:') && !dining &&
+      if (!nearbyPlace.placeId.startsWith('osm:') &&
+          !dining &&
           !types.any(_accommodationTypes.contains) &&
           (nearbyPlace.rating < 4 || nearbyPlace.userRatingsTotal < 100)) {
         continue;
@@ -339,7 +382,11 @@ class DestinationPlaceService {
       (busiest * shoppingReviewShareOfBusiest).round(),
     );
     final shoppingStops = rankedShopping
-        .where((place) => place.placeId.startsWith('osm:') || place.userRatingsTotal >= reviewFloor)
+        .where(
+          (place) =>
+              place.placeId.startsWith('osm:') ||
+              place.userRatingsTotal >= reviewFloor,
+        )
         .take(shoppingQuota)
         .toList();
 
@@ -437,9 +484,9 @@ class DestinationPlaceService {
             (place) => mapper.fromNearbyPlace(
               priced(place),
               calibration: calibration,
-              luxuryDiningSearchMatch: !place.placeId.startsWith('osm:') && results[3].any(
-                (match) => match.placeId == place.placeId,
-              ),
+              luxuryDiningSearchMatch:
+                  !place.placeId.startsWith('osm:') &&
+                  results[3].any((match) => match.placeId == place.placeId),
               destinationHighlight:
                   place.rating >= 4 &&
                   place.userRatingsTotal >= 100 &&

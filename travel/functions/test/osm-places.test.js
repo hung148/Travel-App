@@ -15,13 +15,42 @@ function database() {
 const elements = [{type: 'node', id: 1, lat: 16, lon: 108, tags: {name: 'Museum', tourism: 'museum'}},
   {type: 'way', id: 2, center: {lat: 16.01, lon: 108.01}, tags: {name: 'Market', amenity: 'marketplace'}}];
 
+test('provider cooldown blocks repeated upstream attempts and expires', async () => {
+  const db = database(); let calls=0;
+  const lookup = createOsmProvider({fetchImpl:async()=> {
+    calls++; return {ok:false,status:429,headers:{get:()=> '120'}};
+  }});
+  const body={action:'area',latitude:16,longitude:108,radius:5000};
+  await assert.rejects(lookup(db,body),e=>e.status===503);
+  await assert.rejects(lookup(db,body),e=>e.status===503);
+  assert.equal(calls,1);
+  const prior=db.values.get('placeUsage/osm-upstream');
+  assert.ok(prior.retryAfterUntil>Date.now()+110000);
+  assert.equal(prior.busyUntil,0);
+  db.values.set('placeUsage/osm-upstream',{...prior,retryAfterUntil:0});
+  await assert.rejects(lookup(db,body),e=>e.status===503);
+  assert.equal(calls,2);
+});
+
 test('bounded requests reject arbitrary QL, invalid coordinates and oversized areas', () => {
   for (const body of [{action: 'area', latitude: NaN, longitude: 1, radius: 1000},
     {action: 'area', latitude: 1, longitude: 1, radius: 50000}, {action: 'details', id: 'node(1);out;'},
     {action: 'search', query: 'a'.repeat(101)}]) assert.throws(() => osmRequest(body));
   assert.match(osmRequest({action: 'search', query: 'Da Nang'}).query, /name:en/);
   assert.match(osmRequest({action: 'search', query: 'Da Nang'}).query, /out body 10/);
-  assert.match(osmRequest({action: 'area', latitude: 16, longitude: 108, radius: 1000}).query, /out center tags 500/);
+  const query = osmRequest({action: 'area', latitude: 16, longitude: 108, radius: 1000}).query;
+  const limits = [...query.matchAll(/out center tags (\d+);/g)].map(match => Number(match[1]));
+  assert.deepEqual(limits, [220,100,30,20,80,50]);
+  assert.equal(limits.reduce((sum,n) => sum+n,0),500);
+  const activities = query.split('out center tags 220;')[0];
+  assert.match(activities,/historic/);
+  assert.doesNotMatch(activities,/restaurant|hotel|cafe/);
+  assert.doesNotMatch(query, /\[~"/);
+  assert.match(query, /nwr\.local\["name:vi"\]/);
+  const activityQuery = osmRequest({action:'area',scope:'activities',latitude:16,longitude:108,radius:15000}).query;
+  assert.doesNotMatch(activityQuery,/restaurant|cafe|hotel|marketplace/);
+  assert.equal([...activityQuery.matchAll(/out center tags/g)].length,1);
+  assert.throws(() => osmRequest({action:'area',scope:'anything',latitude:16,longitude:108,radius:1000}));
 });
 test('OSM identity, area centers and categories survive without invented ratings or photos', () => {
   const places = normalizeElements([...elements, elements[0], {type: 'node', id: 3, tags: {name: 'No coordinates'}}]);
@@ -51,6 +80,33 @@ test('OSM outages do not invoke Google and release the shared upstream lock', as
   await assert.rejects(lookup(db, {action: 'search', query: 'Da Nang'}), /temporarily unavailable/);
   assert.equal(calls, 1);
   assert.equal(db.values.get('placeUsage/osm-upstream').busyUntil, 0);
+});
+
+test('historic, nature and entertainment tags remain non-dining activity categories', () => {
+  const tags = [{historic:'monument'}, {historic:'castle'}, {leisure:'garden'},
+    {leisure:'nature_reserve'}, {tourism:'gallery'}, {tourism:'zoo'},
+    {tourism:'aquarium'}, {tourism:'theme_park'}];
+  const places = normalizeElements(tags.map((tag,i) => ({type:'way',id:i+1,
+    center:{lat:16,lon:108},tags:{name:`Activity ${i}`,...tag}})));
+  assert.deepEqual(places.map(p => p.types[0]), ['historical_landmark','historical_landmark',
+    'garden','national_park','art_gallery','zoo','aquarium','amusement_park']);
+  assert.ok(places.every(p => !p.types.includes('restaurant')));
+});
+
+test('discovery caches trusted photo identities and tolerates identity-cache failures', async () => {
+  for (const fail of [false, true]) {
+    const db = database(); const writes = [];
+    db.batch = () => ({set: (ref, value) => writes.push([ref,value]),
+      commit: async () => {if (fail) throw new Error('cache unavailable');
+        for (const [ref,value] of writes) await ref.set(value);}});
+    const linked = structuredClone(elements); linked[0].tags.wikidata = 'Q123';
+    const lookup = createOsmProvider({fetchImpl: async () => ({ok:true,json:async()=>({elements:linked})})});
+    const result = await lookup(db,{action:'area',latitude:16,longitude:108,radius:1000});
+    assert.equal(result.length,2);
+    assert.equal(writes.length,2);
+    if (!fail) assert.equal(db.values.get('osmPhotoIdentities/osm:node:1').place.wikidata,'Q123');
+    assert.equal(db.values.get('placeUsage/osm-upstream').busyUntil,0);
+  }
 });
 test('Google disabled by default; explicit opt-in is capped and never requests photos/ratings', async () => {
   const db = database(); let calls = 0;
