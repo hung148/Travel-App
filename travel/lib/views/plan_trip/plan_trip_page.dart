@@ -1019,6 +1019,7 @@ class _PlanTripPageState extends State<PlanTripPage> {
                   placeId: _selectedDestination.placeId,
                   priceContext: priceContext,
                   styleTags: preference.styleTags,
+                  activityLevel: preference.activityLevel,
                 )
               : await destinationPlaceService.loadForArea(
                   destinationName: destination,

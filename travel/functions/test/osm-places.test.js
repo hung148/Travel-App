@@ -15,6 +15,29 @@ function database() {
 const elements = [{type: 'node', id: 1, lat: 16, lon: 108, tags: {name: 'Museum', tourism: 'museum'}},
   {type: 'way', id: 2, center: {lat: 16.01, lon: 108.01}, tags: {name: 'Market', amenity: 'marketplace'}}];
 
+test('place evidence preserves restrictions, lifecycle and landmark facts without judging them', () => {
+  const facts = {opening_hours: 'Mo-Fr 09:00-17:00; PH off', access: 'private',
+    'access:conditional': 'yes @ (Sa-Su)', website: 'https://example.org/museum',
+    'contact:website': 'https://example.org/contact', wikidata: 'Q123',
+    wikipedia: 'vi:Bảo tàng', historic: 'monument', heritage: '2',
+    disused: 'yes', 'disused:tourism': 'museum', 'abandoned:amenity': 'restaurant',
+    construction: 'yes', cuisine: 'vietnamese', breakfast: 'yes'};
+  const [place, unknown] = normalizeElements([
+    {...elements[0], tags: {...elements[0].tags, ...facts, unrelated: 'omit me'}}, elements[1],
+  ]);
+  assert.deepEqual(place.evidence.osmTags, {tourism: 'museum', ...facts});
+  assert.deepEqual(unknown.evidence.osmTags, {amenity: 'marketplace'});
+  assert.equal(unknown.evidence.osmTags.access, undefined);
+  assert.equal(unknown.evidence.osmTags.opening_hours, undefined);
+  assert.equal(place.rating, undefined);
+});
+
+test('evidence ignores malformed values and bounds retained strings', () => {
+  const [place] = normalizeElements([{...elements[0], tags: {...elements[0].tags,
+    opening_hours: {bad: true}, access: ' ', website: 123, wikipedia: 'x'.repeat(3000)}}]);
+  assert.deepEqual(place.evidence.osmTags, {tourism: 'museum', wikipedia: 'x'.repeat(2000)});
+});
+
 test('provider cooldown blocks repeated upstream attempts and expires', async () => {
   const db = database(); let calls=0;
   const lookup = createOsmProvider({fetchImpl:async()=> {

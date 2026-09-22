@@ -6,6 +6,25 @@ const header = '[out:json][timeout:20][maxsize:16777216];';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const validCoordinate = (n, limit) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= limit;
 const quote = value => JSON.stringify(value);
+// Preserve bounded source facts for later eligibility and schedule checks.
+// Do not infer public access, opening status or customer quality from absence.
+const evidenceKeys = [
+  'opening_hours', 'opening_hours:conditional', 'opening_hours:signed',
+  'access', 'access:conditional', 'foot', 'foot:conditional',
+  'website', 'contact:website', 'wikidata', 'wikipedia',
+  'tourism', 'historic', 'heritage', 'heritage:operator', 'heritage:ref',
+  'amenity', 'leisure', 'natural', 'shop', 'attraction',
+  'cuisine', 'breakfast', 'lunch', 'dinner', 'takeaway', 'fee',
+  'disused', 'abandoned', 'demolished', 'removed', 'construction',
+  'opening_date', 'start_date', 'end_date', 'check_date', 'check_date:opening_hours',
+  ...['disused', 'abandoned', 'demolished', 'removed', 'construction'].flatMap(
+    prefix => ['tourism', 'amenity', 'leisure', 'shop', 'historic'].map(key => `${prefix}:${key}`)),
+];
+function placeEvidence(tags) {
+  return {osmTags: Object.fromEntries(evidenceKeys
+    .filter(key => typeof tags[key] === 'string' && tags[key].trim())
+    .map(key => [key, tags[key].slice(0, 2000)]))};
+}
 function namePattern(name) {
   const variants = {a: 'aàáảãạăằắẳẵặâầấẩẫậ', e: 'eèéẻẽẹêềếểễệ',
     i: 'iìíỉĩị', o: 'oòóỏõọôồốổỗộơờớởỡợ', u: 'uùúủũụưừứửữự',
@@ -85,7 +104,7 @@ export function normalizeElements(elements) {
     places.set(id, {id, name: name.slice(0, 200), latitude, longitude,
       address: [tags['addr:housenumber'], tags['addr:street'], tags['addr:city'], tags['addr:country']]
         .filter(value => typeof value === 'string').join(', ').slice(0, 400),
-      types: [...new Set(types)], source: 'openstreetmap'});
+      types: [...new Set(types)], source: 'openstreetmap', evidence: placeEvidence(tags)});
     if (typeof tags.wikimedia_commons === 'string' && tags.wikimedia_commons.startsWith('File:')) {
       places.get(id).commonsFile = tags.wikimedia_commons.slice(0, 250);
     }
@@ -101,7 +120,8 @@ export function createOsmProvider({fetchImpl = fetch, endpoint = 'https://overpa
   const active = new Map();
   return async function lookup(database, body) {
     const {query} = osmRequest(body);
-    const id = hash(query);
+    // Old normalized cache entries lack evidence; refetch once after upgrade.
+    const id = hash(`evidence-v1:${query}`);
     if (active.has(id)) return active.get(id);
     const request = (async () => {
       const ref = database.collection('osmPlaceCache').doc(id);

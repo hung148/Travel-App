@@ -99,7 +99,7 @@ void main() {
       );
       // Shopping goes through Text Search, never Nearby Search.
       expect(mapService.requestedTypes, isNot(contains('shopping_mall')));
-      expect(mapService.shoppingQueries, ['shopping mall', 'market']);
+      expect(mapService.shoppingQueries, ['market']);
       expect(result.places.map((place) => place.id), ['shared-place']);
       expect(
         result.places.map((place) => place.id),
@@ -146,7 +146,7 @@ void main() {
   });
 
   test(
-    'keeps only the biggest malls and drops shops that claim to be one',
+    'keeps markets and excludes every mall and individual shop',
     () async {
       final mapService = _FakeShoppingMapService();
       final service = DestinationPlaceService(mapService: mapService);
@@ -168,15 +168,15 @@ void main() {
       expect(ids, isNot(contains('shoe-shop')));
       expect(ids, isNot(contains('supermarket')));
       expect(ids, isNot(contains('vacuum-shop')));
-      // The three busiest, mall or market alike.
-      expect(ids, containsAll(['mall-huge', 'market-big', 'mall-big']));
-      expect(ids, hasLength(DestinationPlaceService.maxShoppingCandidates));
+      // Malls are excluded regardless of review count.
+      expect(ids, equals(['market-big']));
+      expect(ids, hasLength(1));
       expect(ids, isNot(contains('mall-medium')));
       expect(ids, isNot(contains('mall-tiny')));
     },
   );
 
-  test('a shopping preference gets a much bigger share of the pool', () async {
+  test('a shopping preference does not reintroduce malls', () async {
     final mapService = _FakeShoppingMapService();
     final service = DestinationPlaceService(mapService: mapService);
     const priceContext = PriceContext(
@@ -197,7 +197,7 @@ void main() {
     final ids = result.places.map((place) => place.id).toList();
     expect(
       ids,
-      containsAll(['mall-huge', 'market-big', 'mall-big', 'mall-medium']),
+      equals(['market-big']),
     );
     expect(ids, isNot(contains('shoe-shop')));
     expect(ids, isNot(contains('supermarket')));
@@ -211,7 +211,7 @@ void main() {
     'the vetter has the last word on a place the rules cannot judge',
     () async {
       final mapService = _FakeShoppingMapService();
-      final vetter = _FakeVetter({'mall-big'});
+      final vetter = _FakeVetter({'market-big'});
       final service = DestinationPlaceService(
         mapService: mapService,
         shoppingVetter: vetter,
@@ -233,18 +233,18 @@ void main() {
 
       final ids = result.places.map((place) => place.id).toList();
       expect(ids, isNot(contains('mall-big')));
-      expect(ids, containsAll(['mall-huge', 'market-big']));
+      expect(ids, isEmpty);
 
       // It gets the name and the review count - the two things a type rule
       // cannot see.
       final names = vetter.asked.map((candidate) => candidate.name).toList();
-      expect(names, contains('mall-huge'));
+      expect(names, equals(['Chợ Đà Lạt']));
       expect(
         vetter.asked.every((candidate) => candidate.reviewCount > 0),
         isTrue,
       );
       // Only shopping candidates are ever sent for judgement.
-      expect(vetter.asked, hasLength(4));
+      expect(vetter.asked, hasLength(1));
     },
   );
 
@@ -272,7 +272,7 @@ void main() {
     final ids = result.places.map((place) => place.id).toList();
     expect(
       ids,
-      containsAll(['mall-huge', 'market-big', 'mall-big', 'mall-medium']),
+      equals(['market-big']),
     );
   });
 }
@@ -479,9 +479,9 @@ class _FakeShoppingMapService extends MapService {
     required int radius,
     required String query,
   }) async {
-    // Every fixture comes back from the mall query; the market query returning
-    // nothing keeps the fake from duplicating them.
-    if (query != 'shopping mall') return const [];
+    // Deliberately return noisy malls alongside markets; filtering must reject them.
+    // The query alone is not trusted.
+    if (query != 'market') return const [];
 
     NearbyPlace mall(String id, int reviews) => NearbyPlace(
       placeId: id,

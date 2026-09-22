@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 
 import '../models/place_role.dart';
+import '../models/place_evidence.dart';
 
 /// MapService
 ///
@@ -956,6 +957,7 @@ class GooglePriceRange {
 }
 
 class NearbyPlace {
+  final PlaceEvidence evidence;
   final String placeId;
   final String name;
   final String address;
@@ -979,6 +981,7 @@ class NearbyPlace {
   String? get photoUrl => photoUrls.isEmpty ? null : photoUrls.first;
 
   NearbyPlace({
+    this.evidence = const PlaceEvidence.empty(),
     required this.placeId,
     required this.name,
     required this.address,

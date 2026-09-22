@@ -45,6 +45,7 @@ class TravelPlaceMapper {
           );
 
     return TravelPlace(
+      evidence: nearbyPlace.evidence,
       id: nearbyPlace.placeId,
       name: nearbyPlace.name,
       category: category,

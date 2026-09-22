@@ -12,7 +12,78 @@ import 'package:travel/service/planner/travel_planner_service.dart';
 
 // Synthetic OSM response, not claims about live venues or admission prices.
 void main() {
-  for (final scenario in ['enough', 'expand', 'wide', 'failure', 'manual']) {
+  for (final pace in ['Relaxed', 'Moderate', 'Very Active']) {
+    test('clustered city discovery follows $pace preference', () async {
+      final radii = <int>[];
+      final maps = OsmMapService(
+        endpoint: 'https://example.test/osm',
+        tokenProvider: () async => 'token',
+        client: MockClient((request) async {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          if (body['action'] == 'suggest') {
+            return http.Response(
+              jsonEncode({
+                'places': [
+                  {
+                    'id': 'osm:node:9999',
+                    'name': 'City',
+                    'latitude': 16,
+                    'longitude': 108,
+                    'types': ['locality'],
+                  },
+                ],
+              }),
+              200,
+            );
+          }
+          radii.add(body['radius'] as int);
+          final expanded = body['scope'] == 'activities';
+          return http.Response(
+            jsonEncode({
+              'places': [
+                for (var i = 0; i < 20; i++)
+                  {
+                    'id': 'osm:node:${i + (expanded ? 100 : 1)}',
+                    'name': 'Museum $i',
+                    'latitude': 16,
+                    'longitude': 108 + (expanded ? (i % 4) * 0.012 : 0),
+                    'types': ['museum'],
+                  },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+      await DestinationPlaceService(mapService: maps).loadForDestination(
+        'City',
+        activityLevel: pace,
+        priceContext: const PriceContext(
+          currencyCode: 'USD',
+          totalBudget: 2000,
+          spendingStyle: 'Normal',
+          days: 4,
+          travelers: 1,
+        ),
+      );
+      expect(
+        radii,
+        pace == 'Relaxed'
+            ? [5000]
+            : pace == 'Moderate'
+            ? [5000, 10000]
+            : [5000, 15000],
+      );
+    });
+  }
+  for (final scenario in [
+    'enough',
+    'clustered',
+    'expand',
+    'wide',
+    'failure',
+    'manual',
+  ]) {
     test('staged discovery: $scenario', () async {
       final requests = <Map<String, dynamic>>[];
       final maps = OsmMapService(
@@ -46,6 +117,7 @@ void main() {
                   var i = 0;
                   i <
                       (scenario == 'enough' ||
+                              scenario == 'clustered' ||
                               expanded &&
                                   (scenario != 'wide' ||
                                       body['radius'] == 15000)
@@ -54,10 +126,15 @@ void main() {
                   i++
                 )
                   {
-                    'id': 'osm:way:${i + 1}',
+                    'id':
+                        'osm:way:${i + 1 + (scenario == 'clustered' && expanded ? 1000 : 0)}',
                     'name': 'Museum $i',
                     'latitude': 16.06,
-                    'longitude': 108.22,
+                    'longitude':
+                        108.22 +
+                        (scenario == 'clustered' && !expanded
+                            ? 0
+                            : (i % 4) * 0.012),
                     'types': ['museum'],
                   },
                 if (!expanded)
@@ -103,7 +180,11 @@ void main() {
       expect(pool.places.where((p) => p.isDining).length, 1);
       expect(
         pool.places.where((p) => !p.isDining).length,
-        ['expand', 'enough', 'wide'].contains(scenario) ? 20 : 2,
+        scenario == 'clustered'
+            ? 40
+            : ['expand', 'enough', 'wide'].contains(scenario)
+            ? 20
+            : 2,
       );
     });
   }

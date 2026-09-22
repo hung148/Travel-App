@@ -16,6 +16,7 @@ import 'planner_validation_service.dart';
 import 'route_optimizer.dart';
 import 'place_quality_service.dart';
 import 'daily_time_schedule_service.dart';
+import 'activity_area_service.dart';
 
 class TravelPlannerService {
   final PlaceScoringService placeScoringService;
@@ -51,6 +52,7 @@ class TravelPlannerService {
           (place) => !const PlaceQualityService().excluded(
             name: place.name,
             types: {place.category, ...place.tags},
+            evidence: place.evidence,
           ),
         )
         .toList();
@@ -426,7 +428,29 @@ class TravelPlannerService {
     final dayMinutes = List<int>.filled(days.length, 0);
     int dayIndex = 0;
 
-    for (final scoredPlace in activityPlaces) {
+    final remaining = List<ScoredPlace>.of(activityPlaces);
+    final selectedActivities = <TravelPlace>[];
+    const areas = ActivityAreaService();
+    while (remaining.isNotEmpty) {
+      // Preserve highlight and interest priority, then balance score against
+      // repetition in areas already represented by scheduled activities.
+      final first = remaining.first.place;
+      final firstMatches = placeScoringService.matchesPreference(place: first, preference: preference);
+      var bestIndex = 0;
+      var bestScore = -double.infinity;
+      for (var index = 0; index < remaining.length; index++) {
+        final candidate = remaining[index];
+        if (candidate.place.destinationHighlight != first.destinationHighlight ||
+            placeScoringService.matchesPreference(place: candidate.place, preference: preference) != firstMatches) {
+          break;
+        }
+        final score = candidate.totalScore - areas.repetitionPenalty(candidate.place, selectedActivities, profile: profile);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = index;
+        }
+      }
+      final scoredPlace = remaining.removeAt(bestIndex);
       int attempts = 0;
 
       while (attempts < days.length) {
@@ -446,6 +470,7 @@ class TravelPlannerService {
 
         if (hasSpace && withinBudget && withinTime && withinMealTimes) {
           day.places.add(scoredPlace);
+          selectedActivities.add(scoredPlace.place);
           dayCosts[dayIndex] = projectedCost;
           dayMinutes[dayIndex] = projectedMinutes;
           dayIndex = (dayIndex + 1) % days.length;

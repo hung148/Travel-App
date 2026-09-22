@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../../core/utils/money.dart';
 import '../../models/place_role.dart';
+import '../../models/planner_profile.dart';
 import '../../models/travel_place.dart';
 import '../../models/hotel_stay.dart';
 import '../../models/price_calibration.dart';
@@ -15,6 +16,7 @@ import 'price_calibration_service.dart';
 import 'shopping_vetter.dart';
 import 'travel_place_mapper.dart';
 import 'place_quality_service.dart';
+import 'activity_area_service.dart';
 
 /// What the caller knows before any place has been fetched. Used to fall back
 /// to budget-anchored pricing when a destination publishes no prices at all.
@@ -92,7 +94,7 @@ class DestinationPlaceService {
   /// real city fills up with neighbourhood arcades before it ever reaches
   /// Vincom. Text Search ranks by prominence - the big ones first, which is
   /// the whole point.
-  static const _shoppingQueries = ['shopping mall', 'market'];
+  static const _shoppingQueries = ['market'];
 
   /// How many shopping stops enter the pool when the traveler did NOT ask for
   /// shopping. A couple of malls is plenty of texture for a normal trip.
@@ -177,6 +179,7 @@ class DestinationPlaceService {
     String? placeId,
     int radiusMeters = 5000,
     Set<String> styleTags = const {},
+    String activityLevel = 'Moderate',
   }) async {
     final center = await mapService.resolveDestinationCenter(
       destination,
@@ -194,9 +197,19 @@ class DestinationPlaceService {
     // Four candidates per day allow variety without scanning the wider region
     // when the nearby pool already suffices. This is coverage, not a quality rating.
     final target = (priceContext.days * 4).clamp(4, 60);
-    for (final radius in [10000, 15000]) {
+    final profile = PlannerProfile.fromActivityLevel(activityLevel);
+    final radii = switch (profile.style) {
+      PlannerStyle.relaxed => const [7500, 10000],
+      PlannerStyle.balanced => const [10000, 15000],
+      PlannerStyle.explorer => const [15000, 20000],
+    };
+    for (final radius in radii) {
       if (radius <= radiusMeters) continue;
-      if (places.values.where((p) => !p.isDining).length >= target) break;
+      final enoughActivities = places.values.where((p) => !p.isDining).length >= target;
+      final enoughAreas = profile.style == PlannerStyle.relaxed ||
+          const ActivityAreaService().areaCount(places.values) >=
+              (priceContext.days + 1).clamp(profile.style == PlannerStyle.explorer ? 3 : 2, 4);
+      if (enoughActivities && enoughAreas) break;
       try {
         final candidates = await (mapService as OsmMapService)
             .discoverActivities(center, radius);
@@ -205,6 +218,7 @@ class DestinationPlaceService {
               const PlaceQualityService().excluded(
                 name: candidate.name,
                 types: candidate.types,
+                evidence: candidate.evidence,
               ) ||
               candidate.types.any(_accommodationTypes.contains) ||
               isRetailPlace(candidate.types))
@@ -310,7 +324,9 @@ class DestinationPlaceService {
         ...results[5],
         ...results[hotelIndex],
       ])
-        if (hotel.types.any(_accommodationTypes.contains)) hotel.placeId: hotel,
+        if (hotel.types.any(_accommodationTypes.contains) &&
+            const PlaceQualityService().evidenceExclusionReason(hotel.evidence) == null)
+          hotel.placeId: hotel,
     }.values.toList();
     final shoppingSearches = results.sublist(hotelIndex + 1);
     final uniquePlaces = <String, NearbyPlace>{};
@@ -329,6 +345,7 @@ class DestinationPlaceService {
       if (const PlaceQualityService().excluded(
         name: nearbyPlace.name,
         types: {...nearbyPlace.types, primaryType},
+        evidence: nearbyPlace.evidence,
       )) {
         continue;
       }
@@ -430,6 +447,7 @@ class DestinationPlaceService {
         return place;
       }
       return NearbyPlace(
+        evidence: place.evidence,
         placeId: place.placeId,
         name: place.name,
         address: place.address,

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
+import '../models/place_evidence.dart';
 import 'map_service.dart';
 
 /// OSM-backed place lookup. Google is never an automatic fallback.
@@ -117,6 +118,7 @@ class OsmMapService extends MapService {
     return (data['places'] as List).map((value) {
       final p = value as Map<String, dynamic>;
       return NearbyPlace(
+        evidence: PlaceEvidence.fromMap(p['evidence']),
         placeId: p['id'] as String,
         name: p['name'] as String,
         address: p['address'] as String? ?? '',

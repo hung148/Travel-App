@@ -194,3 +194,7 @@ I found this is our app doing this: OpenStreetMap (OSM) Tag Scraping / Cross-Ref
 OpenStreetMap itself does not host images on its servers to save bandwidth. However, many businesses on OSM have a wikidata, wikipedia, or website tag attached to them. [[1](https://dev.to/marketoracle/free-google-places-api-alternative-37-business-categories-no-api-key-2m9e), [2](https://help.openstreetmap.org/questions/72126/can-i-get-photos-of-places-on-the-map-using-rest-api/)]
 - You can use the free [Overpass API](https://dev.to/0012303/openstreetmap-has-a-free-api-build-maps-without-google-no-key-no-billing-1j1c) to pull business details.
 - If a venue has a wikidata tag, your app can automatically execute a fast, free secondary API call to Wikidata to grab the official image URL associated with that entity.
+
+- plan generate a lot of free places and why budget still expensive
+- Remove How active should you trip feel from preference because it duplicate with plan style.
+

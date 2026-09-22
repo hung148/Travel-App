@@ -1,5 +1,6 @@
 import 'cost_estimate.dart';
 import 'booking_details.dart';
+import 'place_evidence.dart';
 
 class TravelPlace {
   String get dataSource => id.startsWith('osm:') ? 'openstreetmap' : isCustom ? 'custom' : 'google';
@@ -29,6 +30,7 @@ class TravelPlace {
 
   /// Up to [MapService.maxPhotosPerPlace] photos, most representative first.
   final List<String> photoUrls;
+  final PlaceEvidence evidence;
 
   const TravelPlace({
     required this.id,
@@ -48,6 +50,7 @@ class TravelPlace {
     this.hasLocation = true,
     this.isCustom = false,
     this.booking,
+    this.evidence = const PlaceEvidence.empty(),
   });
 
   /// Planning cost for ONE person, in the trip currency.
@@ -109,6 +112,7 @@ class TravelPlace {
       'hasLocation': hasLocation,
       'isCustom': isCustom,
       'booking': booking?.toMap(),
+      'evidence': evidence.toMap(),
     };
   }
 
@@ -127,6 +131,7 @@ class TravelPlace {
       luxuryDiningSearchMatch: data['luxuryDiningSearchMatch'] == true,
       destinationHighlight: data['destinationHighlight'] == true,
       mealPriceVnd: (data['mealPriceVnd'] as num?)?.toDouble(),
+      evidence: PlaceEvidence.fromMap(data['evidence']),
       // Plans saved before costs carried a source stored a bare number.
       cost: costData is Map
           ? CostEstimate.fromMap(Map<String, dynamic>.from(costData))
